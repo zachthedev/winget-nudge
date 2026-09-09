@@ -1,0 +1,3 @@
+[*.xaml.cs]
+# XAML wires event handlers to instance methods
+dotnet_diagnostic.CA1822.severity = none

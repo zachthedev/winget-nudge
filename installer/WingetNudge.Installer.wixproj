@@ -1,0 +1,42 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <OutputName>WingetNudge</OutputName>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <AppProject>..\src\WingetNudge\WingetNudge.csproj</AppProject>
+    <PublishDir>$(MSBuildThisFileDirectory)..\src\WingetNudge\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\</PublishDir>
+    <!-- Version comes from Directory.Build.props so the MSI and the exe never disagree. -->
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(Version)</DefineConstants>
+    <!-- Per-user files under the profile have no registry key path; these ICEs assume a machine install. -->
+    <!-- ICE61 objects to same-version upgrades, which are deliberate here. -->
+    <!-- ICE60 wants a language on every versioned file; the native SQLite library has none. -->
+    <SuppressIces>ICE38;ICE43;ICE57;ICE60;ICE61;ICE64;ICE90;ICE91</SuppressIces>
+    <SignToolPath Condition="'$(SignToolPath)' == ''">$(MSBuildProgramFiles32)\Windows Kits\10\bin\$(WindowsSdkBinVersion)\x64\signtool.exe</SignToolPath>
+    <TimestampUrl Condition="'$(TimestampUrl)' == ''">http://timestamp.digicert.com</TimestampUrl>
+    <Sign Condition="'$(SigningCertificateThumbprint)' != ''">true</Sign>
+  </PropertyGroup>
+
+  <!-- The package always carries a fresh Release publish of the app. -->
+  <Target Name="PublishApp" BeforeTargets="BeforeBuild">
+    <!-- Start from an empty folder so a file removed from the app cannot linger into the package. -->
+    <RemoveDir Directories="$(PublishDir)" />
+    <MSBuild Projects="$(AppProject)" Targets="Publish" Properties="Configuration=Release;PublishDir=$(PublishDir)" />
+  </Target>
+
+  <!--
+    Authenticode signing. The app's own binaries are signed before they are harvested, and the
+    package after it is linked, so the UAC prompt names a publisher and any later change to the
+    executable breaks the signature. Set SigningCertificateThumbprint in Directory.Signing.props.
+  -->
+  <Target Name="SignApp" AfterTargets="PublishApp" Condition="'$(Sign)' == 'true'">
+    <Error Condition="!Exists('$(SignToolPath)')" Text="signtool.exe not found at $(SignToolPath); set SignToolPath." />
+    <ItemGroup>
+      <AppBinary Include="$(PublishDir)WingetNudge.exe;$(PublishDir)WingetNudge.dll;$(PublishDir)WingetNudge.Core.dll" />
+    </ItemGroup>
+    <Exec Command="&quot;$(SignToolPath)&quot; sign /sha1 $(SigningCertificateThumbprint) /fd SHA256 /tr $(TimestampUrl) /td SHA256 @(AppBinary->'&quot;%(FullPath)&quot;', ' ')" />
+  </Target>
+
+  <Target Name="SignPackage" AfterTargets="Build" Condition="'$(Sign)' == 'true'">
+    <Exec Command="&quot;$(SignToolPath)&quot; sign /sha1 $(SigningCertificateThumbprint) /fd SHA256 /tr $(TimestampUrl) /td SHA256 /d &quot;Winget Nudge&quot; &quot;$(TargetPath)&quot;" />
+  </Target>
+</Project>

@@ -1,0 +1,17 @@
+RmStartSession
+RmRegisterResources
+RmGetList
+RmShutdown
+RmRestart
+RmEndSession
+RM_PROCESS_INFO
+RM_SHUTDOWN_TYPE
+WIN32_ERROR
+IShellLinkW
+ShellLink
+IPersistFile
+CoCreateInstance
+CLSCTX
+CryptProtectData
+CryptUnprotectData
+LocalFree

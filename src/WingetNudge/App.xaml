@@ -1,0 +1,59 @@
+<Application
+    x:Class="WingetNudge.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+>
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!--
+            The fill behind inline code, as GitHub draws a `code` span: a translucent neutral that
+            reads on Mica in either theme. High contrast drops the fill for the system's outline.
+            -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="InlineCodeBackgroundBrush" Color="#33656C76" />
+                    <SolidColorBrush x:Key="InlineCodeBorderBrush" Color="Transparent" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="InlineCodeBackgroundBrush" Color="#1F818B98" />
+                    <SolidColorBrush x:Key="InlineCodeBorderBrush" Color="Transparent" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <SolidColorBrush x:Key="InlineCodeBackgroundBrush" Color="Transparent" />
+                    <SolidColorBrush
+                        x:Key="InlineCodeBorderBrush"
+                        Color="{ThemeResource SystemColorWindowTextColor}"
+                    />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- A code span inside running text, such as a command in a caption. -->
+            <Style x:Key="InlineCodeChipStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource InlineCodeBackgroundBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource InlineCodeBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Padding" Value="5,1" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <!--
+            Borderless glyph buttons in list rows and title bars. Transparent is not the same as
+            no brush here: a null Background leaves the button's padding out of hit testing, so
+            the pointer only registers over the glyph's own strokes and the hover fill flickers.
+            The system brushes for the other states are left alone.
+            -->
+            <Style x:Key="IconButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

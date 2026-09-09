@@ -1,0 +1,77 @@
+name: dependency-updates
+
+# Renovate runs from this repository under the zachthedev-updater app, rather
+# than from Mend's hosted app, so the schedule, the image and the credentials
+# are all pinned here. .github/renovate.json decides what it proposes; this
+# file decides only how it runs.
+on:
+  # Daily. renovate.json opens new pull requests on Monday mornings alone. The
+  # other runs keep open branches current, and raise security fixes, which
+  # ignore the schedule.
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+# Every credential this workflow uses comes from the app, so the job token gets
+# nothing.
+permissions: {}
+
+# One Renovate at a time. Two runs would race on the same branches.
+concurrency:
+  group: dependency-updates
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Holds the app's credentials and admits main alone, through a deployment
+    # branch policy naming main. No reviewer: a scheduled run nobody watches
+    # would wait forever for an approval.
+    environment:
+      name: dependency-updates
+      deployment: false
+    steps:
+      # The app's installation token, narrowed to the permissions Renovate's
+      # own documentation asks for. Without a permission-* input the token
+      # inherits every permission the installation holds, which zizmor's
+      # github-app audit refuses.
+      - id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.UPDATER_CLIENT_ID }}
+          private-key: ${{ secrets.UPDATER_PRIVATE_KEY }}
+          # Branch state and the release-age check it posts.
+          permission-checks: write
+          permission-statuses: write
+          # Branches, and the files in them.
+          permission-contents: write
+          permission-workflows: write
+          # Pull requests, and the dependency dashboard issue.
+          permission-pull-requests: write
+          permission-issues: write
+          # The alerts that turn into security fixes.
+          permission-vulnerability-alerts: read
+          # Reads the ruleset on main to learn whether a branch must be
+          # current before it merges.
+          permission-administration: read
+
+      # The action runs the Renovate image and passes every RENOVATE_ variable
+      # in this block through to it. The image is pinned by tag and digest, and
+      # a custom manager in renovate.json moves both.
+      - uses: renovatebot/github-action@dcfba84a42d1b5d5e49bf131b1bf53511851a123 # v46.3.1
+        with:
+          token: ${{ steps.token.outputs.token }}
+          renovate-version: 44.94.0@sha256:92e5d715b001c1a75e26f27a34086584f9ca51f0480b2401b3cdda44c05ad3e0
+        env:
+          RENOVATE_PLATFORM: github
+          # One repository per run, because an installation token is scoped to
+          # one installation.
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # No onboarding pull request: .github/renovate.json is committed, and
+          # a repository without it is a mistake rather than a new adoption.
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: required
+          # Commits through the GitHub API, so the app signs them.
+          RENOVATE_PLATFORM_COMMIT: enabled
+          LOG_LEVEL: info
