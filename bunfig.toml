@@ -1,0 +1,17 @@
+# Bun's install gate for this repository.
+#
+# A version published minutes ago is the shape a compromised package arrives in, and most are
+# pulled within hours. Three days is the window this project refuses to install inside.
+#
+# The gate belongs in a per-user configuration everywhere else, and this file is the one sanctioned
+# exception: Renovate's weekly lock file maintenance runs `bun install` inside its own container,
+# where no user-level bunfig exists, and that run is the only thing that moves a transitive
+# dependency. Without this file those transitives would arrive with no publish-age gate at all.
+#
+# A security fix is the case this holds back wrongly. Renovate raises the range to the fixed
+# version, `bun install` refuses it as too young, and the pull request goes red rather than quietly
+# keeping the vulnerable version. Audit the version, then run
+# `bun install --minimum-release-age 0` once to write the lock file.
+
+[install]
+minimumReleaseAge = 259200

@@ -1,0 +1,8 @@
+# zizmor's settings for this repository. Every audit not named here runs at zizmor's defaults.
+rules:
+  # Every action is pinned to a commit, including the ones GitHub publishes. A tag can be
+  # retargeted by its owner with no pull request and no cooldown, and this is what refuses one.
+  unpinned-uses:
+    config:
+      policies:
+        "*": hash-pin

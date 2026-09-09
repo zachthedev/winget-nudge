@@ -1,0 +1,66 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Winget Nudge"
+    Manufacturer="Zach"
+    Version="$(ProductVersion)"
+    UpgradeCode="a4570e1a-5755-41ae-a170-a91e598a5cd6"
+    Scope="perUser"
+    Language="1033"
+    InstallerVersion="500"
+  >
+    <!-- Same-version upgrades let a rebuilt package replace the installed one instead of sitting beside it. -->
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      DowngradeErrorMessage="A newer version of Winget Nudge is already installed."
+    />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="..\src\WingetNudge\Assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Winget Nudge" />
+      </Directory>
+    </StandardDirectory>
+
+    <Files Include="$(PublishDir)**" Directory="INSTALLFOLDER" />
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="e2ded484-29a6-4f32-b825-7e89f732917d">
+        <Shortcut
+          Id="WingetNudgeShortcut"
+          Name="Winget Nudge"
+          Description="Review and install winget upgrades"
+          Target="[INSTALLFOLDER]WingetNudge.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="AppIcon"
+        />
+        <RegistryValue Root="HKCU" Key="Software\WingetNudge" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!-- The app owns its scheduled check and notification identity; the installer only asks for them. -->
+    <CustomAction
+      Id="RegisterApp"
+      Directory="INSTALLFOLDER"
+      ExeCommand="&quot;[INSTALLFOLDER]WingetNudge.exe&quot; register --no-shortcut"
+      Execute="deferred"
+      Impersonate="yes"
+      Return="ignore"
+    />
+    <CustomAction
+      Id="UnregisterApp"
+      Directory="INSTALLFOLDER"
+      ExeCommand="&quot;[INSTALLFOLDER]WingetNudge.exe&quot; unregister --keep-shortcut"
+      Execute="deferred"
+      Impersonate="yes"
+      Return="ignore"
+    />
+    <InstallExecuteSequence>
+      <Custom Action="RegisterApp" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="UnregisterApp" After="InstallInitialize" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

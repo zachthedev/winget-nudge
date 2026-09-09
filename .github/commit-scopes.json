@@ -1,0 +1,17 @@
+[
+  {
+    "scope": "core",
+    "covers": "src/WingetNudge.Core: winget access, tracking and the cooldown gate, release notes, the upgrade engine, registration"
+  },
+  {
+    "scope": "app",
+    "covers": "src/WingetNudge: the WinUI app, its windows, the notification and the command-line verbs"
+  },
+  { "scope": "installer", "covers": "installer: the WiX package" },
+  { "scope": "tests", "covers": "tests: the Core suite and its fakes" },
+  { "scope": "tools", "covers": "cake.cs and tools: the gate and the build-time scripts" },
+  { "scope": "docs", "covers": "README.md, CONTRIBUTING.md, SECURITY.md and docs" },
+  { "scope": "deps", "covers": "dependency versions in any ecosystem" },
+  { "scope": "ci", "covers": ".github: workflows, Renovate and the issue forms" },
+  { "scope": "release", "covers": "release pull requests, which release-please opens" }
+]

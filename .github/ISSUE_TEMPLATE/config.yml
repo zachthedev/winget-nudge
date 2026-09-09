@@ -1,0 +1,19 @@
+# The forms cover the reports that have a shape, and every other conversation has a discussion
+# category, so an issue here is always a defect. That keeps the tracker readable.
+blank_issues_enabled: false
+contact_links:
+  - name: A question about using Winget Nudge
+    url: https://github.com/zachthedev/winget-nudge/discussions/categories/q-a
+    about: Setup, settings, tools tracked outside winget, or anything the README does not answer.
+  - name: An idea
+    url: https://github.com/zachthedev/winget-nudge/discussions/categories/ideas
+    about: Propose it here first. It becomes an issue once its shape is settled.
+  - name: A problem in winget itself
+    url: https://github.com/microsoft/winget-cli/issues
+    about: When `winget upgrade` in a terminal fails the same way, the problem is winget's.
+  - name: A problem with a package's manifest or installer
+    url: https://github.com/microsoft/winget-pkgs/issues
+    about: A wrong version, a broken installer URL, or an installer that fails on its own.
+  - name: A security problem
+    url: https://github.com/zachthedev/winget-nudge/blob/main/SECURITY.md
+    about: Report it privately. An issue is public the moment it is opened.

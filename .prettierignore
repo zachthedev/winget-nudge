@@ -1,0 +1,16 @@
+# C# is formatted by CSharpier, and prettier never sees it.
+
+# Build output and repository tooling.
+bin/
+obj/
+node_modules/
+TestResults/
+
+# Written by tools that own their format. NuGet regenerates the lock files, and release-please
+# rewrites the changelog and its manifest on every release.
+*packages.lock.json
+CHANGELOG.md
+.release-please-manifest.json
+
+# Prettier reads .wxs as WeChat's script language and fails on WiX's XML.
+*.wxs

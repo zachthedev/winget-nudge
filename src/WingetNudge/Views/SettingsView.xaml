@@ -1,0 +1,373 @@
+<UserControl
+    x:Class="WingetNudge.Views.SettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WingetNudge.Views"
+>
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="4" Margin="0,0,12,0">
+                <!-- When to check -->
+                <TextBlock
+                    Text="When to check"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Margin="0,4,0,4"
+                />
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <Expander.Header>
+                        <Grid ColumnSpacing="12" Padding="0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon
+                                Grid.Column="0"
+                                Glyph="&#xE787;"
+                                FontSize="16"
+                                VerticalAlignment="Center"
+                            />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Check triggers" />
+                                <TextBlock
+                                    x:Name="TriggerSummary"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                />
+                            </StackPanel>
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel Spacing="12" Margin="0,4,0,8">
+                        <ComboBox
+                            x:Name="FrequencyBox"
+                            Header="Announce updates"
+                            HorizontalAlignment="Stretch"
+                            SelectionChanged="OnFrequencyChanged"
+                        />
+                        <Grid x:Name="SchedulePanel" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                Grid.Column="0"
+                                x:Name="CheckDayBox"
+                                Header="On"
+                                HorizontalAlignment="Stretch"
+                                SelectionChanged="OnSettingChanged"
+                            />
+                            <TimePicker
+                                Grid.Column="1"
+                                x:Name="CheckTimePicker"
+                                Header="At"
+                                HorizontalAlignment="Stretch"
+                                ClockIdentifier="12HourClock"
+                                SelectedTimeChanged="OnTimeChanged"
+                            />
+                        </Grid>
+                        <TextBlock
+                            Text="Also announce when:"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        />
+                        <CheckBox
+                            x:Name="LogonCheck"
+                            Content="I sign in"
+                            Checked="OnSettingChanged"
+                            Unchecked="OnSettingChanged"
+                        />
+                        <CheckBox
+                            x:Name="UnlockCheck"
+                            Content="I unlock the PC"
+                            Checked="OnSettingChanged"
+                            Unchecked="OnSettingChanged"
+                        />
+                        <NumberBox
+                            x:Name="LogonDelayBox"
+                            Header="Wait this many minutes first"
+                            Minimum="0"
+                            Maximum="120"
+                            SpinButtonPlacementMode="Compact"
+                            SmallChange="1"
+                            ValueChanged="OnNumberChanged"
+                        />
+                    </StackPanel>
+                </Expander>
+
+                <!-- Background checks -->
+                <TextBlock
+                    Text="Checking in the background"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Margin="0,12,0,4"
+                />
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <Expander.Header>
+                        <Grid ColumnSpacing="12" Padding="0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon
+                                Grid.Column="0"
+                                Glyph="&#xE895;"
+                                FontSize="16"
+                                VerticalAlignment="Center"
+                            />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Quiet checks" />
+                                <TextBlock
+                                    x:Name="BackgroundSummary"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                />
+                            </StackPanel>
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel Spacing="12" Margin="0,4,0,8">
+                        <NumberBox
+                            x:Name="BackgroundHoursBox"
+                            Header="Re-check quietly every this many hours"
+                            Minimum="0"
+                            Maximum="24"
+                            SpinButtonPlacementMode="Compact"
+                            SmallChange="1"
+                            ValueChanged="OnNumberChanged"
+                        />
+                        <TextBlock
+                            Text="Keeps release dates and the cooldown current, so a version that matured overnight is ready as soon as you open this. Zero turns it off."
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap"
+                        />
+                        <ToggleSwitch
+                            x:Name="NotifyEveryToggle"
+                            Header="Notify me as soon as an update appears"
+                            OnContent="On"
+                            OffContent="Off"
+                            Toggled="OnToggled"
+                        />
+                        <TextBlock
+                            Text="Off, only the announcement above and the sign-in and unlock triggers raise a notification. On, a quiet check notifies too, once per new version."
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap"
+                        />
+                    </StackPanel>
+                </Expander>
+
+                <!-- What to offer -->
+                <TextBlock
+                    Text="What to offer"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Margin="0,12,0,4"
+                />
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <Expander.Header>
+                        <Grid ColumnSpacing="12" Padding="0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon
+                                Grid.Column="0"
+                                Glyph="&#xE823;"
+                                FontSize="16"
+                                VerticalAlignment="Center"
+                            />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Offers" />
+                                <TextBlock
+                                    x:Name="OfferSummary"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                />
+                            </StackPanel>
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel Spacing="12" Margin="0,4,0,8">
+                        <NumberBox
+                            x:Name="CooldownBox"
+                            Header="Wait this many hours after a version is released"
+                            Minimum="0"
+                            Maximum="720"
+                            SpinButtonPlacementMode="Compact"
+                            SmallChange="1"
+                            ValueChanged="OnNumberChanged"
+                        />
+                        <NumberBox
+                            x:Name="FailedExpiryBox"
+                            Header="Offer a failed package again after this many days"
+                            Minimum="1"
+                            Maximum="365"
+                            SpinButtonPlacementMode="Compact"
+                            SmallChange="1"
+                            ValueChanged="OnNumberChanged"
+                        />
+                        <PasswordBox
+                            x:Name="TokenBox"
+                            Header="GitHub token"
+                            Description="Raises the rate limit for release notes and publish dates above 60 requests an hour. Stored encrypted to your Windows account. Falls back to the GITHUB_TOKEN environment variable."
+                            PasswordChanged="OnSettingChanged"
+                        />
+                    </StackPanel>
+                </Expander>
+
+                <!-- Manual tools -->
+                <TextBlock
+                    Text="Manual tools"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Margin="0,12,0,4"
+                />
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <Expander.Header>
+                        <Grid ColumnSpacing="12" Padding="0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon
+                                Grid.Column="0"
+                                Glyph="&#xE90F;"
+                                FontSize="16"
+                                VerticalAlignment="Center"
+                            />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Tools" />
+                                <TextBlock
+                                    x:Name="ToolSummary"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                />
+                            </StackPanel>
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel Spacing="12" Margin="0,4,0,8">
+                        <NumberBox
+                            x:Name="ToolCacheBox"
+                            Header="Re-check each tool's latest version every this many hours"
+                            Minimum="1"
+                            Maximum="720"
+                            SpinButtonPlacementMode="Compact"
+                            SmallChange="1"
+                            ValueChanged="OnNumberChanged"
+                        />
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                Grid.Column="0"
+                                Text="Registered tools"
+                                VerticalAlignment="Center"
+                            />
+                            <Button Grid.Column="1" Content="Add a tool" Click="OnAddToolClick" />
+                        </Grid>
+                        <ItemsControl x:Name="ToolList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="local:ToolRow">
+                                    <Grid ColumnSpacing="8" Padding="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{x:Bind Name}" />
+                                            <TextBlock
+                                                Text="{x:Bind Command}"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            />
+                                        </StackPanel>
+                                        <Button
+                                            Grid.Column="1"
+                                            Click="{x:Bind Edit}"
+                                            Style="{StaticResource IconButtonStyle}"
+                                            ToolTipService.ToolTip="Edit this tool"
+                                            AutomationProperties.Name="Edit this tool"
+                                        >
+                                            <FontIcon Glyph="&#xE70F;" FontSize="14" />
+                                        </Button>
+                                        <Button
+                                            Grid.Column="2"
+                                            Click="{x:Bind Remove}"
+                                            Style="{StaticResource IconButtonStyle}"
+                                            ToolTipService.ToolTip="Remove this tool"
+                                            AutomationProperties.Name="Remove this tool"
+                                        >
+                                            <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Expander>
+
+                <!-- Advanced -->
+                <TextBlock
+                    Text="Advanced"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    Margin="0,12,0,4"
+                />
+                <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <Expander.Header>
+                        <Grid ColumnSpacing="12" Padding="0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon
+                                Grid.Column="0"
+                                Glyph="&#xE81C;"
+                                FontSize="16"
+                                VerticalAlignment="Center"
+                            />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="History and diagnostics" />
+                                <TextBlock
+                                    x:Name="HistorySummary"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                />
+                            </StackPanel>
+                        </Grid>
+                    </Expander.Header>
+                    <StackPanel Spacing="12" Margin="0,4,0,8">
+                        <NumberBox
+                            x:Name="LogRetentionBox"
+                            Header="Keep the update log for this many days"
+                            Minimum="1"
+                            Maximum="365"
+                            SpinButtonPlacementMode="Compact"
+                            SmallChange="1"
+                            ValueChanged="OnNumberChanged"
+                        />
+                        <NumberBox
+                            x:Name="InstallerLogsBox"
+                            Header="Installer logs kept per package"
+                            Minimum="1"
+                            Maximum="100"
+                            SpinButtonPlacementMode="Compact"
+                            SmallChange="1"
+                            ValueChanged="OnNumberChanged"
+                        />
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </ScrollViewer>
+
+        <InfoBar
+            Grid.Row="1"
+            x:Name="MessageBar"
+            IsOpen="False"
+            IsClosable="False"
+            HorizontalAlignment="Left"
+        />
+    </Grid>
+</UserControl>

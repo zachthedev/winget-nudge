@@ -1,0 +1,155 @@
+<Window
+    x:Class="WingetNudge.Views.UpgradeWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WingetNudge.Views"
+>
+    <Grid>
+        <Grid x:Name="ProgressPage" Padding="24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock
+                Grid.Row="0"
+                x:Name="PhaseText"
+                Text="Preparing"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+            />
+            <ProgressBar Grid.Row="1" x:Name="PhaseBar" IsIndeterminate="True" Margin="0,8,0,16" />
+
+            <ListView
+                Grid.Row="2"
+                x:Name="PackageList"
+                SelectionMode="None"
+                IsItemClickEnabled="False"
+            >
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="0,4" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="local:UpgradeItem">
+                        <Border
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16,12"
+                        >
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon
+                                    Grid.Column="0"
+                                    Glyph="{x:Bind Glyph, Mode=OneWay}"
+                                    FontSize="16"
+                                    VerticalAlignment="Top"
+                                    Margin="0,3,0,0"
+                                />
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <TextBlock
+                                        Text="{x:Bind Name}"
+                                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                                    />
+                                    <TextBlock
+                                        Text="{x:Bind Id}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    />
+                                    <TextBlock
+                                        Text="{x:Bind Status, Mode=OneWay}"
+                                        TextWrapping="Wrap"
+                                        IsTextSelectionEnabled="True"
+                                    />
+                                    <ProgressBar
+                                        Value="{x:Bind Progress, Mode=OneWay}"
+                                        IsIndeterminate="{x:Bind IsIndeterminate, Mode=OneWay}"
+                                        Visibility="{x:Bind ProgressVisibility, Mode=OneWay}"
+                                    />
+                                    <StackPanel Orientation="Horizontal" Spacing="16">
+                                        <HyperlinkButton
+                                            Content="{x:Bind NotesLabel, Mode=OneWay}"
+                                            IsEnabled="{x:Bind IsNotesEnabled, Mode=OneWay}"
+                                            Click="OnNotesClick"
+                                            Padding="0,2"
+                                        />
+                                        <HyperlinkButton
+                                            Visibility="{x:Bind LogVisibility, Mode=OneWay}"
+                                            ToolTipService.ToolTip="{x:Bind LogPath, Mode=OneWay}"
+                                            Click="OnLogClick"
+                                            Padding="0,2"
+                                        >
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE8A5;" FontSize="14" />
+                                                <TextBlock Text="View log" />
+                                            </StackPanel>
+                                        </HyperlinkButton>
+                                        <HyperlinkButton
+                                            Content="{x:Bind MuteLabel, Mode=OneWay}"
+                                            IsEnabled="{x:Bind IsMuteEnabled, Mode=OneWay}"
+                                            Visibility="{x:Bind MuteVisibility, Mode=OneWay}"
+                                            Click="OnMuteClick"
+                                            Padding="0,2"
+                                        />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <Grid Grid.Row="3" Margin="0,16,0,0">
+                <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Opacity="0.8" />
+                <Button
+                    x:Name="ActionButton"
+                    Content="Cancel"
+                    HorizontalAlignment="Right"
+                    MinWidth="100"
+                    Click="OnActionClick"
+                />
+            </Grid>
+        </Grid>
+
+        <!-- ///// Release notes, shown in place of the progress list ///// -->
+
+        <Grid x:Name="DetailPage" Visibility="Collapsed" Padding="24" RowSpacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                <Button
+                    x:Name="BackButton"
+                    Click="OnBackClick"
+                    Style="{StaticResource IconButtonStyle}"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Back"
+                    ToolTipService.ToolTip="Back"
+                >
+                    <FontIcon Glyph="&#xE72B;" FontSize="16" />
+                </Button>
+                <TextBlock
+                    x:Name="DetailTitle"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource SubtitleTextBlockStyle}"
+                    TextTrimming="CharacterEllipsis"
+                />
+            </StackPanel>
+            <ContentControl
+                Grid.Row="1"
+                x:Name="DetailHost"
+                HorizontalContentAlignment="Stretch"
+                VerticalContentAlignment="Stretch"
+            />
+        </Grid>
+    </Grid>
+</Window>
