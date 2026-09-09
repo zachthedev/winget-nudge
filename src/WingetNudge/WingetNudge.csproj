@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <!-- Winget objects are activated by CLSID, so the interop shim is not linked. -->
+        <MicrosoftManagementDeployment-FactoryLinkage>none</MicrosoftManagementDeployment-FactoryLinkage>
+        <OutputType>WinExe</OutputType>
+        <RootNamespace>WingetNudge</RootNamespace>
+        <AssemblyName>WingetNudge</AssemblyName>
+        <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+        <AssemblyTitle>Winget Nudge</AssemblyTitle>
+        <UseWinUI>true</UseWinUI>
+        <EnableMsixTooling>true</EnableMsixTooling>
+        <WindowsPackageType>None</WindowsPackageType>
+        <!-- The self-contained runtime omits the notifications resource DLL; the installed runtime has it. -->
+        <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+        <SelfContained>true</SelfContained>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.WindowsAppSDK" />
+        <!-- The interop package copies its native shim only into projects that reference it directly. -->
+        <PackageReference Include="Microsoft.WindowsPackageManager.ComInterop" />
+        <PackageReference Include="System.CommandLine" />
+        <PackageReference Include="Spectre.Console" />
+        <PackageReference Include="Markdig" />
+        <PackageReference Include="Microsoft.Windows.CsWin32">
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\WingetNudge.Core\WingetNudge.Core.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <Content Include="Assets\icon.png" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="Assets\icon.ico" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <!--
+    winrtact.dll is winget's undocked reg-free WinRT hook. It ships only inside the WinGet
+    PowerShell module, so the build pulls the module package matching $(WinGetVersion) from the
+    PowerShell Gallery, checks its hash, and copies the x64 DLL beside the executable.
+  -->
+    <PropertyGroup>
+        <WinGetModuleDirectory>$(BaseIntermediateOutputPath)psgallery\</WinGetModuleDirectory>
+        <WinGetModulePackage>$(WinGetModuleDirectory)Microsoft.WinGet.Client.$(WinGetVersion).nupkg</WinGetModulePackage>
+        <WinRtActivationDll>$(WinGetModuleDirectory)extracted\net8.0-windows10.0.26100.0\SharedDependencies\x64\winrtact.dll</WinRtActivationDll>
+    </PropertyGroup>
+    <Target
+        Name="FetchWinRtActivation"
+        BeforeTargets="AssignTargetPaths"
+        Condition="!Exists('$(WinRtActivationDll)')"
+    >
+        <DownloadFile
+            Condition="!Exists('$(WinGetModulePackage)')"
+            SourceUrl="https://www.powershellgallery.com/api/v2/package/Microsoft.WinGet.Client/$(WinGetVersion)"
+            DestinationFolder="$(WinGetModuleDirectory)"
+            DestinationFileName="Microsoft.WinGet.Client.$(WinGetVersion).nupkg"
+        />
+        <GetFileHash Files="$(WinGetModulePackage)" Algorithm="SHA256">
+            <Output TaskParameter="Hash" PropertyName="WinGetModuleActualSha256" />
+        </GetFileHash>
+        <Error
+            Condition="'$(WinGetModuleActualSha256)' != '$(WinGetModuleSha256)'"
+            Text="Microsoft.WinGet.Client $(WinGetVersion) hash mismatch: expected $(WinGetModuleSha256), got $(WinGetModuleActualSha256)."
+        />
+        <Unzip
+            SourceFiles="$(WinGetModulePackage)"
+            DestinationFolder="$(WinGetModuleDirectory)extracted"
+        />
+    </Target>
+    <ItemGroup>
+        <None
+            Include="$(WinRtActivationDll)"
+            Link="winrtact.dll"
+            CopyToOutputDirectory="PreserveNewest"
+            Visible="false"
+        />
+    </ItemGroup>
+</Project>

@@ -1,0 +1,84 @@
+<ContentDialog
+    x:Class="WingetNudge.Views.ToolEditorDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    PrimaryButtonText="Save"
+    SecondaryButtonText="Test"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    PrimaryButtonClick="OnSaveClick"
+    SecondaryButtonClick="OnTestClick"
+>
+    <ScrollViewer MaxHeight="460" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="12" MinWidth="440" Margin="0,0,12,0">
+            <TextBox
+                x:Name="IdBox"
+                MaxLength="64"
+                Header="Id"
+                PlaceholderText="uv"
+                Description="Short key that names this tool. Letters, digits, dot, dash and underscore."
+            />
+            <TextBox x:Name="NameBox" MaxLength="128" Header="Display name" PlaceholderText="uv" />
+
+            <TextBlock
+                Text="Installed version"
+                Style="{StaticResource BodyStrongTextBlockStyle}"
+                Margin="0,8,0,0"
+            />
+            <TextBox
+                x:Name="CurrentCommandBox"
+                MaxLength="512"
+                Header="Command that prints the version"
+                PlaceholderText="uv --version"
+                Description="Executable followed by its arguments, separated by spaces."
+            />
+            <TextBox
+                x:Name="CurrentRegexBox"
+                MaxLength="256"
+                Header="Pattern that picks the version out (optional)"
+                PlaceholderText="^uv (\d+\.\d+\.\d+)"
+                Description="One capture group. Leave empty when the whole output is the version."
+            />
+
+            <TextBlock
+                Text="Latest version"
+                Style="{StaticResource BodyStrongTextBlockStyle}"
+                Margin="0,8,0,0"
+            />
+            <TextBox
+                x:Name="LatestUrlBox"
+                MaxLength="2048"
+                Header="JSON endpoint"
+                PlaceholderText="https://api.github.com/repos/astral-sh/uv/releases/latest"
+            />
+            <TextBox
+                x:Name="LatestFieldBox"
+                MaxLength="128"
+                Header="Field holding the version"
+                PlaceholderText="tag_name"
+            />
+            <TextBox
+                x:Name="LatestRegexBox"
+                MaxLength="256"
+                Header="Pattern that strips a prefix (optional)"
+                PlaceholderText="^v(.+)$"
+                Description="One capture group, for tags written like v1.2.3."
+            />
+
+            <TextBlock
+                Text="Upgrading"
+                Style="{StaticResource BodyStrongTextBlockStyle}"
+                Margin="0,8,0,0"
+            />
+            <TextBox
+                x:Name="UpgradeCommandBox"
+                MaxLength="512"
+                Header="Command that upgrades it"
+                PlaceholderText="uv self update"
+                Description="Runs in a PowerShell window you can watch."
+            />
+
+            <InfoBar x:Name="TestBar" IsOpen="False" IsClosable="False" />
+        </StackPanel>
+    </ScrollViewer>
+</ContentDialog>

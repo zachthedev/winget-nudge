@@ -1,0 +1,9 @@
+<Solution>
+    <Folder Name="/src/">
+        <Project Path="src/WingetNudge.Core/WingetNudge.Core.csproj" />
+        <Project Path="src/WingetNudge/WingetNudge.csproj" />
+    </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/WingetNudge.Core.Tests/WingetNudge.Core.Tests.csproj" />
+    </Folder>
+</Solution>

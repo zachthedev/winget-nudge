@@ -1,0 +1,126 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0-windows10.0.26100": {
+      "Humanizer.Core": {
+        "type": "Direct",
+        "requested": "[3.0.10, )",
+        "resolved": "3.0.10",
+        "contentHash": "yZIhtw8sYuvsONzQbZxWpR60tMWYHXoo0DL6nyOqSFiU5POjBTSEyWFpTQtJEZuy+oqiYTXKXY/Mjx7KnqIQFw=="
+      },
+      "Microsoft.Data.Sqlite": {
+        "type": "Direct",
+        "requested": "[10.0.11, )",
+        "resolved": "10.0.11",
+        "contentHash": "7je7UELzm131GiLYc4PpZvfKXIgIyzPM+v+tjcd/nbnuWRfgcONYKzDTqJlURxwVCFsVnlpmq6y6yn4qvR8QXQ==",
+        "dependencies": {
+          "Microsoft.Data.Sqlite.Core": "10.0.11",
+          "SQLitePCLRaw.bundle_e_sqlite3": "2.1.12",
+          "SQLitePCLRaw.core": "2.1.12"
+        }
+      },
+      "Microsoft.Windows.CsWin32": {
+        "type": "Direct",
+        "requested": "[0.3.333, )",
+        "resolved": "0.3.333",
+        "contentHash": "UigiQ8BYaIJfon0FZ9rTy9reygbXr4VijncifNe/Az/GSnqd958ptd1/Hp9u9lyYrwI+3/xeIUHgqrLr1o5hQQ==",
+        "dependencies": {
+          "Microsoft.Windows.SDK.Win32Docs": "0.1.42-alpha",
+          "Microsoft.Windows.SDK.Win32Metadata": "71.0.14-preview",
+          "Microsoft.Windows.WDK.Win32Metadata": "0.13.25-experimental"
+        }
+      },
+      "Microsoft.WindowsPackageManager.ComInterop": {
+        "type": "Direct",
+        "requested": "[1.29.290, )",
+        "resolved": "1.29.290",
+        "contentHash": "zNh//6UdtVEUhoN68RQ+scPTms3LkEd9N73+YLXkYmT+A0iqCkUx2QcnXaP+AHqN22T+sbddDeRY6N5CWFAq3Q=="
+      },
+      "TaskScheduler": {
+        "type": "Direct",
+        "requested": "[2.12.2, )",
+        "resolved": "2.12.2",
+        "contentHash": "glpAb3VrwfdAofp6PIyAzL0ZeTV7XUJ8muu0oZoTeyU5jtk2sMJ6QAMRRuFbovcaj+SBJiEUGklxIWOqQoxshA==",
+        "dependencies": {
+          "System.Diagnostics.EventLog": "9.0.2"
+        }
+      },
+      "YamlDotNet": {
+        "type": "Direct",
+        "requested": "[18.1.0, )",
+        "resolved": "18.1.0",
+        "contentHash": "5K+9KFg2TdTl7VXv88Qzi/0lqK6JFoNP3lRuImPYGRV7K/QYklDyTrj4+A+KAki1JsQi6qKY+hDyY7d6WRqjrw=="
+      },
+      "Microsoft.Data.Sqlite.Core": {
+        "type": "Transitive",
+        "resolved": "10.0.11",
+        "contentHash": "hubA20AGenQ4Sx0ElWaPpB8DISjXpdx463+1zOGRslsT0e/t/06ITv+pHsop8CcJ0d8PZLfgnT7juCDVD79Dkw==",
+        "dependencies": {
+          "SQLitePCLRaw.core": "2.1.12"
+        }
+      },
+      "Microsoft.Windows.SDK.Win32Docs": {
+        "type": "Transitive",
+        "resolved": "0.1.42-alpha",
+        "contentHash": "Z/9po23gUA9aoukirh2ItMU2ZS9++Js9Gdds9fu5yuMojDrmArvY2y+tq9985tR3cxFxpZO1O35Wjfo0khj5HA=="
+      },
+      "Microsoft.Windows.SDK.Win32Metadata": {
+        "type": "Transitive",
+        "resolved": "71.0.14-preview",
+        "contentHash": "39I8YpjHYJF7Qncztn6+cu15Ti35myn5QQnLZwN6AngBsfaU1l3Nsxvt2087AlExLxg5a/llFIRSeahK7GW/Dw=="
+      },
+      "Microsoft.Windows.WDK.Win32Metadata": {
+        "type": "Transitive",
+        "resolved": "0.13.25-experimental",
+        "contentHash": "IM50tb/+UIwBr9FMr6ZKcZjCMW+Axo6NjGqKxgjUfyCY8dRnYUfrJEXxAaXoWtYP4X8EmASmC1Jtwh4XucseZg==",
+        "dependencies": {
+          "Microsoft.Windows.SDK.Win32Metadata": "63.0.31-preview"
+        }
+      },
+      "SQLitePCLRaw.bundle_e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.12",
+        "contentHash": "mAgscpQMLw5/nfA1Q5oJVAT29yROUo1ifZGbbTpx/lwZpSxMUGoYbKfmvdm8oXER+RzxqBmmQzeBEVKfeHv2nw==",
+        "dependencies": {
+          "SQLitePCLRaw.lib.e_sqlite3": "2.1.12",
+          "SQLitePCLRaw.provider.e_sqlite3": "2.1.12"
+        }
+      },
+      "SQLitePCLRaw.core": {
+        "type": "Transitive",
+        "resolved": "2.1.12",
+        "contentHash": "ETpNw9DY3ckWLgRRAeCHj+GKOuPi61aeczkXhgHexUvqoZBAYg8RYESE2J7O1M7+o6QbdSEZwrw9bfqztUVWXg=="
+      },
+      "SQLitePCLRaw.lib.e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.12",
+        "contentHash": "fWi8Dbknuhgg72fWinIdjXVaqO1hHL4YBBwVLnr7e1c9TAZwJ0QE38j9syW1hwx6HaqEVTwI+O07WPdZn8Rp0w=="
+      },
+      "SQLitePCLRaw.provider.e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.12",
+        "contentHash": "W3oH4XIfCzFrgUSDKHhN6N+dgzA5YHOR2VxX8GB6Qy7CyrJJgxPEG8NirgYWlPQC5P2jz2knSsexWu4tDUL33g==",
+        "dependencies": {
+          "SQLitePCLRaw.core": "2.1.12"
+        }
+      },
+      "System.Diagnostics.EventLog": {
+        "type": "Transitive",
+        "resolved": "9.0.2",
+        "contentHash": "i+Fe6Fpst/onydFLBGilCr/Eh9OFdlaTU/c3alPp6IbLZXQJOgpIu3l4MOnmsN8fDYq5nAyHSqNIJesc74Yw3Q=="
+      }
+    },
+    "net10.0-windows10.0.26100/win-x64": {
+      "SQLitePCLRaw.lib.e_sqlite3": {
+        "type": "Transitive",
+        "resolved": "2.1.12",
+        "contentHash": "fWi8Dbknuhgg72fWinIdjXVaqO1hHL4YBBwVLnr7e1c9TAZwJ0QE38j9syW1hwx6HaqEVTwI+O07WPdZn8Rp0w=="
+      },
+      "System.Diagnostics.EventLog": {
+        "type": "Transitive",
+        "resolved": "9.0.2",
+        "contentHash": "i+Fe6Fpst/onydFLBGilCr/Eh9OFdlaTU/c3alPp6IbLZXQJOgpIu3l4MOnmsN8fDYq5nAyHSqNIJesc74Yw3Q=="
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+<Project>
+    <PropertyGroup>
+        <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+        <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+        <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <Platforms>x64</Platforms>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <!-- Low and moderate advisories warn; high and critical break the build. -->
+        <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902</WarningsNotAsErrors>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+        <!-- Renovate regenerates the lock files from Linux, where a Windows target needs this. -->
+        <EnableWindowsTargeting>true</EnableWindowsTargeting>
+        <AnalysisLevel>latest-Recommended</AnalysisLevel>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <Authors>Zach</Authors>
+        <Product>Winget Nudge</Product>
+        <!-- release-please rewrites the version between these markers in each release pull request. -->
+        <!-- x-release-please-start-version -->
+        <Version>1.0.0</Version>
+        <!-- x-release-please-end -->
+        <!-- Windows SDK build tools used for signing; the installer resolves signtool from here. -->
+        <WindowsSdkBinVersion>10.0.26100.0</WindowsSdkBinVersion>
+    </PropertyGroup>
+
+    <!-- Machine-local settings such as the signing certificate thumbprint; never committed. -->
+    <Import
+        Project="$(MSBuildThisFileDirectory)Directory.Signing.props"
+        Condition="Exists('$(MSBuildThisFileDirectory)Directory.Signing.props')"
+    />
+</Project>

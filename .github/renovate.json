@@ -1,0 +1,160 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Every dependency this repository pins, and the rules that move them.",
+    "The workflow .github/workflows/dependency-updates.yml runs Renovate; this file decides what it proposes.",
+    "Cooldown is three days on every datasource, and internalChecksFilter strict keeps a younger version from opening a pull request at all.",
+    "bunfig.toml carries the same three days for bun's own resolution, which Renovate delegates to when it rewrites bun.lock.",
+    "rebaseWhen conflicted: main requires one code-owner approval and dismisses a review on every push, so a rebase Renovate did not have to make would throw the approval away. A branch behind main still merges once its own required checks pass."
+  ],
+  "timezone": "UTC",
+  "schedule": ["* 0-11 * * 1"],
+  "minimumReleaseAge": "3 days",
+  "minimumReleaseAgeBehaviour": "timestamp-required",
+  "internalChecksFilter": "strict",
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "commitMessageAction": "bump",
+  "commitMessageTopic": "{{depName}}",
+  "labels": ["dependencies"],
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 10,
+  "dependencyDashboard": true,
+  "rebaseWhen": "conflicted",
+  "nuget": {
+    "description": "The installer is a WiX project, which the NuGet manager does not read by default.",
+    "managerFilePatterns": ["/\\.wixproj$/"]
+  },
+  "vulnerabilityAlerts": {
+    "description": "A security fix skips the schedule and the cooldown, the way Dependabot security updates do. Its commit type comes from what is in the group, so a runtime dependency cuts a release and a development one does not.",
+    "groupName": "security",
+    "commitMessageSuffix": "",
+    "addLabels": ["security"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Container images pinned by tag and digest in a workflow.",
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+      "matchStrings": [
+        "(?<depName>(?:[a-z0-9-]+(?:\\.[a-z0-9-]+)+/)?[a-z0-9][a-z0-9._/-]*):(?<currentValue>[\\w][\\w.-]*)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The linter pins a local gate run installs, in .github/gate-tools.json. cake.cs reads the same file at run time and refuses a workflow image that disagrees with it, so the image in ci.yml and the pin here are one dependency. One match spans the version, the image and the digest, so Renovate rewrites the version and the digest together. A tool that ships inside another image writes null for both, which the quoted pattern cannot match, so ShellCheck is skipped.",
+      "managerFilePatterns": ["/^\\.github/gate-tools\\.json$/"],
+      "matchStrings": [
+        "\"version\": \"(?<currentValue>[^\"]+)\",[\\s\\S]*?\"image\": \"(?<depName>[^\"]+)\",[\\s\\S]*?\"digest\": \"(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The Renovate image this repository's own workflow runs. The lookup is Docker Hub, which returns a release timestamp; ghcr.io does not, and both registries publish the same manifest digest.",
+      "managerFilePatterns": ["/^\\.github/workflows/dependency-updates\\.yml$/"],
+      "matchStrings": [
+        "renovate-version: (?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "depNameTemplate": "renovate/renovate",
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "A NuGet package the shipped app carries is a fix, so release-please cuts a release for it. Central Package Management puts every version in Directory.Packages.props, so the test stack is named here rather than matched by path. The SDKs in global.json and the wixproj, and the tools in dotnet-tools.json, stay chore.",
+      "matchManagers": ["nuget"],
+      "matchDepTypes": ["nuget"],
+      "matchFileNames": ["Directory.Packages.props"],
+      "matchDepNames": [
+        "!xunit.v3",
+        "!AwesomeAssertions",
+        "!Microsoft.Testing.Extensions.CodeCoverage",
+        "!Microsoft.Extensions.TimeProvider.Testing"
+      ],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "One weekly pull request for the whole NuGet tree, because a locked restore regenerates every packages.lock.json at once. A group carrying a shipped package is a fix commit, and a group of test and tool bumps alone is a chore.",
+      "matchManagers": ["nuget"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "nuget"
+    },
+    {
+      "description": "cake.cs restores in locked mode, and Renovate regenerates a packages.lock.json only beside a cs, vb or fs project. cake.packages.lock.json is neither, so this pull request stays red until somebody runs the command below.",
+      "matchManagers": ["nuget"],
+      "matchDepNames": ["Cake.Sdk"],
+      "prBodyNotes": [
+        "`cake.packages.lock.json` does not regenerate itself. Run `dotnet restore cake.cs --force-evaluate` and commit the result into this pull request, or the gate stays red."
+      ]
+    },
+    {
+      "description": "Its version is the MSBuild property WinGetVersion, which also pins WinGetModuleSha256, the hash of the PowerShell module winrtact.dll comes from. The two move together by hand, as CONTRIBUTING.md describes.",
+      "matchDepNames": ["Microsoft.WindowsPackageManager.ComInterop"],
+      "enabled": false
+    },
+    {
+      "description": "Bun is a development tool here, and every package under it is a development dependency.",
+      "matchManagers": ["bun"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "bun"
+    },
+    {
+      "description": "Actions move as one pull request, and a workflow change is a ci commit.",
+      "matchManagers": ["github-actions"],
+      "semanticCommitType": "ci",
+      "addLabels": ["ci"]
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "github actions"
+    },
+    {
+      "description": "The workflow linters. The image in ci.yml and the pin in .github/gate-tools.json are the same dependency, so one pull request moves the tag, the digest and the local pin together.",
+      "matchManagers": ["custom.regex"],
+      "matchDatasources": ["docker"],
+      "separateMajorMinor": false,
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "The actionlint image carries ShellCheck, which has no pin of its own to update. Read the version out of the new image and move cake.cs's shellcheck entry by hand.",
+      "matchDepNames": ["rhysd/actionlint"],
+      "groupName": "actionlint",
+      "prBodyNotes": [
+        "ShellCheck is baked into this image and pinned separately in `cake.cs`. Run `docker run --rm --entrypoint shellcheck rhysd/actionlint:<new tag> --version` and move that pin in the same pull request."
+      ]
+    },
+    {
+      "description": "zizmor publishes only to ghcr.io, which returns no release timestamp, so the three-day cooldown cannot be enforced on it. The version is still checked against cake.cs by the gate.",
+      "matchDepNames": ["ghcr.io/zizmorcore/zizmor"],
+      "groupName": "zizmor",
+      "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
+      "description": "The action composes its image from renovate-version, which carries the tag and the digest together. That is not a version any datasource can read, so the custom manager above owns this pin.",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["uses-with"],
+      "matchDepNames": ["ghcr.io/renovatebot/renovate"],
+      "enabled": false
+    },
+    {
+      "description": "Renovate updates its own image. The workflow is a ci file, so the commit is a ci commit.",
+      "matchDepNames": ["renovate/renovate"],
+      "groupName": "renovate",
+      "semanticCommitType": "ci",
+      "addLabels": ["ci"]
+    }
+  ],
+  "lockFileMaintenance": {
+    "description": [
+      "Refreshes every lock file weekly, which is the only thing that moves a transitive dependency. Renovate cannot apply the cooldown to this update type, so bunfig.toml is what holds bun back here.",
+      "A fix rather than the inherited chore: a refreshed packages.lock.json changes the assemblies the MSI carries, and a chore cuts no release, so the published installer would stop matching main until something unrelated shipped."
+    ],
+    "semanticCommitType": "fix",
+    "enabled": true,
+    "schedule": ["* 0-11 * * 1"]
+  }
+}

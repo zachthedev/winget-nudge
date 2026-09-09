@@ -1,0 +1,55 @@
+name: Wrong update
+description:
+  An update is missing, listed when it should not be, or shown with the wrong age or notes.
+title: "update: "
+labels: ["bug", "detection"]
+body:
+  - type: input
+    id: package
+    attributes:
+      label: Package id
+      placeholder: "Git.Git"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is wrong
+      options:
+        - Missing from the picker
+        - Listed when it should not be
+        - In the wrong section
+        - The wrong age
+        - Wrong or missing release notes
+    validations:
+      required: true
+  - type: textarea
+    id: winget
+    attributes:
+      label: What winget shows
+      description: The line for this package from `winget upgrade` in a terminal.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: picker
+    attributes:
+      label: What the picker shows, and what it should show
+      description:
+        Words or a screenshot. For an age or notes problem, say where the right answer is.
+    validations:
+      required: true
+  - type: textarea
+    id: state
+    attributes:
+      label: Muted, skipped or pinned
+      description: >
+        Whether you muted this package, skipped a version, or pinned it with `winget pin`. Each one
+        changes which section it lands in.
+  - type: input
+    id: version
+    attributes:
+      label: Winget Nudge version
+      placeholder: "1.0.0, or 6f9be1d"
+    validations:
+      required: true

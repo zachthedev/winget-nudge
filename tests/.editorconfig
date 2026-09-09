@@ -1,0 +1,5 @@
+[*.cs]
+# Test names use Method_Scenario_Expectation
+dotnet_diagnostic.CA1707.severity = none
+# Tests are the documentation
+dotnet_diagnostic.CS1591.severity = none

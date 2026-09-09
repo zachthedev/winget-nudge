@@ -1,0 +1,12 @@
+# Git hooks. `bun install` runs `lefthook install`, which writes the hooks into .git/hooks.
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: bunx --no-install commitlint --edit {1}
+
+# The gate, run before anything leaves this machine. CONTRIBUTING.md lists its steps.
+pre-push:
+  jobs:
+    - name: gate
+      run: dotnet cake.cs

@@ -1,0 +1,71 @@
+name: Bug
+description: Winget Nudge does something other than what it documents.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A package that failed to upgrade goes in the upgrade failure form. An update that is
+        missing, misplaced, or shown with the wrong age or notes goes in the wrong update form.
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: What Winget Nudge did, and what it was supposed to do instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      description: The steps that produce it, starting from the app closed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Winget Nudge version
+      description: >
+        Apps & features lists it. For a build from source, give the commit sha.
+      placeholder: "1.0.0, or 6f9be1d"
+    validations:
+      required: true
+  - type: input
+    id: winget_version
+    attributes:
+      label: winget version
+      description: What `winget --version` prints.
+      placeholder: "v1.29.290"
+    validations:
+      required: true
+  - type: input
+    id: windows_version
+    attributes:
+      label: Windows version
+      description: The version and build `winver` shows.
+      placeholder: "24H2, build 26100.4652"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How it is installed
+      options:
+        - The MSI from a release
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: crash_log
+    attributes:
+      label: crash.log
+      description: >
+        The contents of `%LOCALAPPDATA%\WingetNudge\crash.log`, when it exists. The app appends
+        every unhandled failure it survives there, with the time and the stack.
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag images in here when the problem is something you can see.
