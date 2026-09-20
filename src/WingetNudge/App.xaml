@@ -24,10 +24,7 @@
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="InlineCodeBackgroundBrush" Color="Transparent" />
-                    <SolidColorBrush
-                        x:Key="InlineCodeBorderBrush"
-                        Color="{ThemeResource SystemColorWindowTextColor}"
-                    />
+                    <SolidColorBrush x:Key="InlineCodeBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 

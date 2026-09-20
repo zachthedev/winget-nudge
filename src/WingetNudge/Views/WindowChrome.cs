@@ -23,16 +23,9 @@ public static class WindowChrome
     /// Alt+Tab and by a screen reader. Empty for the app's main window.
     /// </param>
     /// <param name="resizable">Whether the user can resize and maximize.</param>
-    public static void Apply(
-        Window window,
-        int width,
-        int height,
-        bool resizable,
-        string title = ""
-    )
+    public static void Apply(Window window, int width, int height, bool resizable, string title = "")
     {
-        window.Title =
-            title.Length > 0 ? $"{title} - {AppServices.DisplayName}" : AppServices.DisplayName;
+        window.Title = title.Length > 0 ? $"{title} - {AppServices.DisplayName}" : AppServices.DisplayName;
         window.SystemBackdrop = new MicaBackdrop();
 
         AppWindow appWindow = window.AppWindow;
@@ -52,10 +45,7 @@ public static class WindowChrome
         DisplayArea area = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Nearest);
         RectInt32 work = area.WorkArea;
         appWindow.Move(
-            new PointInt32(
-                work.X + (work.Width - size.Width) / 2,
-                work.Y + (work.Height - size.Height) / 2
-            )
+            new PointInt32(work.X + (work.Width - size.Width) / 2, work.Y + (work.Height - size.Height) / 2)
         );
     }
 }

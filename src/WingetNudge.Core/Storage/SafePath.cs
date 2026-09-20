@@ -17,8 +17,7 @@ public static class SafePath
             FileAttributes attributes = File.GetAttributes(path);
             return (attributes & FileAttributes.ReparsePoint) != 0;
         }
-        catch (Exception exception)
-            when (exception is FileNotFoundException or DirectoryNotFoundException)
+        catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return false;
         }
@@ -38,15 +37,10 @@ public static class SafePath
         {
             if (IsReparsePoint(current))
             {
-                throw new IOException(
-                    $"'{current}' is a reparse point; refusing to write through it."
-                );
+                throw new IOException($"'{current}' is a reparse point; refusing to write through it.");
             }
 
-            if (
-                Path.GetPathRoot(current) is string root
-                && root.Equals(current, StringComparison.OrdinalIgnoreCase)
-            )
+            if (Path.GetPathRoot(current) is string root && root.Equals(current, StringComparison.OrdinalIgnoreCase))
             {
                 break;
             }

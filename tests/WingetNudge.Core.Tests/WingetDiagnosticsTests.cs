@@ -5,15 +5,7 @@ namespace WingetNudge.Core.Tests;
 
 public sealed class WingetDiagnosticsTests : IDisposable
 {
-    private static readonly DateTimeOffset AttemptStart = new(
-        2026,
-        9,
-        10,
-        10,
-        47,
-        0,
-        TimeSpan.Zero
-    );
+    private static readonly DateTimeOffset AttemptStart = new(2026, 9, 10, 10, 47, 0, TimeSpan.Zero);
 
     // Winget records only that the installer exited non-zero.
     private const string WingetOwnLog = """
@@ -104,11 +96,7 @@ public sealed class WingetDiagnosticsTests : IDisposable
     [Fact]
     public void Collect_KeepsTheFilesWhenNoLineLooksLikeARefusal()
     {
-        string quiet = Write(
-            "Some.Package-26-09-10.log",
-            "step one done\nstep two done",
-            TimeSpan.FromSeconds(5)
-        );
+        string quiet = Write("Some.Package-26-09-10.log", "step one done\nstep two done", TimeSpan.FromSeconds(5));
 
         WingetDiagnostics found = new WingetDiagnosticsReader(_directory).Collect(AttemptStart);
 
@@ -121,10 +109,7 @@ public sealed class WingetDiagnosticsTests : IDisposable
     {
         string missing = Path.Combine(_directory, "not-there");
 
-        new WingetDiagnosticsReader(missing)
-            .Collect(AttemptStart)
-            .Should()
-            .Be(WingetDiagnostics.None);
+        new WingetDiagnosticsReader(missing).Collect(AttemptStart).Should().Be(WingetDiagnostics.None);
     }
 
     [Fact]

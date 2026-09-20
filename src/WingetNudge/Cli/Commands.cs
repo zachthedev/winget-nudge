@@ -20,9 +20,7 @@ public static class Commands
     /// <returns>The root command.</returns>
     public static RootCommand Build(Action<StartupMode> openWindow)
     {
-        RootCommand root = new(
-            "Checks winget for package upgrades and nudges you with a notification."
-        );
+        RootCommand root = new("Checks winget for package upgrades and nudges you with a notification.");
         root.SetAction(_ => openWindow(new StartupMode.Picker()));
 
         root.Subcommands.Add(BuildPicker(openWindow));
@@ -48,23 +46,9 @@ public static class Commands
 
     private static Command BuildUpgrade(Action<StartupMode> openWindow)
     {
-        Option<string[]> ids = new("--id")
-        {
-            Description = "Package id to upgrade. Repeatable.",
-            Required = true,
-        };
-        Option<string[]> names = new("--name")
-        {
-            Description = "Display name matching each --id, in order.",
-        };
-        Command command = new(
-            Launcher.UpgradeVerb,
-            "Upgrade packages in an elevated progress window."
-        )
-        {
-            ids,
-            names,
-        };
+        Option<string[]> ids = new("--id") { Description = "Package id to upgrade. Repeatable.", Required = true };
+        Option<string[]> names = new("--name") { Description = "Display name matching each --id, in order." };
+        Command command = new(Launcher.UpgradeVerb, "Upgrade packages in an elevated progress window.") { ids, names };
         command.SetAction(result =>
         {
             string[] idValues = result.GetValue(ids) ?? [];
@@ -78,12 +62,7 @@ public static class Commands
                     PackageIdValidator.EnsureName(nameValues[index]);
                 }
 
-                packages.Add(
-                    new PackageRef(
-                        idValues[index],
-                        index < nameValues.Length ? nameValues[index] : ""
-                    )
-                );
+                packages.Add(new PackageRef(idValues[index], index < nameValues.Length ? nameValues[index] : ""));
             }
 
             openWindow(new StartupMode.Upgrade(packages));
@@ -102,10 +81,7 @@ public static class Commands
                 + "announce only what the user has not been told about, and only when the "
                 + "notify-on-new-updates setting is on.",
         };
-        Command command = new(
-            StartupRegistrar.CheckVerb,
-            "Check for upgrades and show a notification when any exist."
-        )
+        Command command = new(StartupRegistrar.CheckVerb, "Check for upgrades and show a notification when any exist.")
         {
             background,
         };
@@ -154,9 +130,7 @@ public static class Commands
                 // A four-hourly check would otherwise announce the same packages all day.
                 if (quiet && !services.Notifications.HasNews(keys))
                 {
-                    AnsiConsole.MarkupLine(
-                        "[grey]\u00B7[/] refreshed, nothing new since the last notice"
-                    );
+                    AnsiConsole.MarkupLine("[grey]\u00B7[/] refreshed, nothing new since the last notice");
                     return 0;
                 }
 
@@ -181,27 +155,18 @@ public static class Commands
 
     private static Command BuildList()
     {
-        Option<bool> everything = new("--all")
-        {
-            Description = "Include packages with no upgrade on offer.",
-        };
+        Option<bool> everything = new("--all") { Description = "Include packages with no upgrade on offer." };
         Option<string?> explain = new("--explain")
         {
             Description = "Dump what the winget COM API reports for one package id.",
         };
-        Command command = new("list", "Print every section the picker would show.")
-        {
-            everything,
-            explain,
-        };
+        Command command = new("list", "Print every section the picker would show.") { everything, explain };
         command.SetAction(
             async (result, cancellationToken) =>
             {
                 if (result.GetValue(explain) is string target)
                 {
-                    IReadOnlyList<string> facts = await AppServices.Current.Winget.ExplainAsync(
-                        target
-                    );
+                    IReadOnlyList<string> facts = await AppServices.Current.Winget.ExplainAsync(target);
                     foreach (string line in facts)
                     {
                         AnsiConsole.WriteLine(line);
@@ -210,9 +175,7 @@ public static class Commands
                     return 0;
                 }
 
-                UpdateCheckResult check = await AppServices.Current.UpdateCheck.RunAsync(
-                    cancellationToken
-                );
+                UpdateCheckResult check = await AppServices.Current.UpdateCheck.RunAsync(cancellationToken);
                 Table table = new Table()
                     .Border(TableBorder.None)
                     .AddColumns("section", "id", "name", "installed", "available", "note");
@@ -222,9 +185,7 @@ public static class Commands
                     Row(table, "ready", candidate, "");
                 }
 
-                foreach (
-                    (UpdateCandidate candidate, CoolingInfo cooling) in check.Partition.Cooling
-                )
+                foreach ((UpdateCandidate candidate, CoolingInfo cooling) in check.Partition.Cooling)
                 {
                     Row(table, "too new", candidate, $"{cooling.RemainingHours}h left");
                 }
@@ -298,10 +259,7 @@ public static class Commands
 
     private static Command BuildUpdateAll()
     {
-        Command command = new(
-            "update-all",
-            "Upgrade every eligible package in an elevated progress window."
-        );
+        Command command = new("update-all", "Upgrade every eligible package in an elevated progress window.");
         command.SetAction(
             async (_, cancellationToken) =>
             {
@@ -349,10 +307,7 @@ public static class Commands
         {
             Description = "Skip the Start Menu shortcut; the installer creates its own.",
         };
-        Command command = new(
-            "register",
-            "Register the notification, Start Menu shortcut and scheduled check."
-        )
+        Command command = new("register", "Register the notification, Start Menu shortcut and scheduled check.")
         {
             noShortcut,
         };
@@ -414,10 +369,7 @@ public static class Commands
         {
             Description = "Leave the Start Menu shortcut; the installer removes its own.",
         };
-        Command command = new(
-            "unregister",
-            "Remove the scheduled check, shortcut and notification registration."
-        )
+        Command command = new("unregister", "Remove the scheduled check, shortcut and notification registration.")
         {
             keepShortcut,
         };
@@ -446,17 +398,14 @@ public static class Commands
             async (_, cancellationToken) =>
             {
                 AppServices services = AppServices.Current;
-                IReadOnlyList<PackageInfo> all = await services.Winget.GetInstalledAsync(
-                    cancellationToken
-                );
+                IReadOnlyList<PackageInfo> all = await services.Winget.GetInstalledAsync(cancellationToken);
                 if (all.Count == 0)
                 {
                     AnsiConsole.MarkupLine("[yellow]![/] no winget-managed packages found");
                     return 1;
                 }
 
-                Dictionary<string, Dictionary<string, VersionObservation>> tracking =
-                    services.Tracker.Reconcile(all);
+                Dictionary<string, Dictionary<string, VersionObservation>> tracking = services.Tracker.Reconcile(all);
                 int versions = tracking.Values.Sum(static entry => entry.Count);
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
@@ -500,10 +449,7 @@ public static class Commands
                 .Border(TableBorder.None)
                 .AddColumns("id", "name", "current command", "latest url");
             foreach (
-                (string id, ToolDefinition definition) in tools.OrderBy(
-                    static pair => pair.Key,
-                    StringComparer.Ordinal
-                )
+                (string id, ToolDefinition definition) in tools.OrderBy(static pair => pair.Key, StringComparer.Ordinal)
             )
             {
                 table.AddRow(
@@ -578,10 +524,7 @@ public static class Commands
                 UpgradeCommand = result.GetValue(upgrade) ?? "",
             };
             AppServices.Current.Tools.Register(toolId, definition);
-            AnsiConsole.MarkupLineInterpolated(
-                CultureInfo.InvariantCulture,
-                $"[green]\u2713[/] registered {toolId}"
-            );
+            AnsiConsole.MarkupLineInterpolated(CultureInfo.InvariantCulture, $"[green]\u2713[/] registered {toolId}");
         });
         return command;
     }
@@ -596,10 +539,7 @@ public static class Commands
             bool removed = AppServices.Current.Tools.Unregister(toolId);
             if (removed)
             {
-                AnsiConsole.MarkupLineInterpolated(
-                    CultureInfo.InvariantCulture,
-                    $"[green]\u2713[/] removed {toolId}"
-                );
+                AnsiConsole.MarkupLineInterpolated(CultureInfo.InvariantCulture, $"[green]\u2713[/] removed {toolId}");
             }
             else
             {
@@ -618,11 +558,7 @@ public static class Commands
     {
         Argument<string> id = new("id") { Description = "Tool identifier." };
         Option<bool> force = new("--force") { Description = "Bypass the latest-version cache." };
-        Command command = new("test", "Run both probes for a tool and report the result.")
-        {
-            id,
-            force,
-        };
+        Command command = new("test", "Run both probes for a tool and report the result.") { id, force };
         command.SetAction(
             async (result, cancellationToken) =>
             {
@@ -638,10 +574,7 @@ public static class Commands
                     return 1;
                 }
 
-                string? currentVersion = await services.ToolProber.GetCurrentAsync(
-                    definition,
-                    cancellationToken
-                );
+                string? currentVersion = await services.ToolProber.GetCurrentAsync(definition, cancellationToken);
                 string? latestVersion = await services.ToolProber.GetLatestAsync(
                     toolId,
                     definition,

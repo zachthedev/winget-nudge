@@ -7,9 +7,7 @@ namespace WingetNudge.Core.Tests.Support;
 
 public sealed class FakeProcessRunner : IProcessRunner
 {
-    private readonly Dictionary<string, ProcessOutput> _outputs = new(
-        StringComparer.OrdinalIgnoreCase
-    );
+    private readonly Dictionary<string, ProcessOutput> _outputs = new(StringComparer.OrdinalIgnoreCase);
 
     public FakeProcessRunner Map(string executable, string output, int exitCode = 0)
     {
@@ -41,8 +39,7 @@ public sealed class FakePackageSource(IReadOnlyList<PackageInfo> packages) : IPa
 public sealed class FakeUpgrader : IPackageUpgrader
 {
     private readonly Dictionary<(string Id, UpgradeMode Mode), UpgradeOutcome> _outcomes = [];
-    private readonly Dictionary<(string Id, UpgradeMode Mode), Queue<UpgradeOutcome>> _sequences =
-    [];
+    private readonly Dictionary<(string Id, UpgradeMode Mode), Queue<UpgradeOutcome>> _sequences = [];
     private readonly Dictionary<string, int> _unavailableAfter = new(StringComparer.Ordinal);
 
     public List<(string Id, UpgradeMode Mode)> Attempts { get; } = [];
@@ -90,10 +87,7 @@ public sealed class FakeUpgrader : IPackageUpgrader
         }
 
         progress?.Report(new UpgradeProgress(UpgradePhase.Installing, 0.5));
-        if (
-            _sequences.TryGetValue((packageId, mode), out Queue<UpgradeOutcome>? queue)
-            && queue.Count > 0
-        )
+        if (_sequences.TryGetValue((packageId, mode), out Queue<UpgradeOutcome>? queue) && queue.Count > 0)
         {
             return Task.FromResult(queue.Count == 1 ? queue.Peek() : queue.Dequeue());
         }
@@ -106,8 +100,7 @@ public sealed class FakeUpgrader : IPackageUpgrader
     }
 }
 
-public sealed class RecordingInteraction(CloseAppsDecision decision = CloseAppsDecision.Close)
-    : IUpgradeInteraction
+public sealed class RecordingInteraction(CloseAppsDecision decision = CloseAppsDecision.Close) : IUpgradeInteraction
 {
     public List<UpgradeEvent> Events { get; } = [];
 
@@ -147,11 +140,7 @@ public sealed class FakeReleaseDates : IReleaseDateResolver
         return this;
     }
 
-    public Task<ResolvedDate?> ResolveAsync(
-        string packageId,
-        string version,
-        CancellationToken cancellationToken
-    )
+    public Task<ResolvedDate?> ResolveAsync(string packageId, string version, CancellationToken cancellationToken)
     {
         string key = $"{packageId}@{version}";
         Requests.Add(key);
@@ -161,23 +150,16 @@ public sealed class FakeReleaseDates : IReleaseDateResolver
 
 public static class Fixture
 {
-    public static PackageInfo Updatable(
-        string id,
-        string installed,
-        string available,
-        string? name = null
-    ) => new(id, name ?? id, installed, available, IsUpdateAvailable: true);
+    public static PackageInfo Updatable(string id, string installed, string available, string? name = null) =>
+        new(id, name ?? id, installed, available, IsUpdateAvailable: true);
 
     public static PackageInfo Current(string id, string installed) =>
         new(id, id, installed, installed, IsUpdateAvailable: false);
 
     public static UpgradeOutcome Ok() => new(true, "Ok", 0, null, false, "");
 
-    public static UpgradeOutcome Fail(
-        string status = "InstallError",
-        uint exit = 1,
-        int? hresult = null
-    ) => new(false, status, exit, hresult, false, "");
+    public static UpgradeOutcome Fail(string status = "InstallError", uint exit = 1, int? hresult = null) =>
+        new(false, status, exit, hresult, false, "");
 }
 
 public sealed class FakeDeElevatedUpgrader(long exitCode) : IDeElevatedUpgrader
@@ -220,9 +202,7 @@ public sealed class FakeCloseSession(ShutdownResult result) : IAppCloseSession
 
 public sealed class FakeBlockingDetector : BlockingProcessDetector
 {
-    private readonly Dictionary<string, Func<BlockingDetection>> _detections = new(
-        StringComparer.Ordinal
-    );
+    private readonly Dictionary<string, Func<BlockingDetection>> _detections = new(StringComparer.Ordinal);
 
     public List<IReadOnlyList<string>> DirectCloses { get; } = [];
 

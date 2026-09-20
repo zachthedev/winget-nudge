@@ -14,11 +14,7 @@ public sealed class WingetPkgsTests
     [InlineData("nodot", "1.0", null)]
     [InlineData("Git.Git", "", null)]
     [InlineData("Git.Git", null, null)]
-    public void ManifestFolder_SplitsThePublisherAndNestsTheRest(
-        string id,
-        string? version,
-        string? expected
-    )
+    public void ManifestFolder_SplitsThePublisherAndNestsTheRest(string id, string? version, string? expected)
     {
         WingetPkgs.ManifestFolder(id, version).Should().Be(expected);
     }
@@ -88,19 +84,10 @@ public sealed class ChangelogFetcherTests
             .ParseManifest(blockYaml)
             .Should()
             .Be(new ManifestNotes("- one\n- two", "https://github.com/git/git/releases"));
-        ChangelogFetcher
-            .ParseManifest("ReleaseNotes: short note\n")
-            .Should()
-            .Be(new ManifestNotes("short note", null));
-        ChangelogFetcher
-            .ParseManifest("PackageIdentifier: X\n")
-            .Should()
-            .Be(new ManifestNotes(null, null));
+        ChangelogFetcher.ParseManifest("ReleaseNotes: short note\n").Should().Be(new ManifestNotes("short note", null));
+        ChangelogFetcher.ParseManifest("PackageIdentifier: X\n").Should().Be(new ManifestNotes(null, null));
         ChangelogFetcher.ParseManifest("key: [unclosed").Should().Be(new ManifestNotes(null, null));
-        ChangelogFetcher
-            .ParseManifest("- a list, not a map")
-            .Should()
-            .Be(new ManifestNotes(null, null));
+        ChangelogFetcher.ParseManifest("- a list, not a map").Should().Be(new ManifestNotes(null, null));
     }
 
     [Theory]
@@ -156,18 +143,9 @@ public sealed class ChangelogFetcherTests
                 "/Git/Git/2.48.1/Git.Git.locale.en-US.yaml",
                 "ReleaseNotesUrl: https://github.com/git/git.git/releases\nReleaseNotes: manifest notes\n"
             )
-            .Map(
-                "/repos/git/git/releases",
-                """[ { "tag_name": "v2.48.1", "body": "from github" } ]"""
-            )
-            .Map(
-                "/Inline/Notes/1.1/Inline.Notes.locale.en-US.yaml",
-                "ReleaseNotes: |-\n  inline only\n"
-            )
-            .Map(
-                "/Url/Only/1.1/Url.Only.locale.en-US.yaml",
-                "ReleaseNotesUrl: https://example.com/notes\n"
-            )
+            .Map("/repos/git/git/releases", """[ { "tag_name": "v2.48.1", "body": "from github" } ]""")
+            .Map("/Inline/Notes/1.1/Inline.Notes.locale.en-US.yaml", "ReleaseNotes: |-\n  inline only\n")
+            .Map("/Url/Only/1.1/Url.Only.locale.en-US.yaml", "ReleaseNotesUrl: https://example.com/notes\n")
             .Map(
                 "/Broken/Api/1.1/Broken.Api.locale.en-US.yaml",
                 "ReleaseNotesUrl: https://github.com/broken/api\nReleaseNotes: manifest fallback\n"
@@ -183,10 +161,7 @@ public sealed class ChangelogFetcherTests
             Fixture.Updatable("Missing.Manifest", "1.0", "1.1"),
         ];
 
-        IReadOnlyDictionary<string, string> notes = await fetcher.FetchAsync(
-            packages,
-            CancellationToken.None
-        );
+        IReadOnlyDictionary<string, string> notes = await fetcher.FetchAsync(packages, CancellationToken.None);
 
         notes
             .Should()
@@ -201,8 +176,7 @@ public sealed class ChangelogFetcherTests
             );
         http.Requests.Should()
             .Contain(
-                static url =>
-                    url.Contains("/repos/git/git/releases?per_page=50", StringComparison.Ordinal),
+                static url => url.Contains("/repos/git/git/releases?per_page=50", StringComparison.Ordinal),
                 "the .git suffix is stripped from the repo name"
             );
     }

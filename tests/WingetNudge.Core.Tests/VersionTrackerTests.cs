@@ -31,10 +31,7 @@ public sealed class VersionTrackerTests : IDisposable
 
         DateTimeOffset seed = Now.AddHours(-(Settings.DefaultCooldownHours + 1));
         tracking["Git.Git"]["2.47.0"].FirstSeen.Should().Be(seed);
-        tracking["Git.Git"]
-            ["2.48.1"]
-            .FirstSeen.Should()
-            .Be(seed, "a first run treats every version as already known");
+        tracking["Git.Git"]["2.48.1"].FirstSeen.Should().Be(seed, "a first run treats every version as already known");
         tracking["VideoLAN.VLC"]["3.0.23"].FirstSeen.Should().Be(seed);
         tracking
             .Values.SelectMany(static v => v.Values)
@@ -63,10 +60,7 @@ public sealed class VersionTrackerTests : IDisposable
     [Fact]
     public void Reconcile_PrunesVersionsAndPackagesNoLongerPresent()
     {
-        _tracker.Reconcile([
-            Fixture.Updatable("Git.Git", "2.47.0", "2.48.1"),
-            Fixture.Current("Gone.Package", "1.0"),
-        ]);
+        _tracker.Reconcile([Fixture.Updatable("Git.Git", "2.47.0", "2.48.1"), Fixture.Current("Gone.Package", "1.0")]);
 
         Dictionary<string, Dictionary<string, VersionObservation>> tracking = _tracker.Reconcile([
             Fixture.Current("Git.Git", "2.48.1"),
@@ -86,11 +80,7 @@ public sealed class VersionTrackerTests : IDisposable
         DateTimeOffset published = Now.AddDays(-2);
         await _tracker.ResolvePublishDatesAsync(
             [Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")],
-            new FakeReleaseDates().Map(
-                "Git.Git",
-                "2.48.1",
-                new ResolvedDate(published, PublishSource.WingetPkgs)
-            ),
+            new FakeReleaseDates().Map("Git.Git", "2.48.1", new ResolvedDate(published, PublishSource.WingetPkgs)),
             CancellationToken.None
         );
         _clock.Advance(TimeSpan.FromHours(5));
@@ -138,11 +128,7 @@ public sealed class VersionTrackerTests : IDisposable
     [InlineData(23.5, true, 1)]
     [InlineData(24, false, 0)]
     [InlineData(48, false, 0)]
-    public void GetCooling_UsesTheDefaultTwentyFourHourWindow(
-        double ageHours,
-        bool cooling,
-        int remaining
-    )
+    public void GetCooling_UsesTheDefaultTwentyFourHourWindow(double ageHours, bool cooling, int remaining)
     {
         _tracker.Reconcile([Fixture.Current("Git.Git", "2.47.0")]);
         _clock.Advance(TimeSpan.FromDays(1));
@@ -178,9 +164,7 @@ public sealed class VersionTrackerTests : IDisposable
         _tracker
             .GetCooling(updatable)
             .Should()
-            .BeEmpty(
-                "the version has been public for five days even though this machine just saw it"
-            );
+            .BeEmpty("the version has been public for five days even though this machine just saw it");
     }
 
     [Fact]
@@ -192,10 +176,7 @@ public sealed class VersionTrackerTests : IDisposable
         _tracker.Reconcile([Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")]);
         _clock.Advance(TimeSpan.FromHours(30));
 
-        _tracker
-            .GetCooling([Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")])
-            .Should()
-            .ContainKey("Git.Git");
+        _tracker.GetCooling([Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")]).Should().ContainKey("Git.Git");
     }
 
     [Fact]

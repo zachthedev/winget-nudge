@@ -139,8 +139,7 @@ public sealed class PickerItem : ISelectableRow
     public Visibility RetryVisibility => Show(RowActions.Retry);
 
     /// <summary>Whether the installer log link is shown.</summary>
-    public Visibility LogVisibility =>
-        LogPath.Length > 0 ? Show(RowActions.ViewLog) : Visibility.Collapsed;
+    public Visibility LogVisibility => LogPath.Length > 0 ? Show(RowActions.ViewLog) : Visibility.Collapsed;
 
     /// <summary>Whether the unpin hint is shown.</summary>
     public Visibility UnpinVisibility => Show(RowActions.UnpinHint);
@@ -148,8 +147,7 @@ public sealed class PickerItem : ISelectableRow
     /// <summary>Command that removes the winget pin, for the hint's tooltip.</summary>
     public string UnpinHint => $"Remove the pin with: winget pin remove {Ref.Id}";
 
-    private Visibility Show(RowActions action) =>
-        Actions.HasFlag(action) ? Visibility.Visible : Visibility.Collapsed;
+    private Visibility Show(RowActions action) => Actions.HasFlag(action) ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>
     /// Display name of the entry winget matched in Apps and Features, when it differs from the
@@ -158,8 +156,7 @@ public sealed class PickerItem : ISelectableRow
     public string InstalledName => _candidate.Package.InstalledName ?? "";
 
     /// <summary>Whether the installed entry is worth naming.</summary>
-    public Visibility InstalledNameVisibility =>
-        InstalledName.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility InstalledNameVisibility => InstalledName.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -233,8 +230,7 @@ public sealed class PickerItem : ISelectableRow
     public Visibility NoteVisibility => Note.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>Whether the note carries a glyph of its own.</summary>
-    public Visibility NoteGlyphVisibility =>
-        NoteGlyph.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility NoteGlyphVisibility => NoteGlyph.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>Age and note in words, for the checkbox tooltip and its accessible help text.</summary>
     public string Caption => Note.Length > 0 ? $"{Age}, {Note}" : Age;
@@ -423,8 +419,7 @@ public sealed class PickerItem : ISelectableRow
 /// </summary>
 /// <param name="status">Probe result with the tool's definition.</param>
 /// <param name="reportError">Receives the reason a run could not start.</param>
-public sealed class ToolItem(Core.Tools.ToolStatus status, Action<string> reportError)
-    : ISelectableRow
+public sealed class ToolItem(Core.Tools.ToolStatus status, Action<string> reportError) : ISelectableRow
 {
     /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -506,14 +501,8 @@ public sealed class ToolItem(Core.Tools.ToolStatus status, Action<string> report
 /// </param>
 /// <param name="VersionWidth">Width of the version transition bar.</param>
 /// <param name="CaptionWidth">Width of the age bar.</param>
-public sealed record SkeletonRow(
-    double NameWidth,
-    double SubtitleWidth,
-    double VersionWidth,
-    double CaptionWidth
-)
+public sealed record SkeletonRow(double NameWidth, double SubtitleWidth, double VersionWidth, double CaptionWidth)
 {
     /// <summary>Whether this row draws an installed-name line.</summary>
-    public Visibility SubtitleVisibility =>
-        SubtitleWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SubtitleVisibility => SubtitleWidth > 0 ? Visibility.Visible : Visibility.Collapsed;
 }

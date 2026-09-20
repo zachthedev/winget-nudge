@@ -12,7 +12,7 @@ on:
   # Weekly, so a query published after the last change to this repository still reports against
   # this tree. Thursday, clear of ci.yml's Monday cron and of dependency-updates.yml's daily one.
   schedule:
-    - cron: "37 9 * * 4"
+    - cron: '37 9 * * 4'
 
 # No job gets a permission it does not name for itself.
 permissions: {}
@@ -82,4 +82,4 @@ jobs:
       # The category is what keeps one language's results from replacing the other's.
       - uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
-          category: "/language:${{ matrix.language }}"
+          category: '/language:${{ matrix.language }}'

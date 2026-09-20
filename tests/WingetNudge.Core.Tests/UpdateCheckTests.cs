@@ -30,14 +30,7 @@ public sealed class UpdateCheckTests : IDisposable
         ToolRegistry registry = new(_data.Paths);
         using HttpClient http = new FakeHttpHandler().CreateClient();
         ToolProber prober = new(registry, new FakeProcessRunner(), http, _clock);
-        return new UpdateCheck(
-            new FakePackageSource(inventory),
-            _preferences,
-            _tracker,
-            _releaseDates,
-            prober,
-            _clock
-        );
+        return new UpdateCheck(new FakePackageSource(inventory), _preferences, _tracker, _releaseDates, prober, _clock);
     }
 
     [Fact]
@@ -86,19 +79,12 @@ public sealed class UpdateCheckTests : IDisposable
         {
             ["Tracked.App"] = new Dictionary<string, VersionObservation>
             {
-                ["2.0"] = new VersionObservation(
-                    Now.AddHours(-1),
-                    Now.AddDays(-3),
-                    PublishSource.Manifest
-                ),
+                ["2.0"] = new VersionObservation(Now.AddHours(-1), Now.AddDays(-3), PublishSource.Manifest),
             },
         };
 
         PackagePartition partition = PackagePartition.Build(
-            [
-                Fixture.Updatable("Tracked.App", "1.0", "2.0"),
-                Fixture.Updatable("Untracked.App", "1.0", "2.0"),
-            ],
+            [Fixture.Updatable("Tracked.App", "1.0", "2.0"), Fixture.Updatable("Untracked.App", "1.0", "2.0")],
             Snapshot(),
             new Dictionary<string, CoolingInfo>(),
             tracking,
@@ -124,11 +110,7 @@ public sealed class UpdateCheckTests : IDisposable
     {
         _preferences.SkipVersion("Git.Git", "2.48.0");
         _preferences.SkipVersion("Bun.Bun", "1.4");
-        _releaseDates.Map(
-            "Git.Git",
-            "2.48.1",
-            new ResolvedDate(Now.AddDays(-2), PublishSource.WingetPkgs)
-        );
+        _releaseDates.Map("Git.Git", "2.48.1", new ResolvedDate(Now.AddDays(-2), PublishSource.WingetPkgs));
         UpdateCheck check = Build(
             Fixture.Updatable("Git.Git", "2.47.0", "2.48.1", "Git"),
             Fixture.Updatable("Bun.Bun", "1.3", "1.4", "Bun"),
@@ -183,15 +165,10 @@ public sealed class UpdateCheckTests : IDisposable
         UpdateCheckResult result = await check.RunAsync(CancellationToken.None);
 
         result.Partition.Normal.Should().BeEmpty();
-        result
-            .Partition.Cooling.Should()
-            .ContainSingle()
-            .Which.Cooling.RemainingHours.Should()
-            .Be(21);
+        result.Partition.Cooling.Should().ContainSingle().Which.Cooling.RemainingHours.Should().Be(21);
         result.Names.Should().BeEmpty();
     }
 
-    private static PreferenceSnapshot Snapshot(
-        params (string Id, PreferenceEntry Entry)[] entries
-    ) => new(entries.ToDictionary(static e => e.Id, static e => e.Entry, StringComparer.Ordinal));
+    private static PreferenceSnapshot Snapshot(params (string Id, PreferenceEntry Entry)[] entries) =>
+        new(entries.ToDictionary(static e => e.Id, static e => e.Entry, StringComparer.Ordinal));
 }

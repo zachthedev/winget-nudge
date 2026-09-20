@@ -7,12 +7,7 @@ namespace WingetNudge.Core.Tests.Support;
 /// <param name="Description">The one line the task says about itself.</param>
 /// <param name="Checks">Whether the task performs a check of its own, which a .Does call is.</param>
 /// <param name="DependsOn">The tasks it runs after, in declaration order.</param>
-public sealed record GateTask(
-    string Name,
-    string Description,
-    bool Checks,
-    IReadOnlyList<string> DependsOn
-);
+public sealed record GateTask(string Name, string Description, bool Checks, IReadOnlyList<string> DependsOn);
 
 /// <summary>The checks one target reaches.</summary>
 /// <param name="Names">Each task that performs a check, in the order the script declares them.</param>
@@ -29,11 +24,7 @@ public sealed partial class GateScript
 {
     private readonly Dictionary<string, GateTask> _byName;
 
-    private GateScript(
-        string defaultTarget,
-        IReadOnlyList<GateTask> tasks,
-        IReadOnlyList<string> diagnostics
-    )
+    private GateScript(string defaultTarget, IReadOnlyList<GateTask> tasks, IReadOnlyList<string> diagnostics)
     {
         DefaultTarget = defaultTarget;
         Tasks = tasks;
@@ -59,9 +50,7 @@ public sealed partial class GateScript
         Match target = DefaultTargetPattern().Match(source);
         if (!target.Success)
         {
-            diagnostics.Add(
-                "The build script names no default target: it makes no Argument(\"target\", ...) call."
-            );
+            diagnostics.Add("The build script names no default target: it makes no Argument(\"target\", ...) call.");
         }
 
         List<GateTask> tasks = [];
@@ -148,8 +137,7 @@ public sealed partial class GateScript
     [GeneratedRegex("""Argument\(\s*"target"\s*,\s*"([^"]*)"\s*\)""")]
     private static partial Regex DefaultTargetPattern();
 
-    private static string Diagnostic(int offset, string message) =>
-        $"The build script at offset {offset}: {message}";
+    private static string Diagnostic(int offset, string message) => $"The build script at offset {offset}: {message}";
 
     private static GateTask? ReadTask(string source, int offset, List<string> diagnostics)
     {
@@ -178,21 +166,13 @@ public sealed partial class GateScript
 
             if (source[index] != '.')
             {
-                diagnostics.Add(
-                    Diagnostic(
-                        index,
-                        $"{name} is followed by neither a chained call nor a semicolon."
-                    )
-                );
+                diagnostics.Add(Diagnostic(index, $"{name} is followed by neither a chained call nor a semicolon."));
                 return null;
             }
 
             int callStart = SourceText.SkipTrivia(source, index + 1);
             int callEnd = callStart;
-            while (
-                callEnd < source.Length
-                && (char.IsLetterOrDigit(source[callEnd]) || source[callEnd] == '_')
-            )
+            while (callEnd < source.Length && (char.IsLetterOrDigit(source[callEnd]) || source[callEnd] == '_'))
             {
                 callEnd++;
             }
@@ -200,9 +180,7 @@ public sealed partial class GateScript
             int open = SourceText.SkipTrivia(source, callEnd);
             if (open >= source.Length || source[open] != '(')
             {
-                diagnostics.Add(
-                    Diagnostic(callStart, $"{name} chains something that is not a call.")
-                );
+                diagnostics.Add(Diagnostic(callStart, $"{name} chains something that is not a call."));
                 return null;
             }
 
@@ -210,15 +188,7 @@ public sealed partial class GateScript
             {
                 case "Description":
                     index = open + 1;
-                    if (
-                        !ReadArgument(
-                            source,
-                            ref index,
-                            $"the description of {name}",
-                            diagnostics,
-                            out string value
-                        )
-                    )
+                    if (!ReadArgument(source, ref index, $"the description of {name}", diagnostics, out string value))
                     {
                         return null;
                     }
@@ -227,15 +197,7 @@ public sealed partial class GateScript
                     break;
                 case "IsDependentOn":
                     index = open + 1;
-                    if (
-                        !ReadArgument(
-                            source,
-                            ref index,
-                            $"a dependency of {name}",
-                            diagnostics,
-                            out string dependency
-                        )
-                    )
+                    if (!ReadArgument(source, ref index, $"a dependency of {name}", diagnostics, out string dependency))
                     {
                         return null;
                     }
@@ -277,10 +239,7 @@ public sealed partial class GateScript
         value = "";
         int start = SourceText.SkipTrivia(source, index);
         bool raw =
-            start + 2 < source.Length
-            && source[start] == '"'
-            && source[start + 1] == '"'
-            && source[start + 2] == '"';
+            start + 2 < source.Length && source[start] == '"' && source[start + 1] == '"' && source[start + 2] == '"';
         if (start >= source.Length || source[start] != '"' || raw)
         {
             diagnostics.Add(Diagnostic(start, $"{subject} is not a plain string literal."));
@@ -310,10 +269,7 @@ public sealed record GateTableRow(string Task, string Cell, int Line);
 /// <summary>The gate table of a document.</summary>
 /// <param name="Rows">Each row, in the order the document lists them.</param>
 /// <param name="Diagnostics">What the reader could not take.</param>
-public sealed partial record GateTable(
-    IReadOnlyList<GateTableRow> Rows,
-    IReadOnlyList<string> Diagnostics
-)
+public sealed partial record GateTable(IReadOnlyList<GateTableRow> Rows, IReadOnlyList<string> Diagnostics)
 {
     /// <summary>Reads the first table under a heading.</summary>
     /// <remarks>
@@ -332,11 +288,7 @@ public sealed partial record GateTable(
             return new GateTable([], [$"The document holds no {heading} heading."]);
         }
 
-        int end = Array.FindIndex(
-            lines,
-            start + 1,
-            line => line.StartsWith("## ", StringComparison.Ordinal)
-        );
+        int end = Array.FindIndex(lines, start + 1, line => line.StartsWith("## ", StringComparison.Ordinal));
         end = end < 0 ? lines.Length : end;
 
         int first = Array.FindIndex(lines, start, end - start, line => line.StartsWith('|'));
@@ -367,9 +319,7 @@ public sealed partial record GateTable(
                 continue;
             }
 
-            diagnostics.Add(
-                $"Line {index + 1} of the document is a table row naming no task in backticks."
-            );
+            diagnostics.Add($"Line {index + 1} of the document is a table row naming no task in backticks.");
         }
 
         return new GateTable(rows, diagnostics);
@@ -420,23 +370,17 @@ public static partial class GateDocumentation
             GateTask? declared = gate.Tasks.FirstOrDefault(task => task.Name == row.Task);
             if (declared is null)
             {
-                mismatches.Add(
-                    $"The table has a row for {row.Task}, and the build script declares no such task."
-                );
+                mismatches.Add($"The table has a row for {row.Task}, and the build script declares no such task.");
                 continue;
             }
 
             if (!declared.Checks)
             {
-                mismatches.Add(
-                    $"The table has a row for {row.Task}, which runs no check of its own."
-                );
+                mismatches.Add($"The table has a row for {row.Task}, which runs no check of its own.");
             }
             else if (!checks.Names.Contains(row.Task))
             {
-                mismatches.Add(
-                    $"The table has a row for {row.Task}, which the default target never reaches."
-                );
+                mismatches.Add($"The table has a row for {row.Task}, which the default target never reaches.");
             }
 
             if (Normalize(row.Cell) != Normalize(declared.Description))

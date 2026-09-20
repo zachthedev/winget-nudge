@@ -21,12 +21,7 @@
             />
             <ProgressBar Grid.Row="1" x:Name="PhaseBar" IsIndeterminate="True" Margin="0,8,0,16" />
 
-            <ListView
-                Grid.Row="2"
-                x:Name="PackageList"
-                SelectionMode="None"
-                IsItemClickEnabled="False"
-            >
+            <ListView Grid.Row="2" x:Name="PackageList" SelectionMode="None" IsItemClickEnabled="False">
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem">
                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -55,10 +50,7 @@
                                     Margin="0,3,0,0"
                                 />
                                 <StackPanel Grid.Column="1" Spacing="4">
-                                    <TextBlock
-                                        Text="{x:Bind Name}"
-                                        Style="{StaticResource BodyStrongTextBlockStyle}"
-                                    />
+                                    <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
                                     <TextBlock
                                         Text="{x:Bind Id}"
                                         Style="{StaticResource CaptionTextBlockStyle}"

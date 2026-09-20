@@ -66,14 +66,7 @@ public sealed class RunLock : IDisposable
             SafePath.EnsureNotReparsePoint(paths.Directory);
 
             return new RunLockAttempt.Taken(
-                new RunLock(
-                    new FileStream(
-                        file,
-                        FileMode.OpenOrCreate,
-                        FileAccess.ReadWrite,
-                        FileShare.None
-                    )
-                )
+                new RunLock(new FileStream(file, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
             );
         }
         catch (IOException exception) when (exception.HResult is SharingViolation or LockViolation)
@@ -89,9 +82,7 @@ public sealed class RunLock : IDisposable
                         or System.Security.SecurityException
             )
         {
-            return new RunLockAttempt.Unavailable(
-                $"the run lock {file} cannot be opened: {exception.Message}"
-            );
+            return new RunLockAttempt.Unavailable($"the run lock {file} cannot be opened: {exception.Message}");
         }
     }
 

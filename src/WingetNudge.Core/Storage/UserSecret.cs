@@ -31,9 +31,7 @@ public static unsafe class UserSecret
 
             try
             {
-                return Convert.ToBase64String(
-                    new ReadOnlySpan<byte>(output.pbData, (int)output.cbData)
-                );
+                return Convert.ToBase64String(new ReadOnlySpan<byte>(output.pbData, (int)output.cbData));
             }
             finally
             {
@@ -68,9 +66,7 @@ public static unsafe class UserSecret
 
             try
             {
-                return Encoding.UTF8.GetString(
-                    new ReadOnlySpan<byte>(output.pbData, (int)output.cbData)
-                );
+                return Encoding.UTF8.GetString(new ReadOnlySpan<byte>(output.pbData, (int)output.cbData));
             }
             finally
             {

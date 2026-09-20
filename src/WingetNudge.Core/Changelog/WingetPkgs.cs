@@ -3,8 +3,7 @@ namespace WingetNudge.Core.Changelog;
 /// <summary>Paths into the microsoft/winget-pkgs repository.</summary>
 public static class WingetPkgs
 {
-    private const string RawRoot =
-        "https://raw.githubusercontent.com/microsoft/winget-pkgs/master/";
+    private const string RawRoot = "https://raw.githubusercontent.com/microsoft/winget-pkgs/master/";
 
     /// <summary>Repository-relative folder holding one version's manifests.</summary>
     /// <param name="packageId">Winget package id, for example <c>Git.Git</c>.</param>
@@ -25,10 +24,7 @@ public static class WingetPkgs
 
         string letter = Uri.EscapeDataString(char.ToLowerInvariant(packageId[0]).ToString());
         string publisher = Uri.EscapeDataString(packageId[..dot]);
-        string rest = string.Join(
-            '/',
-            packageId[(dot + 1)..].Split('.').Select(Uri.EscapeDataString)
-        );
+        string rest = string.Join('/', packageId[(dot + 1)..].Split('.').Select(Uri.EscapeDataString));
         return $"manifests/{letter}/{publisher}/{rest}/{Uri.EscapeDataString(version)}";
     }
 

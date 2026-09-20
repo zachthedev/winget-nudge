@@ -9,11 +9,7 @@ public sealed class FakeHttpHandler : HttpMessageHandler
 
     public List<string> Requests { get; } = [];
 
-    public FakeHttpHandler Map(
-        string urlFragment,
-        string body,
-        HttpStatusCode status = HttpStatusCode.OK
-    )
+    public FakeHttpHandler Map(string urlFragment, string body, HttpStatusCode status = HttpStatusCode.OK)
     {
         _routes.Add((urlFragment, status, body));
         return this;
@@ -32,14 +28,10 @@ public sealed class FakeHttpHandler : HttpMessageHandler
         {
             if (url.Contains(fragment, StringComparison.Ordinal))
             {
-                return Task.FromResult(
-                    new HttpResponseMessage(status) { Content = new StringContent(body) }
-                );
+                return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
             }
         }
 
-        return Task.FromResult(
-            new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("") }
-        );
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("") });
     }
 }

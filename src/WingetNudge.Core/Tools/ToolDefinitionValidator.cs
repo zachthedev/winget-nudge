@@ -32,9 +32,7 @@ public static class ToolDefinitionValidator
 
         try
         {
-            return new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1))
-                    .GetGroupNumbers()
-                    .Length >= 2;
+            return new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1)).GetGroupNumbers().Length >= 2;
         }
         catch (ArgumentException)
         {
@@ -69,16 +67,12 @@ public static class ToolDefinitionValidator
 
         if (!IsValidRegex(tool.CurrentRegex))
         {
-            throw new ArgumentException(
-                "Current-version regex must compile and have one capture group."
-            );
+            throw new ArgumentException("Current-version regex must compile and have one capture group.");
         }
 
         if (!IsValidRegex(tool.LatestRegex))
         {
-            throw new ArgumentException(
-                "Latest-version regex must compile and have one capture group."
-            );
+            throw new ArgumentException("Latest-version regex must compile and have one capture group.");
         }
 
         if (string.IsNullOrWhiteSpace(tool.UpgradeCommand))

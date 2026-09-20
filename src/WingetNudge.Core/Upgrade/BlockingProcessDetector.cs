@@ -23,9 +23,7 @@ public class BlockingProcessDetector
 {
     private readonly Dictionary<string, PackageRef> _packages = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string?> _directories = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, IReadOnlyList<string>> _executables = new(
-        StringComparer.Ordinal
-    );
+    private readonly Dictionary<string, IReadOnlyList<string>> _executables = new(StringComparer.Ordinal);
     private Func<InstallLocationIndex>? _buildIndex;
     private InstallLocationIndex? _index;
     private List<(string Path, string Name)> _snapshot = [];
@@ -66,10 +64,7 @@ public class BlockingProcessDetector
             IReadOnlyList<BlockingProcess> blocked = session.GetBlockingProcesses();
             if (blocked.Count > 0)
             {
-                return new BlockingDetection(
-                    blocked.Select(static process => process.Name).ToArray(),
-                    session
-                );
+                return new BlockingDetection(blocked.Select(static process => process.Name).ToArray(), session);
             }
 
             session.Dispose();
@@ -134,10 +129,7 @@ public class BlockingProcessDetector
                         _ = process.WaitForExit(TimeSpan.FromSeconds(5));
                     }
                     catch (Exception exception)
-                        when (exception
-                                is InvalidOperationException
-                                    or System.ComponentModel.Win32Exception
-                        )
+                        when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
                     {
                         // Already gone, or a service this account may not kill.
                     }
@@ -219,10 +211,7 @@ public class BlockingProcessDetector
                     }
                 }
                 catch (Exception exception)
-                    when (exception
-                            is InvalidOperationException
-                                or System.ComponentModel.Win32Exception
-                    )
+                    when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
                 {
                     // Protected or exited process; no path to match.
                 }

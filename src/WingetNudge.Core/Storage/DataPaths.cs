@@ -9,12 +9,7 @@ public sealed record DataPaths(string Directory)
 
     /// <summary>Paths rooted at <c>%LOCALAPPDATA%\WingetNudge</c>.</summary>
     public static DataPaths Default { get; } =
-        new(
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                AppFolderName
-            )
-        );
+        new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppFolderName));
 
     /// <summary>Muted and failed package states.</summary>
     public string Preferences => Path.Combine(Directory, "preferences.json");

@@ -20,16 +20,12 @@ public sealed class WingetClient : IPackageSource, IPackageUpgrader
     }
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<PackageInfo>> GetInstalledAsync(
-        CancellationToken cancellationToken
-    ) =>
+    public Task<IReadOnlyList<PackageInfo>> GetInstalledAsync(CancellationToken cancellationToken) =>
         Task.Run(
             () =>
             {
                 PackageCatalog catalog = ConnectComposite();
-                FindPackagesResult found = catalog.FindPackages(
-                    WingetActivation.CreateFindPackagesOptions()
-                );
+                FindPackagesResult found = catalog.FindPackages(WingetActivation.CreateFindPackagesOptions());
                 if (found.Status != FindPackagesResultStatus.Ok)
                 {
                     throw new InvalidOperationException($"winget search failed: {found.Status}");
@@ -50,9 +46,7 @@ public sealed class WingetClient : IPackageSource, IPackageUpgrader
                     }
 
                     string? available =
-                        package.AvailableVersions.Count > 0
-                            ? package.AvailableVersions[0].Version
-                            : null;
+                        package.AvailableVersions.Count > 0 ? package.AvailableVersions[0].Version : null;
                     string? installedName = package.InstalledVersion?.DisplayName;
                     packages.Add(
                         new PackageInfo(
@@ -89,8 +83,7 @@ public sealed class WingetClient : IPackageSource, IPackageUpgrader
     )
     {
         PackageIdValidator.Ensure(packageId);
-        CatalogPackage? package = await Task.Run(() => FindById(packageId), cancellationToken)
-            .ConfigureAwait(false);
+        CatalogPackage? package = await Task.Run(() => FindById(packageId), cancellationToken).ConfigureAwait(false);
         if (package is null)
         {
             return UpgradeOutcome.Failed("package not found");
@@ -100,13 +93,13 @@ public sealed class WingetClient : IPackageSource, IPackageUpgrader
         options.AcceptPackageAgreements = true;
         options.PackageInstallScope = PackageInstallScope.Any;
         options.PackageInstallMode =
-            mode == UpgradeMode.Interactive
-                ? PackageInstallMode.Interactive
-                : PackageInstallMode.Silent;
+            mode == UpgradeMode.Interactive ? PackageInstallMode.Interactive : PackageInstallMode.Silent;
         options.Force = mode == UpgradeMode.Force;
 
-        IAsyncOperationWithProgress<InstallResult, InstallProgress> operation =
-            Manager.UpgradePackageAsync(package, options);
+        IAsyncOperationWithProgress<InstallResult, InstallProgress> operation = Manager.UpgradePackageAsync(
+            package,
+            options
+        );
         if (progress is not null)
         {
             operation.Progress = (_, snapshot) => progress.Report(Map(snapshot));
@@ -136,10 +129,7 @@ public sealed class WingetClient : IPackageSource, IPackageUpgrader
                 UpgradePhase.Installing,
                 snapshot.InstallationProgress
             ),
-            PackageInstallProgressState.PostInstall => new UpgradeProgress(
-                UpgradePhase.Finishing,
-                null
-            ),
+            PackageInstallProgressState.PostInstall => new UpgradeProgress(UpgradePhase.Finishing, null),
             PackageInstallProgressState.Finished => new UpgradeProgress(UpgradePhase.Finishing, 1),
             _ => new UpgradeProgress(UpgradePhase.Queued, null),
         };
@@ -166,9 +156,7 @@ public sealed class WingetClient : IPackageSource, IPackageUpgrader
         Task.Run<IReadOnlyList<string>>(() =>
         {
             PackageCatalog catalog = ConnectComposite();
-            FindPackagesResult found = catalog.FindPackages(
-                WingetActivation.CreateFindPackagesOptions()
-            );
+            FindPackagesResult found = catalog.FindPackages(WingetActivation.CreateFindPackagesOptions());
             IReadOnlyList<MatchResult> matches = found.Matches;
             for (int index = 0; index < matches.Count; index++)
             {
@@ -205,16 +193,12 @@ public sealed class WingetClient : IPackageSource, IPackageUpgrader
     {
         CreateCompositePackageCatalogOptions options = WingetActivation.CreateCompositeOptions();
         options.CompositeSearchBehavior = CompositeSearchBehavior.LocalCatalogs;
-        options.Catalogs.Add(
-            Manager.GetPredefinedPackageCatalog(PredefinedPackageCatalog.OpenWindowsCatalog)
-        );
+        options.Catalogs.Add(Manager.GetPredefinedPackageCatalog(PredefinedPackageCatalog.OpenWindowsCatalog));
         PackageCatalogReference reference = Manager.CreateCompositePackageCatalog(options);
         ConnectResult connection = reference.Connect();
         if (connection.Status != ConnectResultStatus.Ok)
         {
-            throw new InvalidOperationException(
-                $"winget catalog connect failed: {connection.Status}"
-            );
+            throw new InvalidOperationException($"winget catalog connect failed: {connection.Status}");
         }
 
         return connection.PackageCatalog;

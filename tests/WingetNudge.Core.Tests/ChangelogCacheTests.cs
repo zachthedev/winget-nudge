@@ -19,8 +19,7 @@ public sealed class ChangelogCacheTests : IDisposable
     private ChangelogCache Build(int maxEntries = ChangelogCache.DefaultMaxEntries) =>
         new(_data.Paths, _clock, maxEntries);
 
-    private static void Put(ChangelogCache cache, PackageInfo package, string notes) =>
-        cache.Store([(package, notes)]);
+    private static void Put(ChangelogCache cache, PackageInfo package, string notes) => cache.Store([(package, notes)]);
 
     // ///// Keys /////
 
@@ -62,9 +61,7 @@ public sealed class ChangelogCacheTests : IDisposable
         Put(Build(), unversioned, "notes");
 
         Build().Get(unversioned).Should().BeNull();
-        File.Exists(_data.Paths.ChangelogCache)
-            .Should()
-            .BeFalse("an entry with no key is not worth a file");
+        File.Exists(_data.Paths.ChangelogCache).Should().BeFalse("an entry with no key is not worth a file");
     }
 
     // ///// Persistence /////
@@ -130,10 +127,10 @@ public sealed class ChangelogCacheTests : IDisposable
         FakeHttpHandler handler = new();
         using HttpClient http = handler.CreateClient();
 
-        IReadOnlyDictionary<string, string> notes = await new ChangelogFetcher(
-            http,
-            cache
-        ).FetchAsync([Git], TestContext.Current.CancellationToken);
+        IReadOnlyDictionary<string, string> notes = await new ChangelogFetcher(http, cache).FetchAsync(
+            [Git],
+            TestContext.Current.CancellationToken
+        );
 
         notes.Should().ContainKey("Git.Git").WhoseValue.Should().Be("cached notes");
         handler.Requests.Should().BeEmpty("a cached range never goes back to the network");
@@ -143,20 +140,11 @@ public sealed class ChangelogCacheTests : IDisposable
     public async Task FetchAsync_CachesALookupThatFullySucceeded()
     {
         FakeHttpHandler handler = new FakeHttpHandler()
-            .Map(
-                "/Git/Git/2.48.1/Git.Git.locale.en-US.yaml",
-                "ReleaseNotesUrl: https://github.com/git/git/releases\n"
-            )
-            .Map(
-                "/repos/git/git/releases",
-                """[ { "tag_name": "v2.48.1", "body": "real notes" } ]"""
-            );
+            .Map("/Git/Git/2.48.1/Git.Git.locale.en-US.yaml", "ReleaseNotesUrl: https://github.com/git/git/releases\n")
+            .Map("/repos/git/git/releases", """[ { "tag_name": "v2.48.1", "body": "real notes" } ]""");
         using HttpClient http = handler.CreateClient();
 
-        await new ChangelogFetcher(http, Build()).FetchAsync(
-            [Git],
-            TestContext.Current.CancellationToken
-        );
+        await new ChangelogFetcher(http, Build()).FetchAsync([Git], TestContext.Current.CancellationToken);
 
         Build().Get(Git).Should().Contain("real notes");
     }
@@ -171,29 +159,23 @@ public sealed class ChangelogCacheTests : IDisposable
         );
         using HttpClient failingHttp = failing.CreateClient();
 
-        IReadOnlyDictionary<string, string> first = await new ChangelogFetcher(
-            failingHttp,
-            Build()
-        ).FetchAsync([Git], TestContext.Current.CancellationToken);
+        IReadOnlyDictionary<string, string> first = await new ChangelogFetcher(failingHttp, Build()).FetchAsync(
+            [Git],
+            TestContext.Current.CancellationToken
+        );
 
         first["Git.Git"].Should().Be("changelog: https://github.com/git/git/releases");
         Build().Get(Git).Should().BeNull("a partial lookup must not stand in for the real notes");
 
         FakeHttpHandler healthy = new FakeHttpHandler()
-            .Map(
-                "/Git/Git/2.48.1/Git.Git.locale.en-US.yaml",
-                "ReleaseNotesUrl: https://github.com/git/git/releases\n"
-            )
-            .Map(
-                "/repos/git/git/releases",
-                """[ { "tag_name": "v2.48.1", "body": "real notes" } ]"""
-            );
+            .Map("/Git/Git/2.48.1/Git.Git.locale.en-US.yaml", "ReleaseNotesUrl: https://github.com/git/git/releases\n")
+            .Map("/repos/git/git/releases", """[ { "tag_name": "v2.48.1", "body": "real notes" } ]""");
         using HttpClient healthyHttp = healthy.CreateClient();
 
-        IReadOnlyDictionary<string, string> second = await new ChangelogFetcher(
-            healthyHttp,
-            Build()
-        ).FetchAsync([Git], TestContext.Current.CancellationToken);
+        IReadOnlyDictionary<string, string> second = await new ChangelogFetcher(healthyHttp, Build()).FetchAsync(
+            [Git],
+            TestContext.Current.CancellationToken
+        );
 
         second["Git.Git"].Should().Contain("real notes");
     }

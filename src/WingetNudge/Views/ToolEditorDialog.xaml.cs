@@ -59,8 +59,7 @@ public sealed partial class ToolEditorDialog : ContentDialog
             UpgradeCommand = UpgradeCommandBox.Text.Trim(),
         };
 
-    private static string? Empty(string value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? Empty(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private void Report(InfoBarSeverity severity, string message)
     {
@@ -97,14 +96,11 @@ public sealed partial class ToolEditorDialog : ContentDialog
                 CancellationToken.None
             );
             Report(
-                current is null || latest is null
-                    ? InfoBarSeverity.Warning
-                    : InfoBarSeverity.Success,
+                current is null || latest is null ? InfoBarSeverity.Warning : InfoBarSeverity.Success,
                 $"Installed: {current ?? "not found"}   Latest: {latest ?? "not found"}"
             );
         }
-        catch (Exception exception)
-            when (exception is HttpRequestException or IOException or TaskCanceledException)
+        catch (Exception exception) when (exception is HttpRequestException or IOException or TaskCanceledException)
         {
             Report(InfoBarSeverity.Error, $"Probe failed: {exception.Message}");
         }
@@ -116,10 +112,7 @@ public sealed partial class ToolEditorDialog : ContentDialog
         if (!ToolRegistry.IsValidId(id))
         {
             args.Cancel = true;
-            Report(
-                InfoBarSeverity.Error,
-                "The id may hold only letters, digits, dot, dash and underscore."
-            );
+            Report(InfoBarSeverity.Error, "The id may hold only letters, digits, dot, dash and underscore.");
             return;
         }
 
@@ -130,8 +123,7 @@ public sealed partial class ToolEditorDialog : ContentDialog
             AppServices.Current.Tools.Register(id, definition);
             SavedId = id;
         }
-        catch (Exception exception)
-            when (exception is ArgumentException or IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
         {
             args.Cancel = true;
             Report(InfoBarSeverity.Error, exception.Message);

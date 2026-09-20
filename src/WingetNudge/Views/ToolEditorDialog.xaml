@@ -20,11 +20,7 @@
             />
             <TextBox x:Name="NameBox" MaxLength="128" Header="Display name" PlaceholderText="uv" />
 
-            <TextBlock
-                Text="Installed version"
-                Style="{StaticResource BodyStrongTextBlockStyle}"
-                Margin="0,8,0,0"
-            />
+            <TextBlock Text="Installed version" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
             <TextBox
                 x:Name="CurrentCommandBox"
                 MaxLength="512"
@@ -40,11 +36,7 @@
                 Description="One capture group. Leave empty when the whole output is the version."
             />
 
-            <TextBlock
-                Text="Latest version"
-                Style="{StaticResource BodyStrongTextBlockStyle}"
-                Margin="0,8,0,0"
-            />
+            <TextBlock Text="Latest version" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
             <TextBox
                 x:Name="LatestUrlBox"
                 MaxLength="2048"
@@ -65,11 +57,7 @@
                 Description="One capture group, for tags written like v1.2.3."
             />
 
-            <TextBlock
-                Text="Upgrading"
-                Style="{StaticResource BodyStrongTextBlockStyle}"
-                Margin="0,8,0,0"
-            />
+            <TextBlock Text="Upgrading" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
             <TextBox
                 x:Name="UpgradeCommandBox"
                 MaxLength="512"

@@ -22,10 +22,7 @@ public sealed class ReleaseDateResolverTests
             .Should()
             .Be(new DateTimeOffset(2026, 9, 1, 8, 30, 0, TimeSpan.Zero));
         GitHubReleaseDateResolver.ParseOldestCommitDate("[]").Should().BeNull();
-        GitHubReleaseDateResolver
-            .ParseOldestCommitDate("""{ "message": "rate limited" }""")
-            .Should()
-            .BeNull();
+        GitHubReleaseDateResolver.ParseOldestCommitDate("""{ "message": "rate limited" }""").Should().BeNull();
     }
 
     [Fact]
@@ -39,10 +36,7 @@ public sealed class ReleaseDateResolverTests
             .ParseReleaseDate("Installers:\n- Architecture: x64\n- ReleaseDate: 2026-02-02\n")
             .Should()
             .Be(new DateTimeOffset(2026, 2, 2, 0, 0, 0, TimeSpan.Zero));
-        GitHubReleaseDateResolver
-            .ParseReleaseDate("Installers:\n- Architecture: x64\n")
-            .Should()
-            .BeNull();
+        GitHubReleaseDateResolver.ParseReleaseDate("Installers:\n- Architecture: x64\n").Should().BeNull();
         GitHubReleaseDateResolver.ParseReleaseDate("ReleaseDate: yesterday\n").Should().BeNull();
         GitHubReleaseDateResolver.ParseReleaseDate("[unclosed").Should().BeNull();
     }
@@ -60,23 +54,12 @@ public sealed class ReleaseDateResolverTests
 
         (await resolver.ResolveAsync("Git.Git", "2.48.1", CancellationToken.None))
             .Should()
-            .Be(
-                new ResolvedDate(
-                    new DateTimeOffset(2026, 9, 1, 8, 30, 0, TimeSpan.Zero),
-                    PublishSource.WingetPkgs
-                )
-            );
+            .Be(new ResolvedDate(new DateTimeOffset(2026, 9, 1, 8, 30, 0, TimeSpan.Zero), PublishSource.WingetPkgs));
         (await resolver.ResolveAsync("Bun.Bun", "1.4", CancellationToken.None))
             .Should()
-            .Be(
-                new ResolvedDate(
-                    new DateTimeOffset(2026, 8, 20, 0, 0, 0, TimeSpan.Zero),
-                    PublishSource.Manifest
-                )
-            );
+            .Be(new ResolvedDate(new DateTimeOffset(2026, 8, 20, 0, 0, 0, TimeSpan.Zero), PublishSource.Manifest));
         (await resolver.ResolveAsync("No.Date", "1.0", CancellationToken.None)).Should().BeNull();
         (await resolver.ResolveAsync("nodot", "1.0", CancellationToken.None)).Should().BeNull();
-        http.Requests.Should()
-            .NotContain(static url => url.Contains("nodot", StringComparison.Ordinal));
+        http.Requests.Should().NotContain(static url => url.Contains("nodot", StringComparison.Ordinal));
     }
 }

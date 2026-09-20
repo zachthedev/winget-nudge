@@ -46,11 +46,7 @@
         <WinGetModulePackage>$(WinGetModuleDirectory)Microsoft.WinGet.Client.$(WinGetVersion).nupkg</WinGetModulePackage>
         <WinRtActivationDll>$(WinGetModuleDirectory)extracted\net8.0-windows10.0.26100.0\SharedDependencies\x64\winrtact.dll</WinRtActivationDll>
     </PropertyGroup>
-    <Target
-        Name="FetchWinRtActivation"
-        BeforeTargets="AssignTargetPaths"
-        Condition="!Exists('$(WinRtActivationDll)')"
-    >
+    <Target Name="FetchWinRtActivation" BeforeTargets="AssignTargetPaths" Condition="!Exists('$(WinRtActivationDll)')">
         <DownloadFile
             Condition="!Exists('$(WinGetModulePackage)')"
             SourceUrl="https://www.powershellgallery.com/api/v2/package/Microsoft.WinGet.Client/$(WinGetVersion)"
@@ -64,10 +60,7 @@
             Condition="'$(WinGetModuleActualSha256)' != '$(WinGetModuleSha256)'"
             Text="Microsoft.WinGet.Client $(WinGetVersion) hash mismatch: expected $(WinGetModuleSha256), got $(WinGetModuleActualSha256)."
         />
-        <Unzip
-            SourceFiles="$(WinGetModulePackage)"
-            DestinationFolder="$(WinGetModuleDirectory)extracted"
-        />
+        <Unzip SourceFiles="$(WinGetModulePackage)" DestinationFolder="$(WinGetModuleDirectory)extracted" />
     </Target>
     <ItemGroup>
         <None

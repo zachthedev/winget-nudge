@@ -133,28 +133,12 @@ public sealed class UpgradeOutcomeTests
     [Fact]
     public void Reason_SpellsOutWingetsOwnCodeAndDetectsTheHResults()
     {
-        UpgradeOutcome filesInUse = new(
-            false,
-            "InstallError",
-            0,
-            UpgradeOutcome.FilesInUseHResult,
-            false,
-            ""
-        );
-        UpgradeOutcome elevation = new(
-            false,
-            "InstallError",
-            0,
-            UpgradeOutcome.RefusesElevationHResult,
-            false,
-            ""
-        );
+        UpgradeOutcome filesInUse = new(false, "InstallError", 0, UpgradeOutcome.FilesInUseHResult, false, "");
+        UpgradeOutcome elevation = new(false, "InstallError", 0, UpgradeOutcome.RefusesElevationHResult, false, "");
 
         filesInUse
             .Reason.Should()
-            .Be(
-                "InstallError: Application is currently in use by another application. (0x8A150111)"
-            );
+            .Be("InstallError: Application is currently in use by another application. (0x8A150111)");
         filesInUse.IsFilesInUse.Should().BeTrue();
         elevation.RefusesElevation.Should().BeTrue();
         elevation.IsFilesInUse.Should().BeFalse();
@@ -163,14 +147,7 @@ public sealed class UpgradeOutcomeTests
     [Fact]
     public void Reason_KeepsAnUnknownCodeAsHex()
     {
-        UpgradeOutcome outcome = new(
-            false,
-            "InstallError",
-            1,
-            unchecked((int)0x8A159999),
-            false,
-            ""
-        );
+        UpgradeOutcome outcome = new(false, "InstallError", 1, unchecked((int)0x8A159999), false, "");
 
         outcome.Reason.Should().Be("InstallError (exit code 1) (0x8A159999)");
     }
@@ -178,10 +155,7 @@ public sealed class UpgradeOutcomeTests
     [Fact]
     public void Status_DropsTheTrailingNewlineAComExceptionMessageCarries()
     {
-        UpgradeOutcome
-            .Failed("Class not registered\r\n")
-            .Status.Should()
-            .Be("Class not registered");
+        UpgradeOutcome.Failed("Class not registered\r\n").Status.Should().Be("Class not registered");
     }
 }
 

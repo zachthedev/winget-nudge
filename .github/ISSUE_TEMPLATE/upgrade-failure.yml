@@ -1,7 +1,7 @@
 name: Upgrade failure
 description: A package failed to upgrade, or an app it closed did not come back.
-title: "upgrade: "
-labels: ["bug", "upgrade"]
+title: 'upgrade: '
+labels: ['bug', 'upgrade']
 body:
   - type: markdown
     attributes:
@@ -13,7 +13,7 @@ body:
     attributes:
       label: Package id
       description: The winget id, as the card shows it.
-      placeholder: "Git.Git"
+      placeholder: 'Git.Git'
     validations:
       required: true
   - type: input
@@ -21,7 +21,7 @@ body:
     attributes:
       label: Versions
       description: The installed version and the one offered.
-      placeholder: "2.47.0 to 2.48.1"
+      placeholder: '2.47.0 to 2.48.1'
     validations:
       required: true
   - type: textarea
@@ -38,9 +38,9 @@ body:
       label: Does `winget upgrade --id <id> --exact` succeed in a terminal?
       description: Run it as the same user. Pick "Not tried" rather than guessing.
       options:
-        - "Yes"
-        - "No, it fails the same way"
-        - "No, it fails differently"
+        - 'Yes'
+        - 'No, it fails the same way'
+        - 'No, it fails differently'
         - Not tried
     validations:
       required: true
@@ -49,9 +49,9 @@ body:
     attributes:
       label: Was the app running during the upgrade?
       options:
-        - "Yes, and Winget Nudge asked to close it"
-        - "Yes, and nothing asked"
-        - "No"
+        - 'Yes, and Winget Nudge asked to close it'
+        - 'Yes, and nothing asked'
+        - 'No'
         - Not sure
     validations:
       required: true
@@ -67,13 +67,13 @@ body:
     id: version
     attributes:
       label: Winget Nudge version
-      placeholder: "1.0.0, or 6f9be1d"
+      placeholder: '1.0.0, or 6f9be1d'
     validations:
       required: true
   - type: input
     id: winget_version
     attributes:
       label: winget version
-      placeholder: "v1.29.290"
+      placeholder: 'v1.29.290'
     validations:
       required: true

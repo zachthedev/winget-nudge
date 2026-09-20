@@ -25,9 +25,7 @@ internal static class Documents
     {
         if (!text.Contains(find, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
-                $"This case edits \"{find}\", which its source does not hold."
-            );
+            throw new InvalidOperationException($"This case edits \"{find}\", which its source does not hold.");
         }
 
         return text.Replace(find, replacement, StringComparison.Ordinal);
@@ -46,11 +44,7 @@ internal static class Documents
             return "";
         }
 
-        int end = Array.FindIndex(
-            lines,
-            start + 1,
-            line => line.StartsWith("## ", StringComparison.Ordinal)
-        );
+        int end = Array.FindIndex(lines, start + 1, line => line.StartsWith("## ", StringComparison.Ordinal));
         return string.Join('\n', lines[start..(end < 0 ? lines.Length : end)]);
     }
 
@@ -59,15 +53,7 @@ internal static class Documents
     /// <param name="heading">The heading line the section starts with.</param>
     /// <returns>The section on one line.</returns>
     public static string Prose(string document, string heading) =>
-        Regex
-            .Replace(
-                Section(document, heading),
-                @"\s+",
-                " ",
-                RegexOptions.None,
-                TimeSpan.FromSeconds(1)
-            )
-            .Trim();
+        Regex.Replace(Section(document, heading), @"\s+", " ", RegexOptions.None, TimeSpan.FromSeconds(1)).Trim();
 }
 
 /// <summary>A build script the cases work against, and the one the repository ships.</summary>
@@ -215,18 +201,8 @@ public sealed class GateScriptReaderTests
                 "code",
                 ["format", "build", "tests", "installer"]
             },
-            {
-                "a task depended on twice is reached once",
-                Scripts.Synthetic,
-                "installer",
-                ["build", "installer"]
-            },
-            {
-                "a check with no dependencies reaches itself",
-                Scripts.Synthetic,
-                "format",
-                ["format"]
-            },
+            { "a task depended on twice is reached once", Scripts.Synthetic, "installer", ["build", "installer"] },
+            { "a check with no dependencies reaches itself", Scripts.Synthetic, "format", ["format"] },
             {
                 "a chain three deep reaches every step",
                 Documents
@@ -264,11 +240,7 @@ public sealed class GateScriptReaderTests
 
     [Theory]
     [MemberData(nameof(Unreadable))]
-    public void Parse_ReportsADeclarationItCannotRead(
-        string scenario,
-        string declaration,
-        string marker
-    )
+    public void Parse_ReportsADeclarationItCannotRead(string scenario, string declaration, string marker)
     {
         string source = $"string target = Argument(\"target\", \"check\");\n\n{declaration}\n";
 
@@ -287,15 +259,9 @@ public sealed class GateScriptReaderTests
 
     [Theory]
     [MemberData(nameof(Refused))]
-    public void Parse_ReportsADeclarationThatNoTableCanCarry(
-        string scenario,
-        string declaration,
-        string named
-    )
+    public void Parse_ReportsADeclarationThatNoTableCanCarry(string scenario, string declaration, string named)
     {
-        GateScript script = GateScript.Parse(
-            $"string target = Argument(\"target\", \"check\");\n\n{declaration}\n"
-        );
+        GateScript script = GateScript.Parse($"string target = Argument(\"target\", \"check\");\n\n{declaration}\n");
 
         script
             .Diagnostics.Should()
@@ -326,11 +292,7 @@ public sealed class GateScriptReaderTests
         GateScript.Parse(Scripts.Synthetic).DefaultTarget.Should().Be("check");
         GateScript
             .Parse(
-                Documents.Edit(
-                    Scripts.Synthetic,
-                    """Argument("target", "check")""",
-                    """Argument("target", "code")"""
-                )
+                Documents.Edit(Scripts.Synthetic, """Argument("target", "check")""", """Argument("target", "code")""")
             )
             .DefaultTarget.Should()
             .Be("code");
@@ -375,11 +337,7 @@ public sealed class GateScriptReaderTests
     public void Checks_ReportADependencyOnATaskThatDoesNotExist()
     {
         GateScript script = GateScript.Parse(
-            Documents.Edit(
-                Scripts.Synthetic,
-                """.IsDependentOn("installer");""",
-                """.IsDependentOn("licenses");"""
-            )
+            Documents.Edit(Scripts.Synthetic, """.IsDependentOn("installer");""", """.IsDependentOn("licenses");""")
         );
 
         script.Checks("check").Problems.Should().ContainSingle().Which.Should().Contain("licenses");
@@ -394,10 +352,7 @@ public sealed class GateTableReaderTests
         GateTable table = GateTable.Parse(Scripts.Synopsis, GateDocumentation.Heading);
 
         table.Diagnostics.Should().BeEmpty();
-        table
-            .Rows.Select(row => row.Task)
-            .Should()
-            .Equal("format", "build", "tests", "installer", "workflows");
+        table.Rows.Select(row => row.Task).Should().Equal("format", "build", "tests", "installer", "workflows");
         table.Rows[0].Cell.Should().Be("C# formatting");
     }
 
@@ -405,10 +360,7 @@ public sealed class GateTableReaderTests
     public void Parse_ReportsADocumentWithNoGateSection()
     {
         GateTable
-            .Parse(
-                Documents.Edit(Scripts.Synopsis, "## The gate", "## The checks"),
-                GateDocumentation.Heading
-            )
+            .Parse(Documents.Edit(Scripts.Synopsis, "## The gate", "## The checks"), GateDocumentation.Heading)
             .Diagnostics.Should()
             .ContainSingle()
             .Which.Should()
@@ -452,11 +404,7 @@ public sealed class GateTableReaderTests
         );
 
         table.Rows.Should().HaveCount(4);
-        table
-            .Diagnostics.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("naming no task in backticks");
+        table.Diagnostics.Should().ContainSingle().Which.Should().Contain("naming no task in backticks");
     }
 
     [Fact]
@@ -507,20 +455,12 @@ public sealed class GateTableAgainstTheScriptTests
             ["code"]
         ),
         ["a row for a check the default target never reaches"] = new(
-            Documents.Edit(
-                Scripts.Synthetic,
-                """Argument("target", "check")""",
-                """Argument("target", "code")"""
-            ),
+            Documents.Edit(Scripts.Synthetic, """Argument("target", "check")""", """Argument("target", "code")"""),
             Scripts.Synopsis,
             ["workflows"]
         ),
         ["a row that no longer says what its task checks"] = new(
-            Documents.Edit(
-                Scripts.Synthetic,
-                "\"Every project\"",
-                "\"Every project in Release and Debug\""
-            ),
+            Documents.Edit(Scripts.Synthetic, "\"Every project\"", "\"Every project in Release and Debug\""),
             Scripts.Synopsis,
             ["build", "Every project in Release and Debug"]
         ),
@@ -534,20 +474,12 @@ public sealed class GateTableAgainstTheScriptTests
             ["tests", "The Core suite and its fakes"]
         ),
         ["a task that says nothing about itself"] = new(
-            Documents.Edit(
-                Scripts.Synthetic,
-                """Task("installer").Description("The MSI")""",
-                """Task("installer")"""
-            ),
+            Documents.Edit(Scripts.Synthetic, """Task("installer").Description("The MSI")""", """Task("installer")"""),
             Scripts.Synopsis,
             ["installer"]
         ),
         ["a description no table cell can carry"] = new(
-            Documents.Edit(
-                Scripts.Synthetic,
-                "\"The Core suite\"",
-                "\"The Core suite | and its fakes\""
-            ),
+            Documents.Edit(Scripts.Synthetic, "\"The Core suite\"", "\"The Core suite | and its fakes\""),
             Scripts.Synopsis,
             ["tests"]
         ),
@@ -613,16 +545,11 @@ public sealed class GateTableAgainstTheScriptTests
     {
         Drift drift = Drifts[scenario];
 
-        IReadOnlyList<string> mismatches = GateDocumentation.Mismatches(
-            drift.Script,
-            drift.Document
-        );
+        IReadOnlyList<string> mismatches = GateDocumentation.Mismatches(drift.Script, drift.Document);
 
         foreach (string named in drift.Named)
         {
-            mismatches
-                .Should()
-                .Contain(mismatch => mismatch.Contains(named, StringComparison.Ordinal), scenario);
+            mismatches.Should().Contain(mismatch => mismatch.Contains(named, StringComparison.Ordinal), scenario);
         }
     }
 
@@ -632,18 +559,12 @@ public sealed class GateTableAgainstTheScriptTests
     {
         Drift agreement = Agreements[scenario];
 
-        GateDocumentation
-            .Mismatches(agreement.Script, agreement.Document)
-            .Should()
-            .BeEmpty(scenario);
+        GateDocumentation.Mismatches(agreement.Script, agreement.Document).Should().BeEmpty(scenario);
     }
 
     [Theory]
     [InlineData("C# formatting", "C# formatting")]
-    [InlineData(
-        "The three-day cooldown, in `renovate.json`",
-        "The three-day cooldown, in renovate.json"
-    )]
+    [InlineData("The three-day cooldown, in `renovate.json`", "The three-day cooldown, in renovate.json")]
     [InlineData("  The   Core\n  suite  ", "The Core suite")]
     public void Normalize_LevelsTheMarkupATableCellMayCarry(string cell, string expected)
     {
@@ -656,20 +577,14 @@ public sealed class GateTableAgainstTheRepositoryTests
     [Fact]
     public void TheGateTableSaysWhatTheBuildScriptDeclares()
     {
-        GateDocumentation
-            .Mismatches(Documents.Read("cake.cs"), Documents.Read("CONTRIBUTING.md"))
-            .Should()
-            .BeEmpty();
+        GateDocumentation.Mismatches(Documents.Read("cake.cs"), Documents.Read("CONTRIBUTING.md")).Should().BeEmpty();
     }
 
     [Fact]
     public void TheComparisonReadsBothFilesRatherThanTwoEmptyLists()
     {
         GateScript script = GateScript.Parse(Documents.Read("cake.cs"));
-        GateTable table = GateTable.Parse(
-            Documents.Read("CONTRIBUTING.md"),
-            GateDocumentation.Heading
-        );
+        GateTable table = GateTable.Parse(Documents.Read("CONTRIBUTING.md"), GateDocumentation.Heading);
 
         GateChecks checks = script.Checks(script.DefaultTarget);
 
@@ -696,10 +611,7 @@ public sealed class GateTableAgainstTheRepositoryTests
     [Fact]
     public void TheTargetTheDocumentSinglesOutRunsEveryCheckButTheOneItNames()
     {
-        string prose = Documents.Prose(
-            Documents.Read("CONTRIBUTING.md"),
-            GateDocumentation.Heading
-        );
+        string prose = Documents.Prose(Documents.Read("CONTRIBUTING.md"), GateDocumentation.Heading);
         Match claim = Regex.Match(
             prose,
             @"`--target=(\w+)` runs everything but `(\w+)`",
@@ -714,9 +626,7 @@ public sealed class GateTableAgainstTheRepositoryTests
 
         whole.Names.Should().Contain(claim.Groups[2].Value);
         narrowed.Problems.Should().BeEmpty();
-        narrowed
-            .Names.Should()
-            .BeEquivalentTo(whole.Names.Where(name => name != claim.Groups[2].Value));
+        narrowed.Names.Should().BeEquivalentTo(whole.Names.Where(name => name != claim.Groups[2].Value));
     }
 }
 
@@ -727,10 +637,7 @@ public sealed class RepositoryRootTests
     {
         string root = Repository.Root;
 
-        foreach (
-            string sibling in (string[])
-                ["commitlint.config.js", "docs/dev.md", ".github/commit-scopes.json"]
-        )
+        foreach (string sibling in (string[])["commitlint.config.js", "docs/dev.md", ".github/commit-scopes.json"])
         {
             File.Exists(Path.Combine(root, sibling.Replace('/', Path.DirectorySeparatorChar)))
                 .Should()
@@ -782,12 +689,12 @@ public sealed class CommitMessageRulesTests
             },
             {
                 "a scope list that maps no property of an entry",
-                Documents.Edit(Config, "entry.scope)", "entry)"),
+                Documents.Edit(Config, "=> entry.scope", "=> entry"),
                 "maps no property"
             },
             {
                 "a config that sets no scope rule",
-                Documents.Edit(Config, "\"scope-enum\"", "\"scope-empty\""),
+                Documents.Edit(Config, "'scope-enum'", "'scope-empty'"),
                 "accepts any scope"
             },
         };
@@ -798,25 +705,17 @@ public sealed class CommitMessageRulesTests
             { "the config as it stands", Config, true },
             {
                 "a header limit that only warns",
-                Documents.Edit(Config, "\"header-max-length\": [2", "\"header-max-length\": [1"),
+                Documents.Edit(Config, "'header-max-length': [2", "'header-max-length': [1"),
                 false
             },
             {
                 "a body limit switched off",
-                Documents.Edit(
-                    Config,
-                    "\"body-max-line-length\": [2",
-                    "\"body-max-line-length\": [0"
-                ),
+                Documents.Edit(Config, "'body-max-line-length': [2", "'body-max-line-length': [0"),
                 false
             },
             {
                 "a header limit that applies never",
-                Documents.Edit(
-                    Config,
-                    "\"header-max-length\": [2, \"always\"",
-                    "\"header-max-length\": [2, \"never\""
-                ),
+                Documents.Edit(Config, "'header-max-length': [2, 'always'", "'header-max-length': [2, 'never'"),
                 false
             },
         };
@@ -836,8 +735,8 @@ public sealed class CommitMessageRulesTests
                 Contributing,
                 Documents.Edit(
                     Config,
-                    "\"header-max-length\": [2, \"always\", 72]",
-                    "\"header-max-length\": [2, \"always\", 100]"
+                    "'header-max-length': [2, 'always', 72]",
+                    "'header-max-length': [2, 'always', 100]"
                 ),
                 false
             },
@@ -846,8 +745,8 @@ public sealed class CommitMessageRulesTests
                 Contributing,
                 Documents.Edit(
                     Config,
-                    "\"body-max-line-length\": [2, \"always\", 72]",
-                    "\"body-max-line-length\": [2, \"always\", 100]"
+                    "'body-max-line-length': [2, 'always', 72]",
+                    "'body-max-line-length': [2, 'always', 100]"
                 ),
                 false
             },
@@ -866,16 +765,8 @@ public sealed class CommitMessageRulesTests
                 """[{ "scope": "core", "covers": "a" }, { "scope": "core", "covers": "b" }]""",
                 "is listed twice"
             },
-            {
-                "a scope holding a space",
-                """[{ "scope": "core tools", "covers": "a" }]""",
-                "cannot carry"
-            },
-            {
-                "a scope holding a parenthesis",
-                """[{ "scope": "core(x)", "covers": "a" }]""",
-                "cannot carry"
-            },
+            { "a scope holding a space", """[{ "scope": "core tools", "covers": "a" }]""", "cannot carry" },
+            { "a scope holding a parenthesis", """[{ "scope": "core(x)", "covers": "a" }]""", "cannot carry" },
             {
                 "a scope saying nothing about what it covers",
                 """[{ "scope": "core", "covers": "" }]""",
@@ -906,18 +797,12 @@ public sealed class CommitMessageRulesTests
         config.Diagnostics.Should().BeEmpty();
         config.ScopeSource.Should().Be(named);
         config.ScopeProperty.Should().NotBeEmpty();
-        File.Exists(Path.Combine(Repository.Root, named.Replace('/', Path.DirectorySeparatorChar)))
-            .Should()
-            .BeTrue();
+        File.Exists(Path.Combine(Repository.Root, named.Replace('/', Path.DirectorySeparatorChar))).Should().BeTrue();
     }
 
     [Theory]
     [MemberData(nameof(BrokenWiring))]
-    public void AScopeListThatIsNotReadFromTheDataFileIsReported(
-        string scenario,
-        string config,
-        string named
-    )
+    public void AScopeListThatIsNotReadFromTheDataFileIsReported(string scenario, string config, string named)
     {
         CommitlintConfig parsed = CommitlintConfig.Parse(config);
 
@@ -928,18 +813,12 @@ public sealed class CommitMessageRulesTests
 
     [Theory]
     [MemberData(nameof(Severities))]
-    public void ALengthRuleRefusesACommitRatherThanWarningAboutIt(
-        string scenario,
-        string config,
-        bool enforced
-    )
+    public void ALengthRuleRefusesACommitRatherThanWarningAboutIt(string scenario, string config, bool enforced)
     {
         CommitlintConfig parsed = CommitlintConfig.Parse(config);
 
         bool refuses = LengthRules.All(name =>
-            parsed.Rules.TryGetValue(name, out CommitlintRule? rule)
-            && rule.Level == 2
-            && rule.Applicable == "always"
+            parsed.Rules.TryGetValue(name, out CommitlintRule? rule) && rule.Level == 2 && rule.Applicable == "always"
         );
 
         refuses.Should().Be(enforced, scenario);
@@ -970,9 +849,7 @@ public sealed class CommitMessageRulesTests
     [Fact]
     public void ACommitSectionStatingNoLimitIsNotTakenForAgreement()
     {
-        StatedLimit(Documents.Edit(Contributing, "within 72 characters", "short"))
-            .Should()
-            .BeNull();
+        StatedLimit(Documents.Edit(Contributing, "within 72 characters", "short")).Should().BeNull();
     }
 
     [Fact]
@@ -980,10 +857,7 @@ public sealed class CommitMessageRulesTests
     {
         CommitlintConfig config = CommitlintConfig.Parse(Config);
 
-        CommitScopes
-            .Problems(Documents.Read(config.ScopeSource), config.ScopeProperty)
-            .Should()
-            .BeEmpty();
+        CommitScopes.Problems(Documents.Read(config.ScopeSource), config.ScopeProperty).Should().BeEmpty();
     }
 
     [Fact]
@@ -991,19 +865,12 @@ public sealed class CommitMessageRulesTests
     {
         CommitlintConfig config = CommitlintConfig.Parse(Config);
 
-        JsonList
-            .Values(Documents.Read(config.ScopeSource), config.ScopeProperty)
-            .Should()
-            .HaveCountGreaterThan(1);
+        JsonList.Values(Documents.Read(config.ScopeSource), config.ScopeProperty).Should().HaveCountGreaterThan(1);
     }
 
     [Theory]
     [MemberData(nameof(MalformedScopes))]
-    public void AScopeFileNoCommitHeaderCanDrawOnIsReported(
-        string scenario,
-        string json,
-        string named
-    )
+    public void AScopeFileNoCommitHeaderCanDrawOnIsReported(string scenario, string json, string named)
     {
         CommitScopes
             .Problems(json, "scope")
@@ -1019,9 +886,7 @@ public sealed class CommitMessageRulesTests
             RegexOptions.None,
             TimeSpan.FromSeconds(1)
         );
-        return matches.Count == 1
-            ? int.Parse(matches[0].Groups[1].Value, CultureInfo.InvariantCulture)
-            : null;
+        return matches.Count == 1 ? int.Parse(matches[0].Groups[1].Value, CultureInfo.InvariantCulture) : null;
     }
 }
 
@@ -1034,11 +899,7 @@ public sealed class DeveloperGuideTests
     [Fact]
     public void TheInstallBlockNamesTheToolThatReadsThePinFile()
     {
-        InstallBlock block = InstallBlock.Parse(
-            Documents.Read("docs/dev.md"),
-            PinFile,
-            "powershell"
-        );
+        InstallBlock block = InstallBlock.Parse(Documents.Read("docs/dev.md"), PinFile, "powershell");
 
         block.Diagnostics.Should().BeEmpty();
         block.PackageIds.Should().Equal((string[])[ToolManager]);
@@ -1084,11 +945,7 @@ public sealed class DeveloperGuideTests
     public void ADocumentThatNamesThePinFileNowhereIsReported()
     {
         InstallBlock
-            .Parse(
-                Documents.Edit(Documents.Read("docs/dev.md"), PinFile, "the pin file"),
-                PinFile,
-                "powershell"
-            )
+            .Parse(Documents.Edit(Documents.Read("docs/dev.md"), PinFile, "the pin file"), PinFile, "powershell")
             .Diagnostics.Should()
             .ContainSingle()
             .Which.Should()
@@ -1098,9 +955,7 @@ public sealed class DeveloperGuideTests
     [Fact]
     public void TheFirstRunBlockTrustsThePinFileAndInstallsFromIt()
     {
-        string[] lines = Documents
-            .Section(Documents.Read("docs/dev.md"), "## First run")
-            .Split('\n');
+        string[] lines = Documents.Section(Documents.Read("docs/dev.md"), "## First run").Split('\n');
         int open = Array.IndexOf(lines, "```powershell");
         int close = open < 0 ? -1 : Array.IndexOf(lines, "```", open + 1);
 
@@ -1112,5 +967,158 @@ public sealed class DeveloperGuideTests
                 (string[])["mise trust", "mise install", "dotnet cake.cs"],
                 "the gate reads mise.toml's settings once trusted and resolves linters an install put on disk"
             );
+    }
+}
+
+public sealed class EditorConfigTests
+{
+    // Prettier's built-in languages, by extension and by file name. Prettier takes indent_style,
+    // indent_size and end_of_line from .editorconfig for every option .prettierrc leaves unset, so
+    // these are the files whose .editorconfig resolution has to agree with its defaults.
+    private static readonly HashSet<string> PrettierExtensions = new(
+        [
+            ".js",
+            ".mjs",
+            ".cjs",
+            ".jsx",
+            ".ts",
+            ".mts",
+            ".cts",
+            ".tsx",
+            ".json",
+            ".jsonc",
+            ".json5",
+            ".css",
+            ".scss",
+            ".less",
+            ".html",
+            ".htm",
+            ".vue",
+            ".hbs",
+            ".handlebars",
+            ".graphql",
+            ".gql",
+            ".md",
+            ".markdown",
+            ".mdx",
+            ".yml",
+            ".yaml",
+        ],
+        StringComparer.OrdinalIgnoreCase
+    );
+
+    private static readonly HashSet<string> PrettierFileNames = new([".prettierrc"], StringComparer.Ordinal);
+
+    // Build output and installed packages, which no formatter here reads.
+    private static readonly HashSet<string> SkippedDirectories = new(
+        [".git", "node_modules", "bin", "obj", "TestResults"],
+        StringComparer.OrdinalIgnoreCase
+    );
+
+    public static TheoryData<string, string> PrettierDefaults() =>
+        new()
+        {
+            { "indent_size", "2" },
+            { "indent_style", "space" },
+            { "end_of_line", "lf" },
+        };
+
+    public static TheoryData<string, string, string, string?> Globs() =>
+        new()
+        {
+            {
+                "the later of two sections naming a file wins",
+                "[*]\nindent_size = 4\n\n[*.md]\nindent_size = 2\n",
+                "docs/dev.md",
+                "2"
+            },
+            {
+                "a section the file's extension is not in leaves the earlier one standing",
+                "[*]\nindent_size = 4\n\n[*.md]\nindent_size = 2\n",
+                "commitlint.config.js",
+                "4"
+            },
+            { "a brace lists alternatives", "[*.{cs,ps1}]\nindent_size = 4\n", "tools/Update-Codes.ps1", "4" },
+            { "a glob with no slash names a file at any depth", "[*.cs]\nindent_size = 4\n", "src/Core/App.cs", "4" },
+            { "a star does not cross a directory", "[src/*.cs]\nindent_size = 4\n", "src/Core/App.cs", null },
+            { "a double star crosses directories", "[src/**/*.cs]\nindent_size = 4\n", "src/Core/App.cs", "4" },
+            { "a question mark takes one character", "[?.cs]\nindent_size = 4\n", "src/a.cs", "4" },
+            { "a question mark takes no more than one", "[?.cs]\nindent_size = 4\n", "src/ab.cs", null },
+        };
+
+    [Theory]
+    [MemberData(nameof(PrettierDefaults))]
+    public void EveryFilePrettierFormatsResolvesToItsDefault(string key, string value)
+    {
+        List<string> covered = CoveredFiles();
+
+        covered
+            .Should()
+            .Contain(
+                (string[])["commitlint.config.js", "CONTRIBUTING.md", ".prettierrc", ".github/workflows/ci.yml"],
+                "the walk reaches the files the formatter is known to cover"
+            );
+        covered
+            .Where(path => EditorConfig.Resolve(Repository.Root, path).GetValueOrDefault(key) != value)
+            .Should()
+            .BeEmpty(
+                $"a file .editorconfig gives another {key} is formatted differently with no change to .prettierrc"
+            );
+    }
+
+    [Theory]
+    [MemberData(nameof(Globs))]
+    public void ASectionAppliesToThePathsItsGlobNames(
+        string scenario,
+        string editorconfig,
+        string path,
+        string? expected
+    )
+    {
+        Dictionary<string, string> settings = new(StringComparer.Ordinal);
+
+        EditorConfig.Parse(editorconfig).Apply(path, settings);
+
+        settings.GetValueOrDefault("indent_size").Should().Be(expected, scenario);
+    }
+
+    [Fact]
+    public void ASectionTheReaderCannotTakeIsReportedAndMatchesNothing()
+    {
+        Dictionary<string, string> settings = new(StringComparer.Ordinal);
+        EditorConfig config = EditorConfig.Parse("[*.[ch]]\nindent_size = 8\n");
+
+        config.Apply("a.c", settings);
+
+        config.Diagnostics.Should().ContainSingle().Which.Should().Contain("[*.[ch]]");
+        settings.Should().BeEmpty();
+    }
+
+    private static List<string> CoveredFiles()
+    {
+        string root = Repository.Root;
+        List<string> covered = [];
+        Stack<string> pending = new([root]);
+        while (pending.TryPop(out string? directory))
+        {
+            foreach (string child in Directory.EnumerateDirectories(directory))
+            {
+                if (!SkippedDirectories.Contains(Path.GetFileName(child)))
+                {
+                    pending.Push(child);
+                }
+            }
+
+            foreach (string file in Directory.EnumerateFiles(directory))
+            {
+                string name = Path.GetFileName(file);
+                if (PrettierFileNames.Contains(name) || PrettierExtensions.Contains(Path.GetExtension(name)))
+                {
+                    covered.Add(Path.GetRelativePath(root, file).Replace('\\', '/'));
+                }
+            }
+        }
+
+        return covered;
     }
 }

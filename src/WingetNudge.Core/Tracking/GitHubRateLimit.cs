@@ -19,17 +19,9 @@ public static class GitHubRateLimit
             return false;
         }
 
-        return response.Headers.TryGetValues(
-                "X-RateLimit-Remaining",
-                out IEnumerable<string>? values
-            )
+        return response.Headers.TryGetValues("X-RateLimit-Remaining", out IEnumerable<string>? values)
             && values.Any(static value =>
-                int.TryParse(
-                    value,
-                    NumberStyles.Integer,
-                    CultureInfo.InvariantCulture,
-                    out int remaining
-                )
+                int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int remaining)
                 && remaining == 0
             );
     }

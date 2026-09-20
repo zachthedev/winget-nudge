@@ -30,15 +30,11 @@ public sealed partial class DeElevatedRunner : IDeElevatedUpgrader
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The task's last result, which is winget's exit code.</returns>
     /// <exception cref="Exception">Task Scheduler refused the task.</exception>
-    public async System.Threading.Tasks.Task<long> UpgradeAsync(
-        string packageId,
-        CancellationToken cancellationToken
-    )
+    public async System.Threading.Tasks.Task<long> UpgradeAsync(string packageId, CancellationToken cancellationToken)
     {
         PackageIdValidator.Ensure(packageId);
         string taskName = $"WingetNudge-DeElev-{NonAlphanumeric().Replace(packageId, "")}";
-        string arguments =
-            $"upgrade --id {packageId} --force --accept-source-agreements --accept-package-agreements";
+        string arguments = $"upgrade --id {packageId} --force --accept-source-agreements --accept-package-agreements";
 
         using TaskService service = new();
         TaskDefinition definition = service.NewTask();
@@ -48,16 +44,11 @@ public sealed partial class DeElevatedRunner : IDeElevatedUpgrader
         definition.Settings.DisallowStartIfOnBatteries = false;
         definition.Settings.StopIfGoingOnBatteries = false;
 
-        using Microsoft.Win32.TaskScheduler.Task task = service.RootFolder.RegisterTaskDefinition(
-            taskName,
-            definition
-        );
+        using Microsoft.Win32.TaskScheduler.Task task = service.RootFolder.RegisterTaskDefinition(taskName, definition);
         try
         {
             task.Run();
-            await System
-                .Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(2), cancellationToken)
-                .ConfigureAwait(false);
+            await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
             while (task.State == TaskState.Running)
             {
                 await System

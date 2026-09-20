@@ -39,9 +39,7 @@ public sealed class ProcessRunner : IProcessRunner
         CancellationToken cancellationToken
     )
     {
-        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(Timeout);
         CancellationToken token = timeout.Token;
 
@@ -58,8 +56,7 @@ public sealed class ProcessRunner : IProcessRunner
         }
 
         using Process process =
-            Process.Start(startInfo)
-            ?? throw new InvalidOperationException($"'{executable}' did not start.");
+            Process.Start(startInfo) ?? throw new InvalidOperationException($"'{executable}' did not start.");
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(token);
         Task<string> stderr = process.StandardError.ReadToEndAsync(token);
         try
@@ -73,8 +70,7 @@ public sealed class ProcessRunner : IProcessRunner
                 process.Kill(entireProcessTree: true);
             }
             catch (Exception exception)
-                when (exception is InvalidOperationException or System.ComponentModel.Win32Exception
-                )
+                when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
                 // Already gone.
             }

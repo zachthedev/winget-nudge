@@ -139,12 +139,7 @@ public static class WingetVersion
         }
 
         // A part too wide for a long is still a number, and a bigger one than any that fits.
-        return long.TryParse(
-            part.AsSpan(0, end),
-            NumberStyles.None,
-            CultureInfo.InvariantCulture,
-            out long number
-        )
+        return long.TryParse(part.AsSpan(0, end), NumberStyles.None, CultureInfo.InvariantCulture, out long number)
             ? (number, part[end..])
             : (long.MaxValue, part[end..]);
     }

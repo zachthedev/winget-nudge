@@ -30,9 +30,7 @@ public sealed record UpdateNotificationText(string Title, string Body)
         }
         else
         {
-            IEnumerable<string> preview = names
-                .Take(NamesKeptWhenTruncated)
-                .Select(static name => $"* {name}");
+            IEnumerable<string> preview = names.Take(NamesKeptWhenTruncated).Select(static name => $"* {name}");
             int rest = names.Count - NamesKeptWhenTruncated;
             body = $"{string.Join('\n', preview)}\n  + {rest} more";
         }

@@ -8,11 +8,7 @@ namespace WingetNudge.Core.Tracking;
 /// <param name="AvailableSince">When the version became available.</param>
 /// <param name="Source">Where that date came from.</param>
 /// <param name="RemainingHours">Whole hours until the window closes, rounded up.</param>
-public sealed record CoolingInfo(
-    DateTimeOffset AvailableSince,
-    PublishSource Source,
-    int RemainingHours
-);
+public sealed record CoolingInfo(DateTimeOffset AvailableSince, PublishSource Source, int RemainingHours);
 
 /// <summary>
 /// Per-version availability tracking, the basis of the cooldown gate that keeps a version out
@@ -28,28 +24,18 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
     {
         if (!File.Exists(paths.VersionTracking))
         {
-            return new Dictionary<string, Dictionary<string, VersionObservation>>(
-                StringComparer.Ordinal
-            );
+            return new Dictionary<string, Dictionary<string, VersionObservation>>(StringComparer.Ordinal);
         }
 
         try
         {
-            using JsonDocument document = JsonDocument.Parse(
-                File.ReadAllText(paths.VersionTracking)
-            );
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(paths.VersionTracking));
             JsonElement root = document.RootElement;
-            if (
-                root.ValueKind == JsonValueKind.Object
-                && root.TryGetProperty("packages", out JsonElement packages)
-            )
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("packages", out JsonElement packages))
             {
-                return packages.Deserialize<
-                        Dictionary<string, Dictionary<string, VersionObservation>>
-                    >(JsonFile.Options)
-                    ?? new Dictionary<string, Dictionary<string, VersionObservation>>(
-                        StringComparer.Ordinal
-                    );
+                return packages.Deserialize<Dictionary<string, Dictionary<string, VersionObservation>>>(
+                        JsonFile.Options
+                    ) ?? new Dictionary<string, Dictionary<string, VersionObservation>>(StringComparer.Ordinal);
             }
 
             return ReadLegacy(root);
@@ -57,9 +43,7 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
         catch (JsonException)
         {
             File.Delete(paths.VersionTracking);
-            return new Dictionary<string, Dictionary<string, VersionObservation>>(
-                StringComparer.Ordinal
-            );
+            return new Dictionary<string, Dictionary<string, VersionObservation>>(StringComparer.Ordinal);
         }
     }
 
@@ -74,9 +58,7 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
     /// </remarks>
     /// <param name="packages">The unfiltered inventory so installed versions are recorded too.</param>
     /// <returns>The reconciled tracking data.</returns>
-    public Dictionary<string, Dictionary<string, VersionObservation>> Reconcile(
-        IReadOnlyList<PackageInfo> packages
-    )
+    public Dictionary<string, Dictionary<string, VersionObservation>> Reconcile(IReadOnlyList<PackageInfo> packages)
     {
         bool firstRun = !File.Exists(paths.VersionTracking);
         Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load();
@@ -162,9 +144,7 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
     /// <param name="resolver">Publish date lookup.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The updated tracking data.</returns>
-    public async Task<
-        Dictionary<string, Dictionary<string, VersionObservation>>
-    > ResolvePublishDatesAsync(
+    public async Task<Dictionary<string, Dictionary<string, VersionObservation>>> ResolvePublishDatesAsync(
         IReadOnlyList<PackageInfo> packages,
         IReleaseDateResolver resolver,
         CancellationToken cancellationToken
@@ -177,14 +157,8 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
         {
             if (
                 package.AvailableVersion is null
-                || !tracking.TryGetValue(
-                    package.Id,
-                    out Dictionary<string, VersionObservation>? tracked
-                )
-                || !tracked.TryGetValue(
-                    package.AvailableVersion,
-                    out VersionObservation? observation
-                )
+                || !tracking.TryGetValue(package.Id, out Dictionary<string, VersionObservation>? tracked)
+                || !tracked.TryGetValue(package.AvailableVersion, out VersionObservation? observation)
                 || observation.Published is not null
             )
             {
@@ -255,11 +229,7 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
             if (since > cutoff)
             {
                 double remaining = (since.AddHours(cooldownHours) - now).TotalHours;
-                cooling[package.Id] = new CoolingInfo(
-                    since,
-                    observation.Source,
-                    (int)Math.Ceiling(remaining)
-                );
+                cooling[package.Id] = new CoolingInfo(since, observation.Source, (int)Math.Ceiling(remaining));
             }
         }
 
@@ -283,13 +253,9 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
     private void Save(Dictionary<string, Dictionary<string, VersionObservation>> tracking) =>
         JsonFile.Write(paths.VersionTracking, new TrackingFile { Packages = tracking });
 
-    private static Dictionary<string, Dictionary<string, VersionObservation>> ReadLegacy(
-        JsonElement root
-    )
+    private static Dictionary<string, Dictionary<string, VersionObservation>> ReadLegacy(JsonElement root)
     {
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking = new(
-            StringComparer.Ordinal
-        );
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking = new(StringComparer.Ordinal);
         if (root.ValueKind != JsonValueKind.Object)
         {
             return tracking;

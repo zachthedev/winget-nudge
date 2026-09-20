@@ -168,9 +168,7 @@ public sealed partial class WingetDiagnosticsReader(string? directory = null)
                     continue;
                 }
 
-                return trimmed.Length <= SummaryLength
-                    ? trimmed
-                    : trimmed[..SummaryLength].TrimEnd() + "...";
+                return trimmed.Length <= SummaryLength ? trimmed : trimmed[..SummaryLength].TrimEnd() + "...";
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

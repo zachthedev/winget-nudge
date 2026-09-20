@@ -53,10 +53,7 @@ public static partial class ChangelogFormatter
                 inChecksums = false;
             }
 
-            if (
-                Badge().IsMatch(line)
-                || line.Contains("_Binary files inside", StringComparison.Ordinal)
-            )
+            if (Badge().IsMatch(line) || line.Contains("_Binary files inside", StringComparison.Ordinal))
             {
                 continue;
             }

@@ -17,8 +17,7 @@ namespace WingetNudge.Core.Upgrade;
 public sealed class InstallLocationIndex
 {
     private const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
-    private const string UninstallKeyWow =
-        @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall";
+    private const string UninstallKeyWow = @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall";
 
     /// <summary>Most executables a single package may register with Restart Manager.</summary>
     public const int MaxExecutables = 400;
@@ -44,14 +43,8 @@ public sealed class InstallLocationIndex
         index.Scan(Registry.LocalMachine, UninstallKeyWow);
         // A per-user install lives under the profile; an HKCU entry pointing anywhere else is
         // not one, and the hive is writable by anything running as the user.
-        string localAppData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData
-        );
-        index.Scan(
-            Registry.CurrentUser,
-            UninstallKey,
-            directory => IsUnder(directory, localAppData)
-        );
+        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        index.Scan(Registry.CurrentUser, UninstallKey, directory => IsUnder(directory, localAppData));
         return index;
     }
 
@@ -85,10 +78,7 @@ public sealed class InstallLocationIndex
             directory = ResolveByName(package.Name);
         }
 
-        return
-            directory is not null
-            && IsTrustedInstallDirectory(directory)
-            && Directory.Exists(directory)
+        return directory is not null && IsTrustedInstallDirectory(directory) && Directory.Exists(directory)
             ? directory
             : null;
     }
@@ -175,10 +165,7 @@ public sealed class InstallLocationIndex
         return trimmedRoot.Length > 0
             && (
                 path.Equals(trimmedRoot, StringComparison.OrdinalIgnoreCase)
-                || path.StartsWith(
-                    trimmedRoot + Path.DirectorySeparatorChar,
-                    StringComparison.OrdinalIgnoreCase
-                )
+                || path.StartsWith(trimmedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             );
     }
 
@@ -224,18 +211,14 @@ public sealed class InstallLocationIndex
     {
         yield return Environment.GetFolderPath(Environment.SpecialFolder.Windows);
 
-        string programData = Environment.GetFolderPath(
-            Environment.SpecialFolder.CommonApplicationData
-        );
+        string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         if (programData.Length > 0)
         {
             // Defender's live engine and the Store's app files live here.
             yield return Path.Combine(programData, "Microsoft");
         }
 
-        string localAppData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData
-        );
+        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (localAppData.Length > 0)
         {
             yield return Path.Combine(localAppData, "Microsoft", "WindowsApps");
@@ -296,11 +279,7 @@ public sealed class InstallLocationIndex
                 continue;
             }
 
-            Add(
-                sub.GetValue("WinGetPackageIdentifier") as string,
-                sub.GetValue("DisplayName") as string,
-                directory
-            );
+            Add(sub.GetValue("WinGetPackageIdentifier") as string, sub.GetValue("DisplayName") as string, directory);
         }
     }
 }

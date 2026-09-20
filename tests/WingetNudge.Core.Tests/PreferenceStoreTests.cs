@@ -35,14 +35,8 @@ public sealed class PreferenceStoreTests : IDisposable
         PreferenceSnapshot snapshot = _store.Load();
 
         snapshot.For("Muted.App").Should().Be(new PreferenceEntry(PreferenceState.Muted, Now));
-        snapshot
-            .For("Failed.App")
-            .Should()
-            .Be(new PreferenceEntry(PreferenceState.Failed, Now, "exit code 6"));
-        snapshot
-            .For("Skipped.App")
-            .Should()
-            .Be(new PreferenceEntry(PreferenceState.Skipped, Now, null, "2.0"));
+        snapshot.For("Failed.App").Should().Be(new PreferenceEntry(PreferenceState.Failed, Now, "exit code 6"));
+        snapshot.For("Skipped.App").Should().Be(new PreferenceEntry(PreferenceState.Skipped, Now, null, "2.0"));
     }
 
     [Theory]
@@ -59,11 +53,7 @@ public sealed class PreferenceStoreTests : IDisposable
 
         snapshot.All.ContainsKey("Failed.App").Should().Be(kept);
         snapshot.All.Should().ContainKey("Muted.App", "muted entries never expire");
-        _store
-            .Load()
-            .All.ContainsKey("Failed.App")
-            .Should()
-            .Be(kept, "the pruned file is what the next load reads");
+        _store.Load().All.ContainsKey("Failed.App").Should().Be(kept, "the pruned file is what the next load reads");
     }
 
     [Fact]
@@ -84,11 +74,7 @@ public sealed class PreferenceStoreTests : IDisposable
     [InlineData("Skipped.App", "2.0", true)]
     [InlineData("Skipped.App", "2.1", false)]
     [InlineData("Unknown.App", "1.0", false)]
-    public void IsSuppressed_HoldsBackMutedFailedAndExactSkippedVersions(
-        string id,
-        string available,
-        bool suppressed
-    )
+    public void IsSuppressed_HoldsBackMutedFailedAndExactSkippedVersions(string id, string available, bool suppressed)
     {
         _store.Set("Muted.App", PreferenceState.Muted);
         _store.Set("Failed.App", PreferenceState.Failed, "boom");

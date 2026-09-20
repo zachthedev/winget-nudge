@@ -34,18 +34,14 @@ public static class Repository
             directory = directory.Parent;
         }
 
-        throw new DirectoryNotFoundException(
-            $"No directory at or above {start} holds {string.Join(", ", Markers)}."
-        );
+        throw new DirectoryNotFoundException($"No directory at or above {start} holds {string.Join(", ", Markers)}.");
     }
 
     /// <summary>Reads one file of the repository.</summary>
     /// <param name="relativePath">The path from the root, with forward slashes.</param>
     /// <returns>The file, with line endings left as written.</returns>
     public static string Read(string relativePath) =>
-        File.ReadAllText(
-            Path.Combine(Root, relativePath.Replace('/', Path.DirectorySeparatorChar))
-        );
+        File.ReadAllText(Path.Combine(Root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
 }
 
 /// <summary>Walks source text past whitespace, comments, literals and balanced brackets.</summary>
@@ -237,9 +233,7 @@ public static class SourceText
 
             bool member = start > 0 && text[start - 1] == '.';
             int open = SkipTrivia(text, index);
-            bool named =
-                index - start == name.Length
-                && string.CompareOrdinal(text, start, name, 0, name.Length) == 0;
+            bool named = index - start == name.Length && string.CompareOrdinal(text, start, name, 0, name.Length) == 0;
             if (!member && named && open < text.Length && text[open] == '(')
             {
                 offsets.Add(start);
@@ -304,20 +298,11 @@ public static class SourceText
 
             if (holes && quote == '"' && text[index] == '{')
             {
-                index =
-                    index + 1 < text.Length && text[index + 1] == '{'
-                        ? index + 2
-                        : SkipHole(text, index + 1);
+                index = index + 1 < text.Length && text[index + 1] == '{' ? index + 2 : SkipHole(text, index + 1);
                 continue;
             }
 
-            if (
-                holes
-                && quote == '`'
-                && text[index] == '$'
-                && index + 1 < text.Length
-                && text[index + 1] == '{'
-            )
+            if (holes && quote == '`' && text[index] == '$' && index + 1 < text.Length && text[index + 1] == '{')
             {
                 index = SkipHole(text, index + 2);
                 continue;

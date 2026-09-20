@@ -41,14 +41,7 @@ public sealed class UpdateLogTests : IDisposable
     [Fact]
     public void SaveInstallerLog_WritesTheOutcomeAndKeepsTenPerPackage()
     {
-        UpgradeOutcome outcome = new(
-            false,
-            "InstallError",
-            6,
-            UpgradeOutcome.FilesInUseHResult,
-            true,
-            "corr"
-        );
+        UpgradeOutcome outcome = new(false, "InstallError", 6, UpgradeOutcome.FilesInUseHResult, true, "corr");
         string? first = null;
         for (int index = 0; index < 12; index++)
         {
@@ -62,19 +55,14 @@ public sealed class UpdateLogTests : IDisposable
         string[] gitLogs = Directory.GetFiles(_data.Paths.InstallerLogDirectory, "Git.Git_*.log");
         gitLogs.Should().HaveCount(LogsPerPackage);
         gitLogs.Should().NotContain(first, "the oldest dump is pruned first");
-        Directory
-            .GetFiles(_data.Paths.InstallerLogDirectory, "Other.App_*.log")
-            .Should()
-            .HaveCount(1);
+        Directory.GetFiles(_data.Paths.InstallerLogDirectory, "Other.App_*.log").Should().HaveCount(1);
         string content = File.ReadAllText(gitLogs.Max(StringComparer.Ordinal) ?? "");
         content
             .Should()
             .Contain("Package: Git.Git")
             .And.Contain("InstallerErrorCode: 6")
             .And.Contain("ExtendedErrorCode: 0x8A150111")
-            .And.Contain(
-                "ExtendedError: APPINSTALLER_CLI_ERROR_INSTALL_PACKAGE_IN_USE_BY_APPLICATION"
-            )
+            .And.Contain("ExtendedError: APPINSTALLER_CLI_ERROR_INSTALL_PACKAGE_IN_USE_BY_APPLICATION")
             .And.Contain("RebootRequired: True");
     }
 }
@@ -91,10 +79,7 @@ public sealed class LegacyDataMigratorTests : IDisposable
         string legacy = Path.Combine(_data.Root, "WingetUpdater");
         Directory.CreateDirectory(legacy);
         File.WriteAllText(Path.Combine(legacy, "preferences.json"), "{}");
-        File.WriteAllText(
-            Path.Combine(legacy, "module-config.json"),
-            """{ "cooldownHours": 48 }"""
-        );
+        File.WriteAllText(Path.Combine(legacy, "module-config.json"), """{ "cooldownHours": 48 }""");
         File.WriteAllText(Path.Combine(legacy, "unrelated.txt"), "x");
 
         int copied = LegacyDataMigrator.MigrateIfNeeded(_data.Paths, legacy);
@@ -103,9 +88,7 @@ public sealed class LegacyDataMigratorTests : IDisposable
         File.Exists(_data.Paths.Preferences).Should().BeTrue();
         Settings.Load(_data.Paths).CooldownHours.Should().Be(48);
         File.Exists(Path.Combine(_data.Paths.Directory, "unrelated.txt")).Should().BeFalse();
-        File.Exists(Path.Combine(legacy, "preferences.json"))
-            .Should()
-            .BeTrue("the legacy directory is left alone");
+        File.Exists(Path.Combine(legacy, "preferences.json")).Should().BeTrue("the legacy directory is left alone");
     }
 
     [Fact]
@@ -118,10 +101,7 @@ public sealed class LegacyDataMigratorTests : IDisposable
 
         LegacyDataMigrator.MigrateIfNeeded(_data.Paths, legacy).Should().Be(0);
         LegacyDataMigrator
-            .MigrateIfNeeded(
-                new DataPaths(Path.Combine(_data.Root, "fresh")),
-                Path.Combine(_data.Root, "nope")
-            )
+            .MigrateIfNeeded(new DataPaths(Path.Combine(_data.Root, "fresh")), Path.Combine(_data.Root, "nope"))
             .Should()
             .Be(0);
         File.Exists(_data.Paths.Preferences).Should().BeFalse();
@@ -294,11 +274,7 @@ public sealed class SettingsTests : IDisposable
         Environment.SetEnvironmentVariable("GITHUB_TOKEN", "ghp_environment");
         try
         {
-            new Settings()
-                .WithGitHubToken("ghp_setting")
-                .ResolveGitHubToken()
-                .Should()
-                .Be("ghp_setting");
+            new Settings().WithGitHubToken("ghp_setting").ResolveGitHubToken().Should().Be("ghp_setting");
         }
         finally
         {
@@ -360,8 +336,7 @@ public sealed class StartupRegistrarTriggerTests
     [Fact]
     public void BuildTriggers_WeeklyAndLogonByDefault()
     {
-        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers =
-            StartupRegistrar.BuildTriggers(new Settings());
+        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers = StartupRegistrar.BuildTriggers(new Settings());
 
         triggers.Should().HaveCount(2);
         triggers[0].Should().BeOfType<Microsoft.Win32.TaskScheduler.WeeklyTrigger>();
@@ -371,31 +346,25 @@ public sealed class StartupRegistrarTriggerTests
     [Fact]
     public void BuildTriggers_DailyReplacesTheWeeklySchedule()
     {
-        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers =
-            StartupRegistrar.BuildTriggers(
-                new Settings { Frequency = CheckFrequency.Daily, CheckAtLogon = false }
-            );
+        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers = StartupRegistrar.BuildTriggers(
+            new Settings { Frequency = CheckFrequency.Daily, CheckAtLogon = false }
+        );
 
-        triggers
-            .Should()
-            .ContainSingle()
-            .Which.Should()
-            .BeOfType<Microsoft.Win32.TaskScheduler.DailyTrigger>();
+        triggers.Should().ContainSingle().Which.Should().BeOfType<Microsoft.Win32.TaskScheduler.DailyTrigger>();
     }
 
     [Fact]
     public void BuildTriggers_HonorsTheChosenTime()
     {
-        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers =
-            StartupRegistrar.BuildTriggers(
-                new Settings
-                {
-                    Frequency = CheckFrequency.Weekly,
-                    CheckHour = 17,
-                    CheckMinute = 45,
-                    CheckAtLogon = false,
-                }
-            );
+        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers = StartupRegistrar.BuildTriggers(
+            new Settings
+            {
+                Frequency = CheckFrequency.Weekly,
+                CheckHour = 17,
+                CheckMinute = 45,
+                CheckAtLogon = false,
+            }
+        );
 
         triggers[0].StartBoundary.Hour.Should().Be(17);
         triggers[0].StartBoundary.Minute.Should().Be(45);
@@ -404,15 +373,14 @@ public sealed class StartupRegistrarTriggerTests
     [Fact]
     public void BuildTriggers_AddsUnlockWhenAsked()
     {
-        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers =
-            StartupRegistrar.BuildTriggers(
-                new Settings
-                {
-                    Frequency = CheckFrequency.Never,
-                    CheckAtLogon = false,
-                    CheckAtUnlock = true,
-                }
-            );
+        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers = StartupRegistrar.BuildTriggers(
+            new Settings
+            {
+                Frequency = CheckFrequency.Never,
+                CheckAtLogon = false,
+                CheckAtUnlock = true,
+            }
+        );
 
         triggers
             .Should()
@@ -466,10 +434,9 @@ public sealed class StartupRegistrarTriggerTests
     [Fact]
     public void BuildTriggers_AppliesTheLogonDelay()
     {
-        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers =
-            StartupRegistrar.BuildTriggers(
-                new Settings { Frequency = CheckFrequency.Never, LogonDelayMinutes = 15 }
-            );
+        IReadOnlyList<Microsoft.Win32.TaskScheduler.Trigger> triggers = StartupRegistrar.BuildTriggers(
+            new Settings { Frequency = CheckFrequency.Never, LogonDelayMinutes = 15 }
+        );
 
         triggers
             .Should()
@@ -613,10 +580,7 @@ public sealed class RunLockTests : IDisposable
     [InlineData(RunLock.Check)]
     public void RunLockFile_ForARunName_SitsInTheDataDirectory(string name)
     {
-        _data
-            .Paths.RunLockFile(name)
-            .Should()
-            .Be(Path.Combine(_data.Paths.Directory, $"{name}.lock"));
+        _data.Paths.RunLockFile(name).Should().Be(Path.Combine(_data.Paths.Directory, $"{name}.lock"));
     }
 
     private static RunLock Taken(RunLockAttempt attempt) =>

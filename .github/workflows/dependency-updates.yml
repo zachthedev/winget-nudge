@@ -9,7 +9,7 @@ on:
   # other runs keep open branches current, and raise security fixes, which
   # ignore the schedule.
   schedule:
-    - cron: "23 4 * * *"
+    - cron: '23 4 * * *'
   workflow_dispatch:
 
 # Every credential Renovate uses comes from the app. The job token gets nothing
@@ -164,7 +164,7 @@ jobs:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           # No onboarding pull request: .github/renovate.json is committed, and
           # a repository without it is a mistake rather than a new adoption.
-          RENOVATE_ONBOARDING: "false"
+          RENOVATE_ONBOARDING: 'false'
           RENOVATE_REQUIRE_CONFIG: required
           # Commits through the GitHub API, so the app signs them.
           RENOVATE_PLATFORM_COMMIT: enabled

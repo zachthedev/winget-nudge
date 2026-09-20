@@ -62,12 +62,8 @@ public abstract record UpgradeEvent
     /// <param name="Result">Outcome.</param>
     /// <param name="Detail">Final status text.</param>
     /// <param name="LogPath">Installer log written for a failure, or <c>null</c>.</param>
-    public sealed record Finished(
-        string PackageId,
-        PackageResult Result,
-        string Detail,
-        string? LogPath = null
-    ) : UpgradeEvent;
+    public sealed record Finished(string PackageId, PackageResult Result, string Detail, string? LogPath = null)
+        : UpgradeEvent;
 }
 
 /// <summary>Decisions and display the engine delegates to the host.</summary>
@@ -95,13 +91,7 @@ public interface IUpgradeInteraction
 /// <param name="Failed">Packages that failed every attempt.</param>
 /// <param name="Canceled">Whether the run stopped early.</param>
 /// <param name="AbortReason">Why the run stopped without attempting the rest, or <c>null</c>.</param>
-public sealed record UpgradeSummary(
-    int Upgraded,
-    int Skipped,
-    int Failed,
-    bool Canceled,
-    string? AbortReason = null
-);
+public sealed record UpgradeSummary(int Upgraded, int Skipped, int Failed, bool Canceled, string? AbortReason = null);
 
 /// <summary>
 /// Upgrades a list of packages: finds and closes blocking apps, retries interactively for
@@ -137,10 +127,7 @@ public sealed class UpgradeEngine(
     /// <param name="packages">Packages to upgrade.</param>
     /// <param name="cancellationToken">Stops before the next package; the current install finishes.</param>
     /// <returns>Run totals.</returns>
-    public async Task<UpgradeSummary> RunAsync(
-        IReadOnlyList<PackageRef> packages,
-        CancellationToken cancellationToken
-    )
+    public async Task<UpgradeSummary> RunAsync(IReadOnlyList<PackageRef> packages, CancellationToken cancellationToken)
     {
         int upgraded = 0;
         int skipped = 0;
@@ -238,10 +225,7 @@ public sealed class UpgradeEngine(
         return new UpgradeSummary(upgraded, skipped, failed, Canceled: false, exception.Message);
     }
 
-    private async Task<PackageResult> UpgradeOneAsync(
-        PackageRef package,
-        CancellationToken cancellationToken
-    )
+    private async Task<PackageResult> UpgradeOneAsync(PackageRef package, CancellationToken cancellationToken)
     {
         string id = package.Id;
         ui.Report(new UpgradeEvent.Started(package));
@@ -251,8 +235,7 @@ public sealed class UpgradeEngine(
         HolderHandle holder = new();
         try
         {
-            return await UpgradeWithRetriesAsync(id, holder, cancellationToken)
-                .ConfigureAwait(false);
+            return await UpgradeWithRetriesAsync(id, holder, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -294,11 +277,7 @@ public sealed class UpgradeEngine(
             return HolderOutcome.NothingHeld;
         }
 
-        CloseAppsDecision decision = await ui.AskCloseAppsAsync(
-                id,
-                detection.Processes,
-                cancellationToken
-            )
+        CloseAppsDecision decision = await ui.AskCloseAppsAsync(id, detection.Processes, cancellationToken)
             .ConfigureAwait(false);
         if (decision == CloseAppsDecision.Skip)
         {
@@ -349,17 +328,12 @@ public sealed class UpgradeEngine(
     /// service or a critical process, so the names go to a direct close after that, and an
     /// upgrade the survivors still block falls through to the retry ladder.
     /// </summary>
-    private async Task CloseBlockersAsync(
-        string id,
-        BlockingDetection detection,
-        CancellationToken cancellationToken
-    )
+    private async Task CloseBlockersAsync(string id, BlockingDetection detection, CancellationToken cancellationToken)
     {
         ui.Report(new UpgradeEvent.Message(id, "Closing applications"));
         if (detection.Session is IAppCloseSession session)
         {
-            ShutdownResult shutdown = await Task.Run(session.Shutdown, cancellationToken)
-                .ConfigureAwait(false);
+            ShutdownResult shutdown = await Task.Run(session.Shutdown, cancellationToken).ConfigureAwait(false);
             if (shutdown.Closed)
             {
                 return;
@@ -373,12 +347,7 @@ public sealed class UpgradeEngine(
             .ConfigureAwait(false);
         if (stubborn.Count > 0)
         {
-            ui.Report(
-                new UpgradeEvent.Message(
-                    id,
-                    $"Still running: {string.Join(", ", stubborn)}; upgrading anyway"
-                )
-            );
+            ui.Report(new UpgradeEvent.Message(id, $"Still running: {string.Join(", ", stubborn)}; upgrading anyway"));
         }
     }
 
@@ -389,9 +358,7 @@ public sealed class UpgradeEngine(
     {
         try
         {
-            HashSet<string> ids = packages
-                .Select(static package => package.Id)
-                .ToHashSet(StringComparer.Ordinal);
+            HashSet<string> ids = packages.Select(static package => package.Id).ToHashSet(StringComparer.Ordinal);
             IReadOnlyList<PackageInfo> inventory = await source
                 .GetInstalledAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -402,10 +369,7 @@ public sealed class UpgradeEngine(
         }
         catch (Exception exception)
             when (exception is not WingetUnavailableException
-                && (
-                    exception is not OperationCanceledException
-                    || !cancellationToken.IsCancellationRequested
-                )
+                && (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             )
         {
             ui.Report(new UpgradeEvent.Phase($"Changelogs unavailable: {exception.Message}"));
@@ -419,17 +383,10 @@ public sealed class UpgradeEngine(
         CancellationToken cancellationToken
     )
     {
-        Progress<UpgradeProgress> progress = new(snapshot =>
-            ui.Report(new UpgradeEvent.Progress(id, snapshot))
-        );
+        Progress<UpgradeProgress> progress = new(snapshot => ui.Report(new UpgradeEvent.Progress(id, snapshot)));
         DateTimeOffset startedAt = (clock ?? TimeProvider.System).GetUtcNow();
 
-        UpgradeOutcome outcome = await AttemptAsync(
-                id,
-                UpgradeMode.Silent,
-                progress,
-                cancellationToken
-            )
+        UpgradeOutcome outcome = await AttemptAsync(id, UpgradeMode.Silent, progress, cancellationToken)
             .ConfigureAwait(false);
         if (outcome.Succeeded)
         {
@@ -443,8 +400,7 @@ public sealed class UpgradeEngine(
         // app merely happens to be running.
         if (outcome.IsFilesInUse)
         {
-            HolderOutcome holders = await TryClearHoldersAsync(id, holder, cancellationToken)
-                .ConfigureAwait(false);
+            HolderOutcome holders = await TryClearHoldersAsync(id, holder, cancellationToken).ConfigureAwait(false);
             if (holders == HolderOutcome.UserSkipped)
             {
                 ui.Report(new UpgradeEvent.Finished(id, PackageResult.Skipped, "skipped by user"));
@@ -453,12 +409,7 @@ public sealed class UpgradeEngine(
 
             if (holders == HolderOutcome.Cleared)
             {
-                UpgradeOutcome afterClose = await AttemptAsync(
-                        id,
-                        UpgradeMode.Silent,
-                        progress,
-                        cancellationToken
-                    )
+                UpgradeOutcome afterClose = await AttemptAsync(id, UpgradeMode.Silent, progress, cancellationToken)
                     .ConfigureAwait(false);
                 if (afterClose.Succeeded)
                 {
@@ -469,17 +420,9 @@ public sealed class UpgradeEngine(
             }
 
             ui.Report(
-                new UpgradeEvent.Message(
-                    id,
-                    "Retrying interactively; the installer will show which apps to close"
-                )
+                new UpgradeEvent.Message(id, "Retrying interactively; the installer will show which apps to close")
             );
-            UpgradeOutcome interactive = await AttemptAsync(
-                    id,
-                    UpgradeMode.Interactive,
-                    progress,
-                    cancellationToken
-                )
+            UpgradeOutcome interactive = await AttemptAsync(id, UpgradeMode.Interactive, progress, cancellationToken)
                 .ConfigureAwait(false);
             if (interactive.Succeeded)
             {
@@ -488,12 +431,7 @@ public sealed class UpgradeEngine(
         }
 
         ui.Report(new UpgradeEvent.Message(id, "Retrying with force"));
-        UpgradeOutcome forced = await AttemptAsync(
-                id,
-                UpgradeMode.Force,
-                progress,
-                cancellationToken
-            )
+        UpgradeOutcome forced = await AttemptAsync(id, UpgradeMode.Force, progress, cancellationToken)
             .ConfigureAwait(false);
         if (forced.Succeeded)
         {
@@ -503,12 +441,7 @@ public sealed class UpgradeEngine(
         // Store and MSIX installers refuse an elevated caller.
         if (forced.RefusesElevation)
         {
-            ui.Report(
-                new UpgradeEvent.Message(
-                    id,
-                    "Needs a non-admin context; retrying without elevation"
-                )
-            );
+            ui.Report(new UpgradeEvent.Message(id, "Needs a non-admin context; retrying without elevation"));
             long exit;
             try
             {
@@ -518,9 +451,7 @@ public sealed class UpgradeEngine(
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                ui.Report(
-                    new UpgradeEvent.Message(id, $"scheduled task error: {exception.Message}")
-                );
+                ui.Report(new UpgradeEvent.Message(id, $"scheduled task error: {exception.Message}"));
                 exit = -1;
             }
 
@@ -558,9 +489,7 @@ public sealed class UpgradeEngine(
     {
         try
         {
-            return await upgrader
-                .UpgradeAsync(id, mode, progress, cancellationToken)
-                .ConfigureAwait(false);
+            return await upgrader.UpgradeAsync(id, mode, progress, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
             when (exception is not OperationCanceledException and not WingetUnavailableException)

@@ -114,16 +114,13 @@ public sealed partial class MarkdownView : UserControl
             return;
         }
 
-        string source =
-            _markdown.Length > MaxMarkdownLength ? _markdown[..MaxMarkdownLength] : _markdown;
+        string source = _markdown.Length > MaxMarkdownLength ? _markdown[..MaxMarkdownLength] : _markdown;
         Browser.NavigateToString(ToHtml(source, ActualTheme == ElementTheme.Dark));
     }
 
     private static MarkdownPipeline BuildPipeline()
     {
-        MarkdownPipelineBuilder builder = new MarkdownPipelineBuilder()
-            .UseAdvancedExtensions()
-            .DisableHtml();
+        MarkdownPipelineBuilder builder = new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml();
         builder.Extensions.TryRemove<Markdig.Extensions.GenericAttributes.GenericAttributesExtension>();
         return builder.Build();
     }
@@ -200,10 +197,7 @@ public sealed partial class MarkdownView : UserControl
         )
         {
             args.Cancel = true;
-            if (
-                Uri.TryCreate(args.Uri, UriKind.Absolute, out Uri? target)
-                && target.Scheme is "https" or "http"
-            )
+            if (Uri.TryCreate(args.Uri, UriKind.Absolute, out Uri? target) && target.Scheme is "https" or "http")
             {
                 _ = Windows.System.Launcher.LaunchUriAsync(target);
             }

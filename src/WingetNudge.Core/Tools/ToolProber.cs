@@ -28,10 +28,7 @@ public sealed class ToolProber(
     /// <param name="tool">Tool definition.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The version, or <c>null</c> when the command fails or the regex misses.</returns>
-    public async Task<string?> GetCurrentAsync(
-        ToolDefinition tool,
-        CancellationToken cancellationToken
-    )
+    public async Task<string?> GetCurrentAsync(ToolDefinition tool, CancellationToken cancellationToken)
     {
         if (tool.CurrentCommand.Count == 0)
         {
@@ -42,11 +39,7 @@ public sealed class ToolProber(
         try
         {
             ProcessOutput result = await processes
-                .RunAsync(
-                    tool.CurrentCommand[0],
-                    tool.CurrentCommand.Skip(1).ToArray(),
-                    cancellationToken
-                )
+                .RunAsync(tool.CurrentCommand[0], tool.CurrentCommand.Skip(1).ToArray(), cancellationToken)
                 .ConfigureAwait(false);
             output = result.Output.Trim();
         }
@@ -98,9 +91,7 @@ public sealed class ToolProber(
             using HttpResponseMessage response = await http.GetAsync(latestUrl, cancellationToken)
                 .ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            using Stream body = await response
-                .Content.ReadAsStreamAsync(cancellationToken)
-                .ConfigureAwait(false);
+            using Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             // A release endpoint answers in kilobytes; anything larger is not one.
             using Stream bounded = new BoundedStream(body, MaxResponseBytes);
             using JsonDocument document = await JsonDocument
@@ -140,22 +131,14 @@ public sealed class ToolProber(
     /// <summary>Probes every registered tool, sorted by id.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>One status per tool. A failing probe yields a null version, never an exception.</returns>
-    public async Task<IReadOnlyList<ToolStatus>> GetStatusesAsync(
-        CancellationToken cancellationToken
-    )
+    public async Task<IReadOnlyList<ToolStatus>> GetStatusesAsync(CancellationToken cancellationToken)
     {
         Dictionary<string, ToolDefinition> tools = registry.Load();
         List<ToolStatus> statuses = [];
-        foreach (
-            (string id, ToolDefinition tool) in tools.OrderBy(
-                static pair => pair.Key,
-                StringComparer.Ordinal
-            )
-        )
+        foreach ((string id, ToolDefinition tool) in tools.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
         {
             string? current = await GetCurrentAsync(tool, cancellationToken).ConfigureAwait(false);
-            string? latest = await GetLatestAsync(id, tool, force: false, cancellationToken)
-                .ConfigureAwait(false);
+            string? latest = await GetLatestAsync(id, tool, force: false, cancellationToken).ConfigureAwait(false);
             statuses.Add(new ToolStatus(id, tool, current, latest));
         }
 
@@ -183,8 +166,7 @@ public sealed class ToolProber(
             Match match = Regex.Match(value, pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
             return match.Success && match.Groups.Count >= 2 ? match.Groups[1].Value : null;
         }
-        catch (Exception exception)
-            when (exception is ArgumentException or RegexMatchTimeoutException)
+        catch (Exception exception) when (exception is ArgumentException or RegexMatchTimeoutException)
         {
             return null;
         }

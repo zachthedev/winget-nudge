@@ -45,10 +45,7 @@
     {
       "customType": "regex",
       "description": "The mise both legs install: .github/mise-bootstrap.json carries the version cake.cs and ci.yml read, and renovate.json carries the same number under constraints so the Renovate container runs it too. One dependency in two files, moved together. jdx/mise publishes to GitHub releases, which carry a timestamp, so the cooldown applies. Renovate cannot compute the two binary hashes beside the version; the pull request note says how to move them.",
-      "managerFilePatterns": [
-        "/^\\.github/mise-bootstrap\\.json$/",
-        "/^\\.github/renovate\\.json$/"
-      ],
+      "managerFilePatterns": ["/^\\.github/mise-bootstrap\\.json$/", "/^\\.github/renovate\\.json$/"],
       "matchStrings": [
         "\"version\": \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
         "\"mise\": \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""

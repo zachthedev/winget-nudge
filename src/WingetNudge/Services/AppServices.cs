@@ -37,8 +37,7 @@ public sealed class AppServices : IDisposable
             {
                 DemoInventory.Seed(this);
             }
-            catch (Exception exception)
-                when (exception is IOException or UnauthorizedAccessException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 // This constructor runs inside the type initializer, before the app can write a
                 // crash log, so a throw here would end the process with nothing to read.
@@ -113,9 +112,7 @@ public sealed class AppServices : IDisposable
                 {
                     Timeout = TimeSpan.FromSeconds(10),
                 };
-                _http.DefaultRequestHeaders.UserAgent.Add(
-                    new ProductInfoHeaderValue("WingetNudge", "1.0")
-                );
+                _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("WingetNudge", "1.0"));
             }
 
             return _http;
@@ -162,8 +159,7 @@ public sealed class AppServices : IDisposable
     }
 
     /// <summary>Muted and failed package state.</summary>
-    public PreferenceStore Preferences =>
-        _preferences ??= new PreferenceStore(Paths, Clock, Settings.FailedExpiryDays);
+    public PreferenceStore Preferences => _preferences ??= new PreferenceStore(Paths, Clock, Settings.FailedExpiryDays);
 
     /// <summary>First-seen tracking and cooldown.</summary>
     public VersionTracker Tracker
@@ -181,8 +177,7 @@ public sealed class AppServices : IDisposable
     public ToolProber ToolProber => _toolProber ??= CreateToolProber();
 
     /// <summary>Publish date lookup against winget-pkgs.</summary>
-    public GitHubReleaseDateResolver ReleaseDates =>
-        _releaseDates ??= new GitHubReleaseDateResolver(Http);
+    public GitHubReleaseDateResolver ReleaseDates => _releaseDates ??= new GitHubReleaseDateResolver(Http);
 
     /// <summary>The shared inventory query.</summary>
     public UpdateCheck UpdateCheck => _updateCheck ??= CreateUpdateCheck();
@@ -195,19 +190,13 @@ public sealed class AppServices : IDisposable
 
     /// <summary>Outcome log.</summary>
     public UpdateLog UpdateLog =>
-        _updateLog ??= new UpdateLog(
-            Paths,
-            Clock,
-            Settings.LogRetentionDays,
-            Settings.InstallerLogsPerPackage
-        );
+        _updateLog ??= new UpdateLog(Paths, Clock, Settings.LogRetentionDays, Settings.InstallerLogsPerPackage);
 
     /// <summary>Release notes already fetched, keyed by package and version.</summary>
     public ChangelogCache ChangelogCache => _changelogCache ??= new ChangelogCache(Paths, Clock);
 
     /// <summary>Release notes.</summary>
-    public ChangelogFetcher Changelogs =>
-        _changelogs ??= new ChangelogFetcher(Http, ChangelogCache);
+    public ChangelogFetcher Changelogs => _changelogs ??= new ChangelogFetcher(Http, ChangelogCache);
 
     /// <summary>What the last notification announced.</summary>
     public NotificationState Notifications
@@ -256,14 +245,6 @@ public sealed class AppServices : IDisposable
             throw new InvalidOperationException("The demo inventory upgrades nothing.");
         }
 
-        return new UpgradeEngine(
-            Winget,
-            Winget,
-            Preferences,
-            UpdateLog,
-            Changelogs,
-            new BlockingProcessDetector(),
-            ui
-        );
+        return new UpgradeEngine(Winget, Winget, Preferences, UpdateLog, Changelogs, new BlockingProcessDetector(), ui);
     }
 }
