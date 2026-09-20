@@ -1,7 +1,7 @@
 name: Bug
 description: Winget Nudge does something other than what it documents.
-title: "bug: "
-labels: ["bug"]
+title: 'bug: '
+labels: ['bug']
 body:
   - type: markdown
     attributes:
@@ -28,7 +28,7 @@ body:
       label: Winget Nudge version
       description: >
         Apps & features lists it. For a build from source, give the commit sha.
-      placeholder: "1.0.0, or 6f9be1d"
+      placeholder: '1.0.0, or 6f9be1d'
     validations:
       required: true
   - type: input
@@ -36,7 +36,7 @@ body:
     attributes:
       label: winget version
       description: What `winget --version` prints.
-      placeholder: "v1.29.290"
+      placeholder: 'v1.29.290'
     validations:
       required: true
   - type: input
@@ -44,7 +44,7 @@ body:
     attributes:
       label: Windows version
       description: The version and build `winver` shows.
-      placeholder: "24H2, build 26100.4652"
+      placeholder: '24H2, build 26100.4652'
     validations:
       required: true
   - type: dropdown

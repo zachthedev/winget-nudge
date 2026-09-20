@@ -17,11 +17,7 @@ public enum PublishSource
 /// <param name="FirstSeen">When a check on this machine first observed the version.</param>
 /// <param name="Published">When the version became available, or <c>null</c> while unresolved.</param>
 /// <param name="Source">Which lookup produced <paramref name="Published"/>.</param>
-public sealed record VersionObservation(
-    DateTimeOffset FirstSeen,
-    DateTimeOffset? Published,
-    PublishSource Source
-)
+public sealed record VersionObservation(DateTimeOffset FirstSeen, DateTimeOffset? Published, PublishSource Source)
 {
     /// <summary>The date the cooldown counts from: published when known, first-seen otherwise.</summary>
     public DateTimeOffset AvailableSince => Published ?? FirstSeen;
@@ -29,8 +25,7 @@ public sealed record VersionObservation(
     /// <summary>Observation seeded from a first sighting.</summary>
     /// <param name="firstSeen">Sighting time.</param>
     /// <returns>An unresolved observation.</returns>
-    public static VersionObservation Seen(DateTimeOffset firstSeen) =>
-        new(firstSeen, null, PublishSource.FirstSeen);
+    public static VersionObservation Seen(DateTimeOffset firstSeen) => new(firstSeen, null, PublishSource.FirstSeen);
 }
 
 /// <summary>On-disk shape of <c>version-tracking.json</c>.</summary>

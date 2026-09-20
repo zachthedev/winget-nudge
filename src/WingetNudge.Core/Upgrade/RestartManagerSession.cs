@@ -145,11 +145,7 @@ public sealed class RestartManagerSession : IAppCloseSession
     public ShutdownResult Shutdown()
     {
         ThrowIfDisposed();
-        WIN32_ERROR error = PInvoke.RmShutdown(
-            _handle,
-            (uint)RM_SHUTDOWN_TYPE.RmForceShutdown,
-            null
-        );
+        WIN32_ERROR error = PInvoke.RmShutdown(_handle, (uint)RM_SHUTDOWN_TYPE.RmForceShutdown, null);
         if (error != WIN32_ERROR.NO_ERROR)
         {
             return ShutdownResult.Refused(Explain(error));
@@ -208,8 +204,7 @@ public sealed class RestartManagerSession : IAppCloseSession
             using Process process = Process.GetProcessById((int)pid);
             return process.ProcessName;
         }
-        catch (Exception exception)
-            when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             return appName;
         }

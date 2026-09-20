@@ -11,16 +11,9 @@
             lighter control fills are near-white in the light theme and vanish on its backdrop.
             -->
             <Style x:Key="SkeletonBarStyle" TargetType="Border">
-                <Setter
-                    Property="Background"
-                    Value="{ThemeResource ControlStrongFillColorDisabledBrush}"
-                />
+                <Setter Property="Background" Value="{ThemeResource ControlStrongFillColorDisabledBrush}" />
             </Style>
-            <Style
-                x:Key="SkeletonFaintBarStyle"
-                TargetType="Border"
-                BasedOn="{StaticResource SkeletonBarStyle}"
-            >
+            <Style x:Key="SkeletonFaintBarStyle" TargetType="Border" BasedOn="{StaticResource SkeletonBarStyle}">
                 <Setter Property="Opacity" Value="0.55" />
             </Style>
             <!--
@@ -50,10 +43,7 @@
                         Margin="0,2,0,0"
                     />
                     <StackPanel Grid.Column="1" Spacing="2">
-                        <TextBlock
-                            Text="{x:Bind Name}"
-                            Style="{StaticResource BodyStrongTextBlockStyle}"
-                        />
+                        <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <TextBlock
                             Text="{x:Bind InstalledName}"
                             Visibility="{x:Bind InstalledNameVisibility}"
@@ -76,11 +66,7 @@
                         A note glyph is a private-use codepoint, so it needs the icon font a
                         FontIcon brings. A text run renders a missing-glyph box instead.
                         -->
-                        <Grid
-                            ColumnSpacing="6"
-                            Visibility="{x:Bind NoteVisibility, Mode=OneWay}"
-                            Margin="0,1,0,0"
-                        >
+                        <Grid ColumnSpacing="6" Visibility="{x:Bind NoteVisibility, Mode=OneWay}" Margin="0,1,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -183,10 +169,7 @@
                         Margin="0,2,0,0"
                     />
                     <StackPanel Grid.Column="1" Spacing="2">
-                        <TextBlock
-                            Text="{x:Bind Name}"
-                            Style="{StaticResource BodyStrongTextBlockStyle}"
-                        />
+                        <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="{x:Bind CurrentVersion}" />
                             <FontIcon Glyph="&#xE72A;" FontSize="12" VerticalAlignment="Center" />
@@ -359,18 +342,8 @@
                         />
                     </Grid>
                 </StackPanel>
-                <CommandBar
-                    Grid.Column="1"
-                    DefaultLabelPosition="Right"
-                    Background="Transparent"
-                    IsOpen="False"
-                >
-                    <AppBarButton
-                        x:Name="RefreshButton"
-                        Icon="Refresh"
-                        Label="Refresh"
-                        Click="OnRefreshClick"
-                    />
+                <CommandBar Grid.Column="1" DefaultLabelPosition="Right" Background="Transparent" IsOpen="False">
+                    <AppBarButton x:Name="RefreshButton" Icon="Refresh" Label="Refresh" Click="OnRefreshClick" />
                     <AppBarButton Icon="Setting" Label="Settings" Click="OnSettingsClick" />
                 </CommandBar>
             </Grid>
@@ -382,11 +355,7 @@
             <Grid Grid.Row="1" x:Name="LoadingPanel">
                 <StackPanel x:Name="SkeletonPanel" Margin="0,0,12,0" Opacity="0.7">
                     <StackPanel.Resources>
-                        <Storyboard
-                            x:Name="SkeletonPulse"
-                            RepeatBehavior="Forever"
-                            AutoReverse="True"
-                        >
+                        <Storyboard x:Name="SkeletonPulse" RepeatBehavior="Forever" AutoReverse="True">
                             <DoubleAnimation
                                 Storyboard.TargetName="SkeletonPanel"
                                 Storyboard.TargetProperty="Opacity"
@@ -413,10 +382,7 @@
                             Style="{StaticResource SkeletonBarStyle}"
                         />
                     </StackPanel>
-                    <ItemsControl
-                        x:Name="SkeletonRows"
-                        ItemTemplate="{StaticResource SkeletonRowTemplate}"
-                    />
+                    <ItemsControl x:Name="SkeletonRows" ItemTemplate="{StaticResource SkeletonRowTemplate}" />
                 </StackPanel>
                 <TextBlock
                     x:Name="LoadingText"
@@ -428,12 +394,7 @@
 
             <InfoBar Grid.Row="2" x:Name="MessageBar" IsOpen="False" />
 
-            <StackPanel
-                Grid.Row="3"
-                Orientation="Horizontal"
-                HorizontalAlignment="Right"
-                Spacing="8"
-            >
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
                 <Button
                     x:Name="UpdateButton"
                     Content="Update selected"

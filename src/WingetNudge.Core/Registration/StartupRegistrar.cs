@@ -127,9 +127,7 @@ public sealed class StartupRegistrar(
     {
         TaskDefinition definition = service.NewTask();
         definition.RegistrationInfo.Description = description;
-        definition.Actions.Add(
-            new ExecAction(executablePath, arguments, Path.GetDirectoryName(executablePath))
-        );
+        definition.Actions.Add(new ExecAction(executablePath, arguments, Path.GetDirectoryName(executablePath)));
 
         definition.Settings.DisallowStartIfOnBatteries = false;
         definition.Settings.StopIfGoingOnBatteries = false;
@@ -150,15 +148,11 @@ public sealed class StartupRegistrar(
     public static IReadOnlyList<Trigger> BuildTriggers(Settings settings)
     {
         List<Trigger> triggers = [];
-        DateTime start = DateTime
-            .Today.AddHours(settings.CheckHour)
-            .AddMinutes(settings.CheckMinute);
+        DateTime start = DateTime.Today.AddHours(settings.CheckHour).AddMinutes(settings.CheckMinute);
         switch (settings.Frequency)
         {
             case CheckFrequency.Weekly:
-                triggers.Add(
-                    new WeeklyTrigger(ToTaskDay(settings.CheckDay)) { StartBoundary = start }
-                );
+                triggers.Add(new WeeklyTrigger(ToTaskDay(settings.CheckDay)) { StartBoundary = start });
                 break;
             case CheckFrequency.Daily:
                 triggers.Add(new DailyTrigger { StartBoundary = start });
@@ -223,12 +217,7 @@ public sealed class StartupRegistrar(
     public void CreateShortcut()
     {
         PInvoke
-            .CoCreateInstance(
-                typeof(ShellLink).GUID,
-                null,
-                CLSCTX.CLSCTX_INPROC_SERVER,
-                out IShellLinkW link
-            )
+            .CoCreateInstance(typeof(ShellLink).GUID, null, CLSCTX.CLSCTX_INPROC_SERVER, out IShellLinkW link)
             .ThrowOnFailure();
         link.SetPath(executablePath);
         link.SetWorkingDirectory(Path.GetDirectoryName(executablePath) ?? "");

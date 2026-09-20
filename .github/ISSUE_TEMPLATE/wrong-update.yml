@@ -1,14 +1,13 @@
 name: Wrong update
-description:
-  An update is missing, listed when it should not be, or shown with the wrong age or notes.
-title: "update: "
-labels: ["bug", "detection"]
+description: An update is missing, listed when it should not be, or shown with the wrong age or notes.
+title: 'update: '
+labels: ['bug', 'detection']
 body:
   - type: input
     id: package
     attributes:
       label: Package id
-      placeholder: "Git.Git"
+      placeholder: 'Git.Git'
     validations:
       required: true
   - type: dropdown
@@ -35,8 +34,7 @@ body:
     id: picker
     attributes:
       label: What the picker shows, and what it should show
-      description:
-        Words or a screenshot. For an age or notes problem, say where the right answer is.
+      description: Words or a screenshot. For an age or notes problem, say where the right answer is.
     validations:
       required: true
   - type: textarea
@@ -50,6 +48,6 @@ body:
     id: version
     attributes:
       label: Winget Nudge version
-      placeholder: "1.0.0, or 6f9be1d"
+      placeholder: '1.0.0, or 6f9be1d'
     validations:
       required: true

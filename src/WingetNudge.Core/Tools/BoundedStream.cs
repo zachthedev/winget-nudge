@@ -31,8 +31,7 @@ public sealed class BoundedStream(Stream inner, long limit) : Stream
     }
 
     /// <inheritdoc/>
-    public override int Read(byte[] buffer, int offset, int count) =>
-        Read(buffer.AsSpan(offset, count));
+    public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
 
     /// <inheritdoc/>
     public override int Read(Span<byte> buffer)
@@ -49,10 +48,7 @@ public sealed class BoundedStream(Stream inner, long limit) : Stream
     }
 
     /// <inheritdoc/>
-    public override async ValueTask<int> ReadAsync(
-        Memory<byte> buffer,
-        CancellationToken cancellationToken = default
-    )
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         int allowed = Allowed(buffer.Length);
         if (allowed == 0)
@@ -60,20 +56,14 @@ public sealed class BoundedStream(Stream inner, long limit) : Stream
             return 0;
         }
 
-        int read = await inner
-            .ReadAsync(buffer[..allowed], cancellationToken)
-            .ConfigureAwait(false);
+        int read = await inner.ReadAsync(buffer[..allowed], cancellationToken).ConfigureAwait(false);
         _read += read;
         return read;
     }
 
     /// <inheritdoc/>
-    public override Task<int> ReadAsync(
-        byte[] buffer,
-        int offset,
-        int count,
-        CancellationToken cancellationToken
-    ) => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+        ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
 
     /// <inheritdoc/>
     public override void Flush() { }
@@ -85,8 +75,7 @@ public sealed class BoundedStream(Stream inner, long limit) : Stream
     public override void SetLength(long value) => throw new NotSupportedException();
 
     /// <inheritdoc/>
-    public override void Write(byte[] buffer, int offset, int count) =>
-        throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
     /// <summary>Bytes still inside the limit, capped at what the caller asked for.</summary>
     /// <param name="requested">Bytes the caller wants.</param>

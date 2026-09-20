@@ -34,9 +34,7 @@ public sealed partial class ChangelogFetcher(HttpClient http, ChangelogCache? ca
     )
     {
         Dictionary<string, string> result = new(StringComparer.Ordinal);
-        Dictionary<string, (string Owner, string Repo, ManifestNotes Manifest)> gitHub = new(
-            StringComparer.Ordinal
-        );
+        Dictionary<string, (string Owner, string Repo, ManifestNotes Manifest)> gitHub = new(StringComparer.Ordinal);
         using SemaphoreSlim gate = new(MaxConcurrentRequests);
 
         // ///// Cache /////
@@ -80,10 +78,7 @@ public sealed partial class ChangelogFetcher(HttpClient http, ChangelogCache? ca
             }
 
             ManifestNotes parsed = ParseManifest(yaml);
-            if (
-                parsed.Url is not null
-                && TryParseGitHubRepo(parsed.Url, out string owner, out string repo)
-            )
+            if (parsed.Url is not null && TryParseGitHubRepo(parsed.Url, out string owner, out string repo))
             {
                 gitHub[id] = (owner, repo, parsed);
             }
@@ -126,11 +121,7 @@ public sealed partial class ChangelogFetcher(HttpClient http, ChangelogCache? ca
             {
                 try
                 {
-                    fromReleases = SelectReleaseNotes(
-                        json,
-                        package.InstalledVersion,
-                        package.AvailableVersion
-                    );
+                    fromReleases = SelectReleaseNotes(json, package.InstalledVersion, package.AvailableVersion);
                 }
                 catch (JsonException)
                 {
@@ -208,18 +199,12 @@ public sealed partial class ChangelogFetcher(HttpClient http, ChangelogCache? ca
         }
 
         owner = segments[0];
-        repo = segments[1].EndsWith(".git", StringComparison.Ordinal)
-            ? segments[1][..^4]
-            : segments[1];
+        repo = segments[1].EndsWith(".git", StringComparison.Ordinal) ? segments[1][..^4] : segments[1];
         return owner.Length > 0 && repo.Length > 0;
     }
 
     /// <summary>Fetches a document, treating any HTTP failure or timeout as absent.</summary>
-    private async Task<string?> TryGetAsync(
-        Uri url,
-        SemaphoreSlim gate,
-        CancellationToken cancellationToken
-    )
+    private async Task<string?> TryGetAsync(Uri url, SemaphoreSlim gate, CancellationToken cancellationToken)
     {
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -277,11 +262,7 @@ public sealed partial class ChangelogFetcher(HttpClient http, ChangelogCache? ca
     /// <param name="installed">Installed version.</param>
     /// <param name="available">Target version.</param>
     /// <returns>Joined bodies, or <c>null</c> when no release qualifies.</returns>
-    public static string? SelectReleaseNotes(
-        string releasesJson,
-        string? installed,
-        string? available
-    )
+    public static string? SelectReleaseNotes(string releasesJson, string? installed, string? available)
     {
         using JsonDocument document = JsonDocument.Parse(releasesJson);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
@@ -294,18 +275,13 @@ public sealed partial class ChangelogFetcher(HttpClient http, ChangelogCache? ca
         List<string> bodies = [];
         foreach (JsonElement release in document.RootElement.EnumerateArray())
         {
-            string? body = release.TryGetProperty("body", out JsonElement bodyElement)
-                ? bodyElement.GetString()
-                : null;
+            string? body = release.TryGetProperty("body", out JsonElement bodyElement) ? bodyElement.GetString() : null;
             if (string.IsNullOrWhiteSpace(body))
             {
                 continue;
             }
 
-            if (
-                release.TryGetProperty("prerelease", out JsonElement pre)
-                && pre.ValueKind == JsonValueKind.True
-            )
+            if (release.TryGetProperty("prerelease", out JsonElement pre) && pre.ValueKind == JsonValueKind.True)
             {
                 continue;
             }
@@ -315,11 +291,7 @@ public sealed partial class ChangelogFetcher(HttpClient http, ChangelogCache? ca
                 : "";
             string tag = NormalizeTag(tagName);
 
-            if (
-                low is not null
-                && high is not null
-                && Version.TryParse(tag, out Version? tagVersion)
-            )
+            if (low is not null && high is not null && Version.TryParse(tag, out Version? tagVersion))
             {
                 if (tagVersion > low && tagVersion <= high)
                 {
@@ -346,8 +318,7 @@ public sealed partial class ChangelogFetcher(HttpClient http, ChangelogCache? ca
     }
 
     private static string? Scalar(YamlMappingNode root, string key) =>
-        root.Children.TryGetValue(new YamlScalarNode(key), out YamlNode? node)
-        && node is YamlScalarNode scalar
+        root.Children.TryGetValue(new YamlScalarNode(key), out YamlNode? node) && node is YamlScalarNode scalar
             ? scalar.Value
             : null;
 }

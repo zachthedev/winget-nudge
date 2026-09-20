@@ -17,9 +17,7 @@ public sealed class UpgradeEngineTests : IDisposable
     private readonly TempData _data = new();
 
     // The engine defaults to App Installer's real diagnostic directory; the suite must not read it.
-    private readonly string _diagnostics = Directory
-        .CreateTempSubdirectory("winget-nudge-diag")
-        .FullName;
+    private readonly string _diagnostics = Directory.CreateTempSubdirectory("winget-nudge-diag").FullName;
     private readonly FakeTimeProvider _clock = new(Now);
     private readonly FakeUpgrader _upgrader = new();
     private readonly RecordingInteraction _ui = new();
@@ -73,10 +71,7 @@ public sealed class UpgradeEngineTests : IDisposable
         summary.Should().Be(new UpgradeSummary(1, 0, 0, false));
         _upgrader.Attempts.Should().Equal(("Git.Git", UpgradeMode.Silent));
         _preferences.Load().All.Should().BeEmpty();
-        _log.Load()
-            .Select(static e => (e.PackageId, e.Result))
-            .Should()
-            .Equal(("Git.Git", "upgraded"));
+        _log.Load().Select(static e => (e.PackageId, e.Result)).Should().Equal(("Git.Git", "upgraded"));
         _ui.Events.OfType<UpgradeEvent.Finished>()
             .Single()
             .Should()
@@ -89,36 +84,24 @@ public sealed class UpgradeEngineTests : IDisposable
     public async Task RunAsync_FilesInUse_RetriesInteractivelyBeforeForce()
     {
         _upgrader
-            .On(
-                "Git.Git",
-                UpgradeMode.Silent,
-                Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode)
-            )
+            .On("Git.Git", UpgradeMode.Silent, Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode))
             .On("Git.Git", UpgradeMode.Interactive, Fixture.Ok());
 
         UpgradeSummary summary = await Build().RunAsync([Git], CancellationToken.None);
 
         summary.Upgraded.Should().Be(1);
-        _upgrader
-            .Attempts.Select(static a => a.Mode)
-            .Should()
-            .Equal(UpgradeMode.Silent, UpgradeMode.Interactive);
+        _upgrader.Attempts.Select(static a => a.Mode).Should().Equal(UpgradeMode.Silent, UpgradeMode.Interactive);
         _log.Load().Single().Result.Should().Be("upgraded-interactive");
     }
 
     [Fact]
     public async Task RunAsync_OtherFailure_SkipsInteractiveAndForces()
     {
-        _upgrader
-            .On("Git.Git", UpgradeMode.Silent, Fixture.Fail())
-            .On("Git.Git", UpgradeMode.Force, Fixture.Ok());
+        _upgrader.On("Git.Git", UpgradeMode.Silent, Fixture.Fail()).On("Git.Git", UpgradeMode.Force, Fixture.Ok());
 
         await Build().RunAsync([Git], CancellationToken.None);
 
-        _upgrader
-            .Attempts.Select(static a => a.Mode)
-            .Should()
-            .Equal(UpgradeMode.Silent, UpgradeMode.Force);
+        _upgrader.Attempts.Select(static a => a.Mode).Should().Equal(UpgradeMode.Silent, UpgradeMode.Force);
         _log.Load().Single().Result.Should().Be("upgraded-forced");
     }
 
@@ -147,14 +130,9 @@ public sealed class UpgradeEngineTests : IDisposable
                     InstallerErrorCode = 1603L,
                 }
             );
-        Directory
-            .GetFiles(_data.Paths.InstallerLogDirectory, "Git.Git_*.log")
-            .Should()
-            .HaveCount(1);
+        Directory.GetFiles(_data.Paths.InstallerLogDirectory, "Git.Git_*.log").Should().HaveCount(1);
         UpgradeEvent.Finished finished = _ui.Events.OfType<UpgradeEvent.Finished>().Single();
-        finished
-            .Detail.Should()
-            .Be("InstallError (exit code 1603)", "the path belongs on the link");
+        finished.Detail.Should().Be("InstallError (exit code 1603)", "the path belongs on the link");
         finished.LogPath.Should().NotBeNull().And.Subject.As<string>().Should().EndWith(".log");
     }
 
@@ -198,9 +176,7 @@ public sealed class UpgradeEngineTests : IDisposable
     [Fact]
     public async Task RunAsync_ReportsPhasesThenEachPackageInOrder()
     {
-        _upgrader
-            .On("Git.Git", UpgradeMode.Silent, Fixture.Ok())
-            .On("Bun.Bun", UpgradeMode.Silent, Fixture.Ok());
+        _upgrader.On("Git.Git", UpgradeMode.Silent, Fixture.Ok()).On("Bun.Bun", UpgradeMode.Silent, Fixture.Ok());
 
         await Build().RunAsync([Git, Bun], CancellationToken.None);
 
@@ -208,18 +184,13 @@ public sealed class UpgradeEngineTests : IDisposable
             .Select(static p => p.Text)
             .Should()
             .Equal("Preparing", "Fetching changelogs");
-        _ui.Events.OfType<UpgradeEvent.Started>()
-            .Select(static s => s.Package)
-            .Should()
-            .Equal(Git, Bun);
+        _ui.Events.OfType<UpgradeEvent.Started>().Select(static s => s.Package).Should().Equal(Git, Bun);
     }
 
     [Fact]
     public async Task RunAsync_CloseSessionRefuses_ClosesDirectlyAndStillUpgrades()
     {
-        FakeCloseSession session = new(
-            ShutdownResult.Refused("RmShutdown failed: ERROR_FAIL_NOACTION_REBOOT")
-        );
+        FakeCloseSession session = new(ShutdownResult.Refused("RmShutdown failed: ERROR_FAIL_NOACTION_REBOOT"));
         FakeBlockingDetector detector = new();
         detector.Blocks("Git.Git", new BlockingDetection(["nxplayer"], session));
         _upgrader.OnEach(
@@ -330,11 +301,7 @@ public sealed class UpgradeEngineTests : IDisposable
         FakeCloseSession session = new(ShutdownResult.Success);
         FakeBlockingDetector detector = new();
         detector.Blocks("Git.Git", new BlockingDetection(["git-gui"], session));
-        _upgrader.On(
-            "Git.Git",
-            UpgradeMode.Silent,
-            Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode)
-        );
+        _upgrader.On("Git.Git", UpgradeMode.Silent, Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode));
         RecordingInteraction ui = new(CloseAppsDecision.Skip);
 
         UpgradeSummary summary = await Build(detector, ui).RunAsync([Git], CancellationToken.None);
@@ -353,11 +320,7 @@ public sealed class UpgradeEngineTests : IDisposable
         FakeBlockingDetector detector = new();
         detector.Throws("Git.Git", new InvalidOperationException("detection exploded"));
         _upgrader
-            .On(
-                "Git.Git",
-                UpgradeMode.Silent,
-                Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode)
-            )
+            .On("Git.Git", UpgradeMode.Silent, Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode))
             .On("Bun.Bun", UpgradeMode.Silent, Fixture.Ok());
 
         UpgradeSummary summary = await Build(detector).RunAsync([Git, Bun], CancellationToken.None);
@@ -384,11 +347,7 @@ public sealed class UpgradeEngineTests : IDisposable
         summary.Skipped.Should().Be(2, "the current package and the one behind it");
         summary.AbortReason.Should().Contain("0x80040154");
         _upgrader.Attempts.Select(static attempt => attempt.Id).Should().Equal("Git.Git");
-        _preferences
-            .Load()
-            .For("Git.Git")
-            .Should()
-            .BeNull("an unreachable winget is not a failure");
+        _preferences.Load().For("Git.Git").Should().BeNull("an unreachable winget is not a failure");
         _preferences.Load().For("Bun.Bun")?.State.Should().Be(PreferenceState.Muted);
         _log.Load().Should().BeEmpty();
         _ui.Events.OfType<UpgradeEvent.Finished>()
@@ -404,9 +363,7 @@ public sealed class UpgradeEngineTests : IDisposable
     [Fact]
     public async Task RunAsync_PublishesEveryChangelogBeforeTheFirstPackageStarts()
     {
-        _upgrader
-            .On("Git.Git", UpgradeMode.Silent, Fixture.Ok())
-            .On("Bun.Bun", UpgradeMode.Silent, Fixture.Ok());
+        _upgrader.On("Git.Git", UpgradeMode.Silent, Fixture.Ok()).On("Bun.Bun", UpgradeMode.Silent, Fixture.Ok());
 
         await Build().RunAsync([Git, Bun], CancellationToken.None);
 
@@ -421,15 +378,10 @@ public sealed class UpgradeEngineTests : IDisposable
     {
         _upgrader
             .On("Git.Git", UpgradeMode.Silent, Fixture.Fail())
-            .On(
-                "Git.Git",
-                UpgradeMode.Force,
-                Fixture.Fail("InstallError", 1, UpgradeOutcome.RefusesElevationHResult)
-            );
+            .On("Git.Git", UpgradeMode.Force, Fixture.Fail("InstallError", 1, UpgradeOutcome.RefusesElevationHResult));
         FakeDeElevatedUpgrader deElevated = new(0);
 
-        UpgradeSummary summary = await Build(deElevated: deElevated)
-            .RunAsync([Git], CancellationToken.None);
+        UpgradeSummary summary = await Build(deElevated: deElevated).RunAsync([Git], CancellationToken.None);
 
         summary.Upgraded.Should().Be(1);
         deElevated.Calls.Should().Equal("Git.Git");
@@ -441,25 +393,18 @@ public sealed class UpgradeEngineTests : IDisposable
     {
         _upgrader
             .On("Git.Git", UpgradeMode.Silent, Fixture.Fail())
-            .On(
-                "Git.Git",
-                UpgradeMode.Force,
-                Fixture.Fail("InstallError", 1, UpgradeOutcome.RefusesElevationHResult)
-            );
+            .On("Git.Git", UpgradeMode.Force, Fixture.Fail("InstallError", 1, UpgradeOutcome.RefusesElevationHResult));
         // 0x8A150101: the very code a running Spotify produced.
         FakeDeElevatedUpgrader deElevated = new(unchecked((int)0x8A150101));
 
-        UpgradeSummary summary = await Build(deElevated: deElevated)
-            .RunAsync([Git], CancellationToken.None);
+        UpgradeSummary summary = await Build(deElevated: deElevated).RunAsync([Git], CancellationToken.None);
 
         summary.Failed.Should().Be(1);
         _preferences
             .Load()
             .For("Git.Git")
             ?.Reason.Should()
-            .Be(
-                "needs non-admin; Application is currently running. Exit the application then try again. (0x8A150101)"
-            );
+            .Be("needs non-admin; Application is currently running. Exit the application then try again. (0x8A150101)");
     }
 
     [Fact]
@@ -467,11 +412,7 @@ public sealed class UpgradeEngineTests : IDisposable
     {
         _upgrader
             .On("Git.Git", UpgradeMode.Silent, Fixture.Fail())
-            .On(
-                "Git.Git",
-                UpgradeMode.Force,
-                Fixture.Fail("InstallError", 1, UpgradeOutcome.RefusesElevationHResult)
-            );
+            .On("Git.Git", UpgradeMode.Force, Fixture.Fail("InstallError", 1, UpgradeOutcome.RefusesElevationHResult));
         FakeDeElevatedUpgrader deElevated = new(unchecked((int)0x8A159999));
 
         await Build(deElevated: deElevated).RunAsync([Git], CancellationToken.None);
@@ -488,17 +429,10 @@ public sealed class UpgradeEngineTests : IDisposable
     {
         _upgrader
             .On("Git.Git", UpgradeMode.Silent, Fixture.Fail())
-            .On(
-                "Git.Git",
-                UpgradeMode.Force,
-                Fixture.Fail("InstallError", 1, UpgradeOutcome.RefusesElevationHResult)
-            );
-        FakeDeElevatedUpgrader deElevated = new(
-            new InvalidOperationException("Task Scheduler said no")
-        );
+            .On("Git.Git", UpgradeMode.Force, Fixture.Fail("InstallError", 1, UpgradeOutcome.RefusesElevationHResult));
+        FakeDeElevatedUpgrader deElevated = new(new InvalidOperationException("Task Scheduler said no"));
 
-        UpgradeSummary summary = await Build(deElevated: deElevated)
-            .RunAsync([Git], CancellationToken.None);
+        UpgradeSummary summary = await Build(deElevated: deElevated).RunAsync([Git], CancellationToken.None);
 
         summary.Failed.Should().Be(1);
         _ui.Events.OfType<UpgradeEvent.Message>()
@@ -515,11 +449,7 @@ public sealed class UpgradeEngineTests : IDisposable
         detector.Blocks("Git.Git", new BlockingDetection(["git-gui"], session));
         // The locked file is what brings the holders into it; winget goes away on the retry.
         _upgrader
-            .On(
-                "Git.Git",
-                UpgradeMode.Silent,
-                Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode)
-            )
+            .On("Git.Git", UpgradeMode.Silent, Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode))
             .WingetGoneFor("Git.Git", afterAttempts: 1);
 
         UpgradeSummary summary = await Build(detector).RunAsync([Git], CancellationToken.None);

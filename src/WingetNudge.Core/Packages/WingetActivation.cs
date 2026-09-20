@@ -49,21 +49,16 @@ public static partial class WingetActivation
     ];
 
     private static readonly Guid PackageManagerClsid = new("C53A4F16-787E-42A4-B304-29EFFB4BF597");
-    private static readonly Guid FindPackagesOptionsClsid = new(
-        "572DED96-9C60-4526-8F92-EE7D91D38C1A"
-    );
+    private static readonly Guid FindPackagesOptionsClsid = new("572DED96-9C60-4526-8F92-EE7D91D38C1A");
     private static readonly Guid CreateCompositePackageCatalogOptionsClsid = new(
         "526534B8-7E46-47C8-8416-B1685C327D37"
     );
     private static readonly Guid InstallOptionsClsid = new("1095F097-EB96-453B-B4E6-1613637F3B14");
-    private static readonly Guid PackageMatchFilterClsid = new(
-        "D02C9DAF-99DC-429C-B503-4E504E4AB000"
-    );
+    private static readonly Guid PackageMatchFilterClsid = new("D02C9DAF-99DC-429C-B503-4E504E4AB000");
 
     /// <summary>Creates the package manager.</summary>
     /// <returns>A connected package manager.</returns>
-    public static PackageManager CreatePackageManager() =>
-        Create(PackageManagerClsid, PackageManager.FromAbi);
+    public static PackageManager CreatePackageManager() => Create(PackageManagerClsid, PackageManager.FromAbi);
 
     /// <summary>Creates empty find options.</summary>
     /// <returns>Find options.</returns>
@@ -73,15 +68,11 @@ public static partial class WingetActivation
     /// <summary>Creates empty composite catalog options.</summary>
     /// <returns>Composite catalog options.</returns>
     public static CreateCompositePackageCatalogOptions CreateCompositeOptions() =>
-        Create(
-            CreateCompositePackageCatalogOptionsClsid,
-            CreateCompositePackageCatalogOptions.FromAbi
-        );
+        Create(CreateCompositePackageCatalogOptionsClsid, CreateCompositePackageCatalogOptions.FromAbi);
 
     /// <summary>Creates empty install options.</summary>
     /// <returns>Install options.</returns>
-    public static InstallOptions CreateInstallOptions() =>
-        Create(InstallOptionsClsid, InstallOptions.FromAbi);
+    public static InstallOptions CreateInstallOptions() => Create(InstallOptionsClsid, InstallOptions.FromAbi);
 
     /// <summary>Creates an empty match filter.</summary>
     /// <returns>Match filter.</returns>
@@ -95,12 +86,7 @@ public static partial class WingetActivation
         try
         {
             hr = UseManualActivation
-                ? WinGetServerManualActivation_CreateInstance(
-                    in clsid,
-                    in IUnknownIid,
-                    0,
-                    out unknown
-                )
+                ? WinGetServerManualActivation_CreateInstance(in clsid, in IUnknownIid, 0, out unknown)
                 : CoCreateInstance(in clsid, IntPtr.Zero, LocalServer, in IUnknownIid, out unknown);
         }
         catch (DllNotFoundException exception)

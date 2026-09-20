@@ -94,9 +94,7 @@ public static class Program
 
         Application.Start(static parameters =>
         {
-            DispatcherQueueSynchronizationContext context = new(
-                DispatcherQueue.GetForCurrentThread()
-            );
+            DispatcherQueueSynchronizationContext context = new(DispatcherQueue.GetForCurrentThread());
             SynchronizationContext.SetSynchronizationContext(context);
             _ = new App();
         });
@@ -120,10 +118,7 @@ public static class Program
     /// Fires when a notification button is clicked while this process is alive; a fresh process
     /// receives the click through activation arguments instead.
     /// </summary>
-    private static void OnNotificationInvoked(
-        AppNotificationManager sender,
-        AppNotificationActivatedEventArgs args
-    )
+    private static void OnNotificationInvoked(AppNotificationManager sender, AppNotificationActivatedEventArgs args)
     {
         NudgeAction action = NudgeAction.Parse(args.Argument);
         App? app = Application.Current as App;

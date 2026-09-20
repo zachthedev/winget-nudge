@@ -44,12 +44,7 @@ public static class JsonFile
         {
             try
             {
-                using FileStream stream = new(
-                    path,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.ReadWrite
-                );
+                using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 return JsonSerializer.Deserialize<T>(stream, Options);
             }
             catch (JsonException)
@@ -103,8 +98,7 @@ public static class JsonFile
                 {
                     File.Delete(temporary);
                 }
-                catch (Exception exception)
-                    when (exception is IOException or UnauthorizedAccessException)
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
                 {
                     // Nothing further to try; the caller already has the original failure.
                 }
@@ -159,8 +153,7 @@ public static class JsonFile
                     File.Delete(path);
                     removed++;
                 }
-                catch (Exception exception)
-                    when (exception is IOException or UnauthorizedAccessException)
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
                 {
                     // Another process holds it, so it is not abandoned after all.
                 }
@@ -190,10 +183,7 @@ public static class JsonFile
                 return;
             }
 
-            string stamp = DateTimeOffset.UtcNow.ToString(
-                "yyyyMMddHHmmss",
-                CultureInfo.InvariantCulture
-            );
+            string stamp = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
             File.Move(path, $"{path}.{stamp}.corrupt", overwrite: true);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

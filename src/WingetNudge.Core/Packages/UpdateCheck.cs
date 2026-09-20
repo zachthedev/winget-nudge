@@ -8,11 +8,7 @@ namespace WingetNudge.Core.Packages;
 /// <param name="Package">Winget data.</param>
 /// <param name="AvailableSince">When the offered version became available, or first sighting when unknown.</param>
 /// <param name="Source">Where <paramref name="AvailableSince"/> came from.</param>
-public sealed record UpdateCandidate(
-    PackageInfo Package,
-    DateTimeOffset AvailableSince,
-    PublishSource Source
-)
+public sealed record UpdateCandidate(PackageInfo Package, DateTimeOffset AvailableSince, PublishSource Source)
 {
     /// <summary>Winget package id.</summary>
     public string Id => Package.Id;
@@ -65,8 +61,7 @@ public sealed record PackagePartition(
 )
 {
     /// <summary>Every package across all sections, which is what the picker has to show.</summary>
-    public int Total =>
-        Normal.Count + Cooling.Count + Skipped.Count + Muted.Count + Failed.Count + HeldBack.Count;
+    public int Total => Normal.Count + Cooling.Count + Skipped.Count + Muted.Count + Failed.Count + HeldBack.Count;
 
     /// <summary>Splits packages into sections.</summary>
     /// <param name="updatable">Packages with an upgrade available.</param>
@@ -161,10 +156,7 @@ public sealed record UpdateCheckResult(
 
     /// <summary>Names to announce: eligible packages then tools.</summary>
     public IReadOnlyList<string> Names =>
-        [
-            .. Eligible.Select(static candidate => candidate.Name),
-            .. Tools.Select(static tool => tool.Name),
-        ];
+        [.. Eligible.Select(static candidate => candidate.Name), .. Tools.Select(static tool => tool.Name)];
 
     /// <summary>
     /// One key per announceable update, identifying the exact version on offer. A package whose
@@ -172,9 +164,7 @@ public sealed record UpdateCheckResult(
     /// </summary>
     public IReadOnlyList<string> Keys =>
         [
-            .. Eligible.Select(static candidate =>
-                $"{candidate.Id}@{candidate.Package.AvailableVersion}"
-            ),
+            .. Eligible.Select(static candidate => $"{candidate.Id}@{candidate.Package.AvailableVersion}"),
             .. Tools.Select(static tool => $"tool:{tool.Name}@{tool.Latest}"),
         ];
 }
@@ -222,11 +212,12 @@ public sealed class UpdateCheck(
     /// <returns>Inventory and partition.</returns>
     public async Task<PackageScan> RunPackagesAsync(CancellationToken cancellationToken)
     {
-        IReadOnlyList<PackageInfo> all = await source
-            .GetInstalledAsync(cancellationToken)
+        IReadOnlyList<PackageInfo> all = await source.GetInstalledAsync(cancellationToken).ConfigureAwait(false);
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking = await ResolveTrackingAsync(
+                all,
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking =
-            await ResolveTrackingAsync(all, cancellationToken).ConfigureAwait(false);
         return new PackageScan(all, Repartition(all, tracking), tracking);
     }
 
@@ -235,9 +226,7 @@ public sealed class UpdateCheck(
     /// <returns>Only the tools with an update available.</returns>
     public async Task<IReadOnlyList<ToolStatus>> RunToolsAsync(CancellationToken cancellationToken)
     {
-        IReadOnlyList<ToolStatus> statuses = await tools
-            .GetStatusesAsync(cancellationToken)
-            .ConfigureAwait(false);
+        IReadOnlyList<ToolStatus> statuses = await tools.GetStatusesAsync(cancellationToken).ConfigureAwait(false);
         return statuses.Where(static status => status.UpdateAvailable).ToArray();
     }
 
@@ -253,14 +242,18 @@ public sealed class UpdateCheck(
         CancellationToken cancellationToken
     )
     {
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking =
-            await ResolveTrackingAsync(all, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking = await ResolveTrackingAsync(
+                all,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
         return Repartition(all, tracking);
     }
 
-    private async Task<
-        Dictionary<string, Dictionary<string, VersionObservation>>
-    > ResolveTrackingAsync(IReadOnlyList<PackageInfo> all, CancellationToken cancellationToken)
+    private async Task<Dictionary<string, Dictionary<string, VersionObservation>>> ResolveTrackingAsync(
+        IReadOnlyList<PackageInfo> all,
+        CancellationToken cancellationToken
+    )
     {
         tracker.Reconcile(all);
         PackageInfo[] updatable = all.Where(static package => package.IsUpdateAvailable).ToArray();
@@ -305,13 +298,6 @@ public sealed class UpdateCheck(
                 pinned.TryGetValue(package.Id, out WingetPin? pin) ? pin : null
             ))
             .ToArray();
-        return PackagePartition.Build(
-            updatable,
-            snapshot,
-            cooling,
-            tracking,
-            clock.GetUtcNow(),
-            heldBack
-        );
+        return PackagePartition.Build(updatable, snapshot, cooling, tracking, clock.GetUtcNow(), heldBack);
     }
 }

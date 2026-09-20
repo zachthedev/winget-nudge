@@ -26,8 +26,7 @@ public sealed partial class CloseAppsDialog : ContentDialog
         InitializeComponent();
         _processNames = processNames;
         _running = [.. processNames];
-        HeaderText.Text =
-            $"The following applications should be closed before upgrading {packageId}:";
+        HeaderText.Text = $"The following applications should be closed before upgrading {packageId}:";
         ProcessList.ItemsSource = _running;
         _timer.Tick += OnTick;
     }

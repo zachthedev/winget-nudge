@@ -18,11 +18,7 @@ public interface IReleaseDateResolver
     /// <param name="version">Version string.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The date and its source, or <c>null</c> when every lookup failed.</returns>
-    Task<ResolvedDate?> ResolveAsync(
-        string packageId,
-        string version,
-        CancellationToken cancellationToken
-    );
+    Task<ResolvedDate?> ResolveAsync(string packageId, string version, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -35,11 +31,7 @@ public sealed class GitHubReleaseDateResolver(HttpClient http) : IReleaseDateRes
     private bool _rateLimited;
 
     /// <inheritdoc/>
-    public async Task<ResolvedDate?> ResolveAsync(
-        string packageId,
-        string version,
-        CancellationToken cancellationToken
-    )
+    public async Task<ResolvedDate?> ResolveAsync(string packageId, string version, CancellationToken cancellationToken)
     {
         string? folder = WingetPkgs.ManifestFolder(packageId, version);
         if (folder is null)
@@ -57,9 +49,7 @@ public sealed class GitHubReleaseDateResolver(HttpClient http) : IReleaseDateRes
         }
 
         Uri? manifest = WingetPkgs.InstallerManifestUrl(packageId, version);
-        string? yaml = manifest is null
-            ? null
-            : await TryGetAsync(manifest, cancellationToken).ConfigureAwait(false);
+        string? yaml = manifest is null ? null : await TryGetAsync(manifest, cancellationToken).ConfigureAwait(false);
         if (yaml is not null && ParseReleaseDate(yaml) is DateTimeOffset released)
         {
             return new ResolvedDate(released, PublishSource.Manifest);
@@ -133,10 +123,7 @@ public sealed class GitHubReleaseDateResolver(HttpClient http) : IReleaseDateRes
         {
             foreach (YamlNode installer in sequence.Children)
             {
-                if (
-                    installer is YamlMappingNode mapping
-                    && TryScalarDate(mapping, out DateTimeOffset date)
-                )
+                if (installer is YamlMappingNode mapping && TryScalarDate(mapping, out DateTimeOffset date))
                 {
                     return date;
                 }
@@ -168,8 +155,7 @@ public sealed class GitHubReleaseDateResolver(HttpClient http) : IReleaseDateRes
 
         try
         {
-            using HttpResponseMessage response = await http.GetAsync(url, cancellationToken)
-                .ConfigureAwait(false);
+            using HttpResponseMessage response = await http.GetAsync(url, cancellationToken).ConfigureAwait(false);
             if (GitHubRateLimit.IsExhausted(response))
             {
                 // Every further call this run would fail the same way; leave the versions
@@ -183,9 +169,7 @@ public sealed class GitHubReleaseDateResolver(HttpClient http) : IReleaseDateRes
                 return null;
             }
 
-            return await response
-                .Content.ReadAsStringAsync(cancellationToken)
-                .ConfigureAwait(false);
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (HttpRequestException)
         {

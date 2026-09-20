@@ -43,12 +43,7 @@ public sealed record ToolCacheEntry(string Latest, DateTimeOffset CheckedAt);
 /// <param name="Definition">The tool's registered definition.</param>
 /// <param name="Current">Installed version, or <c>null</c> when the probe failed.</param>
 /// <param name="Latest">Latest version, or <c>null</c> when the probe failed.</param>
-public sealed record ToolStatus(
-    string Id,
-    ToolDefinition Definition,
-    string? Current,
-    string? Latest
-)
+public sealed record ToolStatus(string Id, ToolDefinition Definition, string? Current, string? Latest)
 {
     /// <summary>Display name.</summary>
     public string Name => Definition.Name;

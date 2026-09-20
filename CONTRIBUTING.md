@@ -26,9 +26,9 @@ clone would run a stranger's code without a prompt. Approve those for yourself i
 
 ```json
 {
-    "permissions": {
-        "allow": ["Bash(dotnet cake.cs:*)", "Bash(dotnet build:*)", "Bash(dotnet test:*)"]
-    }
+  "permissions": {
+    "allow": ["Bash(dotnet cake.cs:*)", "Bash(dotnet build:*)", "Bash(dotnet test:*)"]
+  }
 }
 ```
 

@@ -15,10 +15,7 @@ string target = Argument("target", "check");
 
 // Release throughout, so the tests and the installer reuse one build. RestoreLockedMode fails a
 // restore whose package graph disagrees with a packages.lock.json rather than re-resolving it.
-DotNetMSBuildSettings locked = new DotNetMSBuildSettings().WithProperty(
-    "RestoreLockedMode",
-    "true"
-);
+DotNetMSBuildSettings locked = new DotNetMSBuildSettings().WithProperty("RestoreLockedMode", "true");
 
 // ///// Code /////
 
@@ -33,9 +30,7 @@ Task("prettier")
 // Both configurations: everything ships from Release, and the demo inventory behind #if DEBUG
 // compiles only in Debug, so a Release-only gate would never analyze or even parse it.
 Task("build")
-    .Description(
-        "Every project in Release and Debug, analyzer warnings as errors, lock files honored"
-    )
+    .Description("Every project in Release and Debug, analyzer warnings as errors, lock files honored")
     .Does(() =>
     {
         foreach (string configuration in (string[])["Release", "Debug"])
@@ -109,8 +104,7 @@ string[] releaseTriggers =
 // in locked mode against a lock file nothing refreshes, and the next Directory.Packages.props bump
 // fails NU1004 there. A WiX extension is the ordinary reason to declare one.
 const string installerProject = "installer/WingetNudge.Installer.wixproj";
-const string installerRelock =
-    "dotnet restore installer/WingetNudge.Installer.wixproj --force-evaluate";
+const string installerRelock = "dotnet restore installer/WingetNudge.Installer.wixproj --force-evaluate";
 
 // The two property names that turn the NuGet advisory gate in Directory.Build.props into a
 // warning, neither of which may come from the environment. MSBuild takes an environment variable
@@ -128,9 +122,7 @@ const string renovateConfig = ".github/renovate.json";
 const string renovateValidated = $"Validating {renovateConfig} as repo config";
 
 Task("policy")
-    .Description(
-        "Release types, renovate.json as repository config, and a Renovate note per wixproj package"
-    )
+    .Description("Release types, renovate.json as repository config, and a Renovate note per wixproj package")
     .Does(() =>
     {
         RequireReleaseTriggers();
@@ -210,9 +202,7 @@ string[] requiredSettings =
 const string lockedScope = "project";
 
 Task("workflows")
-    .Description(
-        "actionlint with ShellCheck, then zizmor, over .github, at the versions mise.lock records"
-    )
+    .Description("actionlint with ShellCheck, then zizmor, over .github, at the versions mise.lock records")
     .Does(() =>
     {
         // The two data files first, before any process starts: a lockfile that disagrees with
@@ -249,8 +239,7 @@ Task("workflows")
         // names the committed file so ZIZMOR_CONFIG in the environment cannot swap it.
         Command(
             ["zizmor", "zizmor.exe"],
-            "--no-progress --offline --strict-collection --config .github/zizmor.yml "
-                + ".github/workflows",
+            "--no-progress --offline --strict-collection --config .github/zizmor.yml " + ".github/workflows",
             settingsCustomization: settings => settings.WithToolPath(Verified(resolved, "zizmor"))
         );
     });
@@ -270,9 +259,7 @@ void RequireAuditPolicyUnset()
 {
     string[] exported =
     [
-        .. auditProperties.Where(name =>
-            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(name))
-        ),
+        .. auditProperties.Where(name => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(name))),
     ];
 
     if (exported.Length > 0)
@@ -289,9 +276,7 @@ void RequireAuditPolicyUnset()
 // describes.
 void RequireReleaseTriggers()
 {
-    using JsonDocument document = JsonDocument.Parse(
-        System.IO.File.ReadAllText("release-please-config.json")
-    );
+    using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText("release-please-config.json"));
 
     string[] sections =
     [
@@ -301,8 +286,7 @@ void RequireReleaseTriggers()
             .Select(section =>
             {
                 bool silent =
-                    section.TryGetProperty("hidden", out JsonElement hidden)
-                    && hidden.ValueKind == JsonValueKind.True;
+                    section.TryGetProperty("hidden", out JsonElement hidden) && hidden.ValueKind == JsonValueKind.True;
                 string type = section.GetProperty("type").GetString() ?? "";
                 return $"{type} {(silent ? "is silent" : "releases")}";
             })
@@ -328,13 +312,9 @@ void RequireInstallerPackagesNoted()
         .. XDocument
             .Load(installerProject)
             .Descendants()
-            .Where(element =>
-                element.Name.LocalName is "PackageReference" or "GlobalPackageReference"
-            )
+            .Where(element => element.Name.LocalName is "PackageReference" or "GlobalPackageReference")
             .Select(element =>
-                (string?)element.Attribute("Include")
-                ?? (string?)element.Attribute("Update")
-                ?? "(unnamed)"
+                (string?)element.Attribute("Include") ?? (string?)element.Attribute("Update") ?? "(unnamed)"
             ),
     ];
 
@@ -354,9 +334,7 @@ void RequireInstallerPackagesNoted()
                 rule.TryGetProperty("prBodyNotes", out JsonElement notes)
                 && notes
                     .EnumerateArray()
-                    .Any(note =>
-                        (note.GetString() ?? "").Contains(installerRelock, StringComparison.Ordinal)
-                    );
+                    .Any(note => (note.GetString() ?? "").Contains(installerRelock, StringComparison.Ordinal));
             if (!relocks || !rule.TryGetProperty("matchDepNames", out JsonElement depNames))
             {
                 continue;
@@ -401,8 +379,7 @@ void RequireRenovateConfigValid()
         bunx,
         new ProcessSettings
         {
-            Arguments =
-                $"--no-install renovate-config-validator --strict --no-global {renovateConfig}",
+            Arguments = $"--no-install renovate-config-validator --strict --no-global {renovateConfig}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -427,9 +404,7 @@ void RequireRenovateConfigValid()
 
     if (exit != 0)
     {
-        throw new CakeException(
-            $"renovate-config-validator exited {exit} over {renovateConfig} saying:\n{reported}"
-        );
+        throw new CakeException($"renovate-config-validator exited {exit} over {renovateConfig} saying:\n{reported}");
     }
 }
 
@@ -497,10 +472,7 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path)
             continue;
         }
 
-        Match locked = Regex.Match(
-            text,
-            """^\[tools\.([A-Za-z0-9_.-]+)\."platforms\.([A-Za-z0-9_.-]+)"\]$"""
-        );
+        Match locked = Regex.Match(text, """^\[tools\.([A-Za-z0-9_.-]+)\."platforms\.([A-Za-z0-9_.-]+)"\]$""");
         if (locked.Success)
         {
             tool = locked.Groups[1].Value;
@@ -562,9 +534,7 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path)
 // is pinned the way the linters are.
 FilePath RequireMise()
 {
-    using JsonDocument bootstrap = JsonDocument.Parse(
-        System.IO.File.ReadAllText(".github/mise-bootstrap.json")
-    );
+    using JsonDocument bootstrap = JsonDocument.Parse(System.IO.File.ReadAllText(".github/mise-bootstrap.json"));
     string version =
         bootstrap.RootElement.GetProperty("version").GetString()
         ?? throw new CakeException(".github/mise-bootstrap.json names no mise version.");
@@ -593,11 +563,7 @@ FilePath RequireMise()
     // about itself, which is the binary's own claim. Continuous integration checks the same entry
     // after its own download, so both legs identify mise the same way.
     string platform = OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
-    if (
-        !bootstrap
-            .RootElement.GetProperty("sha256")
-            .TryGetProperty(platform, out JsonElement pinned)
-    )
+    if (!bootstrap.RootElement.GetProperty("sha256").TryGetProperty(platform, out JsonElement pinned))
     {
         throw new CakeException($".github/mise-bootstrap.json records no sha256 for {platform}.");
     }
@@ -668,8 +634,7 @@ string MiseSetting(FilePath mise, string setting)
     if (exit != 0)
     {
         throw new CakeException(
-            $"mise settings get {setting} exited {exit} saying: "
-                + (reported.Length == 0 ? "nothing" : reported)
+            $"mise settings get {setting} exited {exit} saying: " + (reported.Length == 0 ? "nothing" : reported)
         );
     }
 
@@ -847,9 +812,7 @@ FilePath RequireInstalled(FilePath mise, string tool, string version)
 FilePath Verified(Dictionary<string, FilePath> resolved, string tool) =>
     resolved.TryGetValue(tool, out FilePath? executable)
         ? executable
-        : throw new CakeException(
-            $"The workflows task runs {tool}, and mise.toml declares no such tool."
-        );
+        : throw new CakeException($"The workflows task runs {tool}, and mise.toml declares no such tool.");
 
 // The arguments actionlint lints .github with, returned once actionlint has reported a ShellCheck
 // finding with them. -shellcheck names the file the version check resolved. The pinned binary and

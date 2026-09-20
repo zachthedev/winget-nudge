@@ -118,9 +118,7 @@ public sealed record Settings
     /// <param name="paths">Data file locations.</param>
     /// <returns>Settings with defaults filled in and out-of-range values clamped.</returns>
     public static Settings Load(DataPaths paths) =>
-        (
-            JsonFile.Read<Settings>(paths.Settings, deleteIfCorrupt: false) ?? new Settings()
-        ).Clamped();
+        (JsonFile.Read<Settings>(paths.Settings, deleteIfCorrupt: false) ?? new Settings()).Clamped();
 
     /// <summary>Writes settings to disk.</summary>
     /// <param name="paths">Data file locations.</param>
@@ -152,10 +150,7 @@ public sealed record Settings
         if (ProtectedGitHubToken.Length > 0)
         {
             // A blob from another user, or a corrupt one, is not a token; fall through.
-            if (
-                UserSecret.Unprotect(ProtectedGitHubToken) is string token
-                && !string.IsNullOrWhiteSpace(token)
-            )
+            if (UserSecret.Unprotect(ProtectedGitHubToken) is string token && !string.IsNullOrWhiteSpace(token))
             {
                 return token;
             }
@@ -177,10 +172,7 @@ public sealed record Settings
             CultureInfo.InvariantCulture,
             $"Frequency = {Frequency}, CheckDay = {CheckDay}, CheckHour = {CheckHour}, "
         );
-        builder.Append(
-            CultureInfo.InvariantCulture,
-            $"CheckMinute = {CheckMinute}, CheckAtLogon = {CheckAtLogon}, "
-        );
+        builder.Append(CultureInfo.InvariantCulture, $"CheckMinute = {CheckMinute}, CheckAtLogon = {CheckAtLogon}, ");
         builder.Append(
             CultureInfo.InvariantCulture,
             $"CheckAtUnlock = {CheckAtUnlock}, LogonDelayMinutes = {LogonDelayMinutes}, "
@@ -219,10 +211,6 @@ public sealed record Settings
             FailedExpiryDays = Math.Clamp(FailedExpiryDays, 1, MaxFailedExpiryDays),
             ToolCacheHours = Math.Clamp(ToolCacheHours, 1, MaxToolCacheHours),
             LogRetentionDays = Math.Clamp(LogRetentionDays, 1, MaxLogRetentionDays),
-            InstallerLogsPerPackage = Math.Clamp(
-                InstallerLogsPerPackage,
-                1,
-                MaxInstallerLogsPerPackage
-            ),
+            InstallerLogsPerPackage = Math.Clamp(InstallerLogsPerPackage, 1, MaxInstallerLogsPerPackage),
         };
 }

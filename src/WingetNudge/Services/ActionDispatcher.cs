@@ -17,18 +17,13 @@ public static class ActionDispatcher
     {
         AppServices services = AppServices.Current;
         IReadOnlyList<PackageInfo> all = await services.Winget.GetInstalledAsync(cancellationToken);
-        PackagePartition partition = await services.UpdateCheck.PartitionAsync(
-            all,
-            cancellationToken
-        );
+        PackagePartition partition = await services.UpdateCheck.PartitionAsync(all, cancellationToken);
         if (partition.Normal.Count == 0)
         {
             return 0;
         }
 
-        PackageRef[] packages = partition
-            .Normal.Select(static candidate => candidate.Ref)
-            .ToArray();
+        PackageRef[] packages = partition.Normal.Select(static candidate => candidate.Ref).ToArray();
         Launcher.StartElevatedUpgrade(packages);
         return packages.Length;
     }

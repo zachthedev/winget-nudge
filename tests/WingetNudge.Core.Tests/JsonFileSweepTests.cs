@@ -44,10 +44,7 @@ public sealed class JsonFileSweepTests : IDisposable
     [Fact]
     public void SweepTemporaries_OverAMissingDirectory_ReportsNothing()
     {
-        JsonFile
-            .SweepTemporaries(Path.Combine(_data.Root, "gone"), TimeSpan.FromHours(1))
-            .Should()
-            .Be(0);
+        JsonFile.SweepTemporaries(Path.Combine(_data.Root, "gone"), TimeSpan.FromHours(1)).Should().Be(0);
     }
 
     [Fact]
@@ -55,10 +52,7 @@ public sealed class JsonFileSweepTests : IDisposable
     {
         JsonFile.Write(_data.Paths.Settings, new Settings());
 
-        Directory
-            .GetFiles(_data.Paths.Directory, $"*{JsonFile.TemporarySuffix}")
-            .Should()
-            .BeEmpty();
+        Directory.GetFiles(_data.Paths.Directory, $"*{JsonFile.TemporarySuffix}").Should().BeEmpty();
     }
 
     [Fact]

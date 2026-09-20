@@ -63,15 +63,13 @@ public sealed record UpgradeOutcome(
     public const int RefusesElevationHResult = unchecked((int)0x8A150056);
 
     /// <summary>Whether the failure was caused by files locked by a running app.</summary>
-    public bool IsFilesInUse =>
-        InstallerErrorCode == FilesInUseExitCode || ExtendedHResult == FilesInUseHResult;
+    public bool IsFilesInUse => InstallerErrorCode == FilesInUseExitCode || ExtendedHResult == FilesInUseHResult;
 
     /// <summary>Whether the installer refused to run because the caller is elevated.</summary>
     public bool RefusesElevation => ExtendedHResult == RefusesElevationHResult;
 
     /// <summary>Winget's own description of the extended error, or <c>null</c>.</summary>
-    public WingetErrorCode? ExtendedError =>
-        ExtendedHResult is int hresult ? WingetErrorCodes.Find(hresult) : null;
+    public WingetErrorCode? ExtendedError => ExtendedHResult is int hresult ? WingetErrorCodes.Find(hresult) : null;
 
     /// <summary>Human-readable failure reason, with winget's codes translated.</summary>
     public string Reason

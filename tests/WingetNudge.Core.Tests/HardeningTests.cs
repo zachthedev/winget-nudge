@@ -37,14 +37,8 @@ public sealed class PackageIdBoundaryTests
     [Fact]
     public void IsValidName_RejectsOverlongNames()
     {
-        PackageIdValidator
-            .IsValidName(new string('a', PackageIdValidator.MaxNameLength))
-            .Should()
-            .BeTrue();
-        PackageIdValidator
-            .IsValidName(new string('a', PackageIdValidator.MaxNameLength + 1))
-            .Should()
-            .BeFalse();
+        PackageIdValidator.IsValidName(new string('a', PackageIdValidator.MaxNameLength)).Should().BeTrue();
+        PackageIdValidator.IsValidName(new string('a', PackageIdValidator.MaxNameLength + 1)).Should().BeFalse();
     }
 }
 
@@ -61,36 +55,18 @@ public sealed class InstallLocationTrustTests : IDisposable
         string programs = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
 
         InstallLocationIndex.IsTrustedInstallDirectory(windows).Should().BeFalse();
-        InstallLocationIndex
-            .IsTrustedInstallDirectory(Path.Combine(windows, "System32"))
-            .Should()
-            .BeFalse();
-        InstallLocationIndex
-            .IsTrustedInstallDirectory(Path.Combine(programs, "WindowsApps"))
-            .Should()
-            .BeFalse();
-        InstallLocationIndex
-            .IsTrustedInstallDirectory(Path.Combine(programs, "Windows Defender"))
-            .Should()
-            .BeFalse();
-        InstallLocationIndex
-            .IsTrustedInstallDirectory(Path.GetPathRoot(windows) ?? @"C:\")
-            .Should()
-            .BeFalse();
-        InstallLocationIndex
-            .IsTrustedInstallDirectory(Path.Combine(programs, "Git"))
-            .Should()
-            .BeTrue();
+        InstallLocationIndex.IsTrustedInstallDirectory(Path.Combine(windows, "System32")).Should().BeFalse();
+        InstallLocationIndex.IsTrustedInstallDirectory(Path.Combine(programs, "WindowsApps")).Should().BeFalse();
+        InstallLocationIndex.IsTrustedInstallDirectory(Path.Combine(programs, "Windows Defender")).Should().BeFalse();
+        InstallLocationIndex.IsTrustedInstallDirectory(Path.GetPathRoot(windows) ?? @"C:\").Should().BeFalse();
+        InstallLocationIndex.IsTrustedInstallDirectory(Path.Combine(programs, "Git")).Should().BeTrue();
         InstallLocationIndex.IsTrustedInstallDirectory(_data.Root).Should().BeTrue();
     }
 
     [Fact]
     public void Resolve_IgnoresProtectedDirectoriesEvenWhenTheRegistryPointsThere()
     {
-        string system32 = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-            "System32"
-        );
+        string system32 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32");
         InstallLocationIndex index = new();
         index.Add("Git.Git", "Git", system32);
 
@@ -105,14 +81,8 @@ public sealed class InstallLocationTrustTests : IDisposable
         InstallLocationIndex index = new();
         index.Add(null, "Advanced Tool 2.0", directory);
 
-        index
-            .Resolve(new PackageRef("X.Y", "A"))
-            .Should()
-            .BeNull("one character matches everything");
-        index
-            .Resolve(new PackageRef("X.Y", "Adv"))
-            .Should()
-            .BeNull("a prefix inside a word is not the same product");
+        index.Resolve(new PackageRef("X.Y", "A")).Should().BeNull("one character matches everything");
+        index.Resolve(new PackageRef("X.Y", "Adv")).Should().BeNull("a prefix inside a word is not the same product");
         index.Resolve(new PackageRef("X.Y", "Advanced Tool")).Should().Be(directory);
         index.Resolve(new PackageRef("X.Y", "Advanced Tool 2.0")).Should().Be(directory);
     }
@@ -208,16 +178,9 @@ public sealed class GitHubUrlTests
     [InlineData("https://github.com/git/git/releases", "git", "git")]
     [InlineData("https://www.github.com/oven-sh/bun.git", "oven-sh", "bun")]
     [InlineData("https://github.com/owner/repo?tab=x", "owner", "repo")]
-    public void TryParseGitHubRepo_ReadsOwnerAndRepoFromRealGitHubUrls(
-        string url,
-        string owner,
-        string repo
-    )
+    public void TryParseGitHubRepo_ReadsOwnerAndRepoFromRealGitHubUrls(string url, string owner, string repo)
     {
-        ChangelogFetcher
-            .TryParseGitHubRepo(url, out string parsedOwner, out string parsedRepo)
-            .Should()
-            .BeTrue();
+        ChangelogFetcher.TryParseGitHubRepo(url, out string parsedOwner, out string parsedRepo).Should().BeTrue();
         parsedOwner.Should().Be(owner);
         parsedRepo.Should().Be(repo);
     }
@@ -237,19 +200,13 @@ public sealed class GitHubUrlTests
     [Fact]
     public void ManifestFolder_EscapesReservedCharacters()
     {
-        WingetPkgs
-            .ManifestFolder("Git.Git?x=", "1#f")
-            .Should()
-            .Be("manifests/g/Git/Git%3Fx%3D/1%23f");
+        WingetPkgs.ManifestFolder("Git.Git?x=", "1#f").Should().Be("manifests/g/Git/Git%3Fx%3D/1%23f");
     }
 
     [Fact]
     public async Task FetchAsync_TreatsATimeoutAsMissingNotesRatherThanCancellation()
     {
-        using HttpClient client = new(new HangingHandler())
-        {
-            Timeout = TimeSpan.FromMilliseconds(200),
-        };
+        using HttpClient client = new(new HangingHandler()) { Timeout = TimeSpan.FromMilliseconds(200) };
         ChangelogFetcher fetcher = new(client);
 
         IReadOnlyDictionary<string, string> notes = await fetcher.FetchAsync(
@@ -268,10 +225,7 @@ public sealed class GitHubUrlTests
         using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(200));
 
         Func<Task> act = () =>
-            fetcher.FetchAsync(
-                [Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")],
-                cancellation.Token
-            );
+            fetcher.FetchAsync([Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")], cancellation.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -349,9 +303,7 @@ public sealed class GitHubAuthorizationHandlerTests
     public async Task SendAsync_AttachesTheTokenOnlyToTheGitHubApi(string url, bool expected)
     {
         RecordingHandler inner = new();
-        using HttpClient client = new(
-            new GitHubAuthorizationHandler("secret") { InnerHandler = inner }
-        );
+        using HttpClient client = new(new GitHubAuthorizationHandler("secret") { InnerHandler = inner });
 
         await client.GetAsync(new Uri(url), TestContext.Current.CancellationToken);
 
@@ -368,9 +320,7 @@ public sealed class GitHubAuthorizationHandlerTests
         )
         {
             LastAuthorization = request.Headers.Authorization?.ToString();
-            return Task.FromResult(
-                new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("") }
-            );
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("") });
         }
     }
 }

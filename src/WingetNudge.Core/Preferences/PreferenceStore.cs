@@ -116,11 +116,7 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
     public void SkipVersion(string packageId, string version)
     {
         Dictionary<string, PreferenceEntry> entries = ReadFile();
-        entries[packageId] = new PreferenceEntry(
-            PreferenceState.Skipped,
-            clock.GetUtcNow(),
-            Version: version
-        );
+        entries[packageId] = new PreferenceEntry(PreferenceState.Skipped, clock.GetUtcNow(), Version: version);
         JsonFile.Write(paths.Preferences, entries);
     }
 
@@ -136,8 +132,6 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
     }
 
     private Dictionary<string, PreferenceEntry> ReadFile() =>
-        JsonFile.Read<Dictionary<string, PreferenceEntry>>(
-            paths.Preferences,
-            deleteIfCorrupt: false
-        ) ?? new Dictionary<string, PreferenceEntry>(StringComparer.Ordinal);
+        JsonFile.Read<Dictionary<string, PreferenceEntry>>(paths.Preferences, deleteIfCorrupt: false)
+        ?? new Dictionary<string, PreferenceEntry>(StringComparer.Ordinal);
 }

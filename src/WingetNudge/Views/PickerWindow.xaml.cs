@@ -136,11 +136,7 @@ public sealed partial class PickerWindow : Window
             repartitioned = await Task.Run(() => check.Repartition(scan.All, scan.Tracking));
         }
         catch (Exception exception)
-            when (exception
-                    is InvalidOperationException
-                        or System.Runtime.InteropServices.COMException
-                        or IOException
-            )
+            when (exception is InvalidOperationException or System.Runtime.InteropServices.COMException or IOException)
         {
             ShowError($"Could not re-read preferences: {exception.Message}");
             return;
@@ -304,10 +300,7 @@ public sealed partial class PickerWindow : Window
         UpdateSelectionState();
     }
 
-    private async Task FillToolsAsync(
-        Task<IReadOnlyList<ToolStatus>> probes,
-        CancellationToken token
-    )
+    private async Task FillToolsAsync(Task<IReadOnlyList<ToolStatus>> probes, CancellationToken token)
     {
         try
         {
@@ -352,17 +345,10 @@ public sealed partial class PickerWindow : Window
         IReadOnlyDictionary<string, string> notes;
         try
         {
-            notes = await Task.Run(
-                () => AppServices.Current.Changelogs.FetchAsync(packages, token),
-                token
-            );
+            notes = await Task.Run(() => AppServices.Current.Changelogs.FetchAsync(packages, token), token);
         }
         catch (Exception exception)
-            when (exception
-                    is OperationCanceledException
-                        or HttpRequestException
-                        or ObjectDisposedException
-            )
+            when (exception is OperationCanceledException or HttpRequestException or ObjectDisposedException)
         {
             foreach (PickerItem item in _items)
             {
@@ -374,14 +360,11 @@ public sealed partial class PickerWindow : Window
 
         foreach (PickerItem item in _items)
         {
-            item.SetChangelog(
-                notes.TryGetValue(item.Ref.Id, out string? changelog) ? changelog : null
-            );
+            item.SetChangelog(notes.TryGetValue(item.Ref.Id, out string? changelog) ? changelog : null);
         }
     }
 
-    private IEnumerable<ISelectableRow> AllRows() =>
-        _items.Cast<ISelectableRow>().Concat(_toolItems);
+    private IEnumerable<ISelectableRow> AllRows() => _items.Cast<ISelectableRow>().Concat(_toolItems);
 
     /// <summary>Checked state by row key. Winget can list one id twice, so the first wins.</summary>
     private Dictionary<string, bool> SelectionSnapshot()
@@ -402,8 +385,7 @@ public sealed partial class PickerWindow : Window
             .Concat(partition.Muted)
             .Concat(partition.Failed.Select(static entry => entry.Candidate));
 
-    private void UpdateSummary(PackagePartition partition) =>
-        SummaryText.Text = Summarize(partition, _tools.Count);
+    private void UpdateSummary(PackagePartition partition) => SummaryText.Text = Summarize(partition, _tools.Count);
 
     private static string Summarize(PackagePartition partition, int toolCount)
     {
@@ -511,9 +493,7 @@ public sealed partial class PickerWindow : Window
     private void AddSection<TRow>(string header, List<TRow> rows, string templateKey)
         where TRow : ISelectableRow
     {
-        List<ISelectableRow> selectable = rows.Where(static row => row.CanSelect)
-            .Cast<ISelectableRow>()
-            .ToList();
+        List<ISelectableRow> selectable = rows.Where(static row => row.CanSelect).Cast<ISelectableRow>().ToList();
         CheckBox? toggle = selectable.Count > 0 ? AddSectionToggle(header, selectable) : null;
         if (toggle is null)
         {
@@ -535,11 +515,7 @@ public sealed partial class PickerWindow : Window
         }
 
         Sections.Children.Add(
-            new ItemsControl
-            {
-                ItemsSource = rows,
-                ItemTemplate = (DataTemplate)Root.Resources[templateKey],
-            }
+            new ItemsControl { ItemsSource = rows, ItemTemplate = (DataTemplate)Root.Resources[templateKey] }
         );
     }
 
@@ -622,10 +598,7 @@ public sealed partial class PickerWindow : Window
     /// </summary>
     private void OnUpdateClick(object sender, RoutedEventArgs args)
     {
-        PackageRef[] packages = _items
-            .Where(static item => item.IsChecked)
-            .Select(static item => item.Ref)
-            .ToArray();
+        PackageRef[] packages = _items.Where(static item => item.IsChecked).Select(static item => item.Ref).ToArray();
         ToolItem[] tools = _toolItems.Where(static tool => tool.IsChecked).ToArray();
         if (packages.Length == 0 && tools.Length == 0)
         {
@@ -775,10 +748,7 @@ public sealed partial class PickerWindow : Window
         }
 
         // Focus() throws on Unfocused, so that state maps to Programmatic.
-        FocusState state =
-            control.FocusState == FocusState.Unfocused
-                ? FocusState.Programmatic
-                : control.FocusState;
+        FocusState state = control.FocusState == FocusState.Unfocused ? FocusState.Programmatic : control.FocusState;
         if (!IsInside(control, Sections))
         {
             return new FocusOrigin.Elsewhere(control, state);
@@ -828,9 +798,7 @@ public sealed partial class PickerWindow : Window
 
         // Every package row carries every named control, collapsed where its section does not
         // offer it. A collapsed control refuses focus, and the row's first control takes it.
-        Control? same = Descendants(container)
-            .OfType<Control>()
-            .FirstOrDefault(control => control.Name == name);
+        Control? same = Descendants(container).OfType<Control>().FirstOrDefault(control => control.Name == name);
         return (same is not null && same.Focus(state)) || FocusFirst(container, state);
     }
 
@@ -870,11 +838,7 @@ public sealed partial class PickerWindow : Window
 
     private static bool IsInside(DependencyObject element, DependencyObject ancestor)
     {
-        for (
-            DependencyObject? current = element;
-            current is not null;
-            current = VisualTreeHelper.GetParent(current)
-        )
+        for (DependencyObject? current = element; current is not null; current = VisualTreeHelper.GetParent(current))
         {
             if (ReferenceEquals(current, ancestor))
             {

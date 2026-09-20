@@ -8,7 +8,7 @@ on:
   # reaches the online zizmor audits below, and the advisories job reports every NuGet advisory
   # against the committed package graph.
   schedule:
-    - cron: "23 7 * * 1"
+    - cron: '23 7 * * 1'
 
 # The token can read the checkout and nothing else, so a compromised action on a runner cannot
 # push, release or write to the repository.
@@ -42,7 +42,7 @@ jobs:
         with:
           global-json-file: global.json
           cache: true
-          cache-dependency-path: "**/packages.lock.json"
+          cache-dependency-path: '**/packages.lock.json'
       # package.json's packageManager field is the one Bun version pin.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -80,7 +80,7 @@ jobs:
       # sets the same value, and this repeats it so the job does not depend on the file being read.
       - name: Linters
         env:
-          MISE_LOCKED_VERIFY_PROVENANCE: "1"
+          MISE_LOCKED_VERIFY_PROVENANCE: '1'
         run: mise install
       - run: dotnet cake.cs --target=code
 
@@ -125,7 +125,7 @@ jobs:
       # the step that makes the attestation a check on every pull request instead of a claim.
       - name: Linters
         env:
-          MISE_LOCKED_VERIFY_PROVENANCE: "1"
+          MISE_LOCKED_VERIFY_PROVENANCE: '1'
         run: mise install
       # -shellcheck names the pinned binary rather than letting actionlint pick one off PATH.
       # -pyflakes= because no Windows package manager ships a pinned pyflakes, and a pass that runs

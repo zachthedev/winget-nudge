@@ -22,8 +22,7 @@ internal static class DemoInventory
     public const string EnvironmentVariable = "WINGETNUDGE_DEMO";
 
     /// <summary>Whether this process was asked to run on the demo inventory.</summary>
-    public static bool IsRequested =>
-        Environment.GetEnvironmentVariable(EnvironmentVariable) == "1";
+    public static bool IsRequested => Environment.GetEnvironmentVariable(EnvironmentVariable) == "1";
 
     private sealed record DemoPackage(
         string Id,
@@ -34,8 +33,7 @@ internal static class DemoInventory
         string? Notes = null
     )
     {
-        public PackageInfo Info =>
-            new(Id, Name, Installed, Available, IsUpdateAvailable: Available is not null);
+        public PackageInfo Info => new(Id, Name, Installed, Available, IsUpdateAvailable: Available is not null);
     }
 
     // Ages are measured back from the clock at startup. The default cooldown is 24 hours, so
@@ -80,13 +78,7 @@ internal static class DemoInventory
         ),
         new("Python.Python.3.14", "Python 3.14", "3.14.3", "3.14.4", TimeSpan.FromHours(5)),
         new("Discord.Discord", "Discord", "1.0.9212", "1.0.9215", TimeSpan.FromDays(1)),
-        new(
-            "Microsoft.WindowsTerminal",
-            "Windows Terminal",
-            "1.24.2682.0",
-            "1.25.2181.0",
-            TimeSpan.FromDays(5)
-        ),
+        new("Microsoft.WindowsTerminal", "Windows Terminal", "1.24.2682.0", "1.25.2181.0", TimeSpan.FromDays(5)),
         new("Microsoft.DotNet.SDK.10", "Microsoft .NET SDK 10.0", "10.0.401", null, TimeSpan.Zero),
     ];
 
@@ -186,13 +178,7 @@ internal static class DemoInventory
     /// <param name="services">Services bound to the demo data paths.</param>
     /// <returns>A prober whose version commands never start a process.</returns>
     public static ToolProber CreateToolProber(AppServices services) =>
-        new(
-            services.Tools,
-            new ProcessRunner(),
-            services.Http,
-            services.Clock,
-            services.Settings.ToolCacheHours
-        );
+        new(services.Tools, new ProcessRunner(), services.Http, services.Clock, services.Settings.ToolCacheHours);
 
     /// <summary>
     /// Replaces this machine's accent with the default Windows blue in the app's own resources,
@@ -218,12 +204,7 @@ internal static class DemoInventory
     }
 
     private static Windows.UI.Color Argb(uint value) =>
-        Windows.UI.Color.FromArgb(
-            (byte)(value >> 24),
-            (byte)(value >> 16),
-            (byte)(value >> 8),
-            (byte)value
-        );
+        Windows.UI.Color.FromArgb((byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value);
 
     /// <summary>
     /// An HTTP client that answers every request with 404, so a lookup the seed did not cover
@@ -247,26 +228,19 @@ internal static class DemoInventory
 
     private sealed class PackageSource : IPackageSource
     {
-        public Task<IReadOnlyList<PackageInfo>> GetInstalledAsync(
-            CancellationToken cancellationToken
-        ) => Task.FromResult<IReadOnlyList<PackageInfo>>([.. Packages.Select(static p => p.Info)]);
+        public Task<IReadOnlyList<PackageInfo>> GetInstalledAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<PackageInfo>>([.. Packages.Select(static p => p.Info)]);
     }
 
     private sealed class ReleaseDates(DateTimeOffset now) : IReleaseDateResolver
     {
-        public Task<ResolvedDate?> ResolveAsync(
-            string packageId,
-            string version,
-            CancellationToken cancellationToken
-        )
+        public Task<ResolvedDate?> ResolveAsync(string packageId, string version, CancellationToken cancellationToken)
         {
             DemoPackage? package = Packages.FirstOrDefault(package =>
                 package.Id == packageId && package.Available == version
             );
             return Task.FromResult(
-                package is null
-                    ? null
-                    : new ResolvedDate(now - package.Age, PublishSource.WingetPkgs)
+                package is null ? null : new ResolvedDate(now - package.Age, PublishSource.WingetPkgs)
             );
         }
     }
@@ -290,10 +264,7 @@ internal static class DemoInventory
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken
-        ) =>
-            Task.FromResult(
-                new HttpResponseMessage(HttpStatusCode.NotFound) { RequestMessage = request }
-            );
+        ) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound) { RequestMessage = request });
     }
 }
 #endif

@@ -29,9 +29,7 @@ public sealed partial class SettingsView : UserControl, IDisposable
         InitializeComponent();
 
         FrequencyBox.ItemsSource = new[] { "Never", "Every day", "Every week" };
-        CheckDayBox.ItemsSource = Enum.GetValues<DayOfWeek>()
-            .Select(static day => day.ToString())
-            .ToArray();
+        CheckDayBox.ItemsSource = Enum.GetValues<DayOfWeek>().Select(static day => day.ToString()).ToArray();
 
         // The tool count feeds a summary line, so it has to be in hand before the form fills.
         LoadTools();
@@ -75,11 +73,9 @@ public sealed partial class SettingsView : UserControl, IDisposable
             .ToList();
     }
 
-    private async void OnAddToolClick(object sender, RoutedEventArgs args) =>
-        await EditAsync(null, null);
+    private async void OnAddToolClick(object sender, RoutedEventArgs args) => await EditAsync(null, null);
 
-    private async void EditTool(string id, ToolDefinition definition) =>
-        await EditAsync(id, definition);
+    private async void EditTool(string id, ToolDefinition definition) => await EditAsync(id, definition);
 
     private async Task EditAsync(string? id, ToolDefinition? definition)
     {
@@ -158,13 +154,8 @@ public sealed partial class SettingsView : UserControl, IDisposable
         return new Settings
         {
             Frequency =
-                FrequencyBox.SelectedIndex >= 0
-                    ? (CheckFrequency)FrequencyBox.SelectedIndex
-                    : current.Frequency,
-            CheckDay =
-                CheckDayBox.SelectedIndex >= 0
-                    ? (DayOfWeek)CheckDayBox.SelectedIndex
-                    : current.CheckDay,
+                FrequencyBox.SelectedIndex >= 0 ? (CheckFrequency)FrequencyBox.SelectedIndex : current.Frequency,
+            CheckDay = CheckDayBox.SelectedIndex >= 0 ? (DayOfWeek)CheckDayBox.SelectedIndex : current.CheckDay,
             CheckHour = time.Hours,
             CheckMinute = time.Minutes,
             CheckAtLogon = LogonCheck.IsChecked == true,
@@ -176,10 +167,7 @@ public sealed partial class SettingsView : UserControl, IDisposable
             FailedExpiryDays = Whole(FailedExpiryBox.Value, current.FailedExpiryDays),
             ToolCacheHours = Whole(ToolCacheBox.Value, current.ToolCacheHours),
             LogRetentionDays = Whole(LogRetentionBox.Value, current.LogRetentionDays),
-            InstallerLogsPerPackage = Whole(
-                InstallerLogsBox.Value,
-                current.InstallerLogsPerPackage
-            ),
+            InstallerLogsPerPackage = Whole(InstallerLogsBox.Value, current.InstallerLogsPerPackage),
             ProtectedGitHubToken = current.ProtectedGitHubToken,
         };
     }
@@ -188,8 +176,7 @@ public sealed partial class SettingsView : UserControl, IDisposable
     /// <param name="value">Value the box reports.</param>
     /// <param name="fallback">Value to keep when the box has none.</param>
     /// <returns>A whole number.</returns>
-    private static int Whole(double value, int fallback) =>
-        double.IsNaN(value) ? fallback : (int)value;
+    private static int Whole(double value, int fallback) => double.IsNaN(value) ? fallback : (int)value;
 
     private void UpdateSummaries(Settings settings)
     {
@@ -197,14 +184,10 @@ public sealed partial class SettingsView : UserControl, IDisposable
             settings.Frequency == CheckFrequency.Never ? Visibility.Collapsed : Visibility.Visible;
 
         List<string> events = [];
-        string time = new DateTime(
-            2000,
-            1,
-            1,
-            settings.CheckHour,
-            settings.CheckMinute,
-            0
-        ).ToString("h:mm tt", CultureInfo.CurrentCulture);
+        string time = new DateTime(2000, 1, 1, settings.CheckHour, settings.CheckMinute, 0).ToString(
+            "h:mm tt",
+            CultureInfo.CurrentCulture
+        );
         switch (settings.Frequency)
         {
             case CheckFrequency.Weekly:
@@ -239,8 +222,7 @@ public sealed partial class SettingsView : UserControl, IDisposable
             $"Waits {"hour".ToQuantity(settings.CooldownHours)}, retries a failure after "
             + $"{"day".ToQuantity(settings.FailedExpiryDays)}";
         ToolSummary.Text =
-            $"{"tool".ToQuantity(_toolCount)}, re-checked every "
-            + $"{"hour".ToQuantity(settings.ToolCacheHours)}";
+            $"{"tool".ToQuantity(_toolCount)}, re-checked every " + $"{"hour".ToQuantity(settings.ToolCacheHours)}";
         HistorySummary.Text =
             $"Log kept {"day".ToQuantity(settings.LogRetentionDays)}, "
             + $"{"installer log".ToQuantity(settings.InstallerLogsPerPackage)} per package";
@@ -248,17 +230,13 @@ public sealed partial class SettingsView : UserControl, IDisposable
 
     // ///// Change handling /////
 
-    private void OnFrequencyChanged(object sender, SelectionChangedEventArgs args) =>
-        Schedule(reregister: true);
+    private void OnFrequencyChanged(object sender, SelectionChangedEventArgs args) => Schedule(reregister: true);
 
     private void OnTimeChanged(object sender, TimePickerSelectedValueChangedEventArgs args) =>
         Schedule(reregister: true);
 
     private void OnNumberChanged(NumberBox sender, NumberBoxValueChangedEventArgs args) =>
-        Schedule(
-            reregister: ReferenceEquals(sender, LogonDelayBox)
-                || ReferenceEquals(sender, BackgroundHoursBox)
-        );
+        Schedule(reregister: ReferenceEquals(sender, LogonDelayBox) || ReferenceEquals(sender, BackgroundHoursBox));
 
     private void OnToggled(object sender, RoutedEventArgs args) => Schedule(reregister: false);
 
@@ -349,10 +327,7 @@ public sealed partial class SettingsView : UserControl, IDisposable
             }
         }
         catch (Exception exception)
-            when (exception
-                    is IOException
-                        or UnauthorizedAccessException
-                        or System.Runtime.InteropServices.COMException
+            when (exception is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException
             )
         {
             MessageBar.Severity = InfoBarSeverity.Error;

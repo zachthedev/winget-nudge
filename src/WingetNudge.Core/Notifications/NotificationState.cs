@@ -58,10 +58,7 @@ public sealed class NotificationState(DataPaths paths, TimeProvider clock)
     {
         try
         {
-            JsonFile.Write(
-                paths.NotificationState,
-                new AnnouncedUpdates([.. keys], clock.GetUtcNow())
-            );
+            JsonFile.Write(paths.NotificationState, new AnnouncedUpdates([.. keys], clock.GetUtcNow()));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

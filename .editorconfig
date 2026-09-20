@@ -5,10 +5,12 @@ charset = utf-8
 end_of_line = lf
 insert_final_newline = true
 indent_style = space
-indent_size = 4
-
-[*.{xml,xaml,csproj,props,targets,json,yml,yaml,manifest,config}]
 indent_size = 2
+
+# CSharpier writes C# and the project XML at .csharpierrc's indentSize. PowerShell and nuget.config
+# are indented by hand at the same width. Prettier reads the 2 above for everything it formats.
+[*.{cs,csproj,props,targets,xaml,slnx,ps1,config}]
+indent_size = 4
 
 [*.cs]
 csharp_style_var_for_built_in_types = false

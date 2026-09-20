@@ -39,8 +39,7 @@ public sealed class UpdateLog(
     // Reading a setting is a file read, so each happens once rather than per append or dump.
     private int RetentionDays => _retentionDays ??= Settings.Load(paths).LogRetentionDays;
 
-    private int InstallerLogsPerPackage =>
-        _logsPerPackage ??= Settings.Load(paths).InstallerLogsPerPackage;
+    private int InstallerLogsPerPackage => _logsPerPackage ??= Settings.Load(paths).InstallerLogsPerPackage;
 
     /// <summary>Reads the log, oldest first.</summary>
     /// <returns>Entries, empty when the file is missing or corrupt.</returns>
@@ -70,11 +69,7 @@ public sealed class UpdateLog(
     /// <param name="outcome">The failed attempt.</param>
     /// <param name="diagnostics">Logs winget wrote during the attempt.</param>
     /// <returns>Path of the written file.</returns>
-    public string SaveInstallerLog(
-        string packageId,
-        UpgradeOutcome outcome,
-        WingetDiagnostics? diagnostics = null
-    )
+    public string SaveInstallerLog(string packageId, UpgradeOutcome outcome, WingetDiagnostics? diagnostics = null)
     {
         PackageIdValidator.Ensure(packageId);
         Directory.CreateDirectory(paths.InstallerLogDirectory);
@@ -88,19 +83,13 @@ public sealed class UpdateLog(
         content.AppendLine(CultureInfo.InvariantCulture, $"Package: {packageId}");
         content.AppendLine(CultureInfo.InvariantCulture, $"Timestamp: {now:o}");
         content.AppendLine(CultureInfo.InvariantCulture, $"Status: {outcome.Status}");
-        content.AppendLine(
-            CultureInfo.InvariantCulture,
-            $"InstallerErrorCode: {outcome.InstallerErrorCode}"
-        );
+        content.AppendLine(CultureInfo.InvariantCulture, $"InstallerErrorCode: {outcome.InstallerErrorCode}");
         if (outcome.ExtendedHResult is int hresult)
         {
             content.AppendLine(CultureInfo.InvariantCulture, $"ExtendedErrorCode: 0x{hresult:X8}");
             if (outcome.ExtendedError is WingetErrorCode code)
             {
-                content.AppendLine(
-                    CultureInfo.InvariantCulture,
-                    $"ExtendedError: {code.Symbol} ({code.Description})"
-                );
+                content.AppendLine(CultureInfo.InvariantCulture, $"ExtendedError: {code.Symbol} ({code.Description})");
             }
         }
         else
@@ -108,14 +97,8 @@ public sealed class UpdateLog(
             content.AppendLine("ExtendedErrorCode: none");
         }
 
-        content.AppendLine(
-            CultureInfo.InvariantCulture,
-            $"RebootRequired: {outcome.RebootRequired}"
-        );
-        content.AppendLine(
-            CultureInfo.InvariantCulture,
-            $"CorrelationData: {outcome.CorrelationData}"
-        );
+        content.AppendLine(CultureInfo.InvariantCulture, $"RebootRequired: {outcome.RebootRequired}");
+        content.AppendLine(CultureInfo.InvariantCulture, $"CorrelationData: {outcome.CorrelationData}");
         AppendDiagnostics(content, diagnostics);
         File.WriteAllText(file, content.ToString());
 
@@ -148,10 +131,7 @@ public sealed class UpdateLog(
                 .EnumerateFiles(root, $"{packageId}_*.log")
                 .Where(name =>
                     Path.GetFullPath(name)
-                        .StartsWith(
-                            root + Path.DirectorySeparatorChar,
-                            StringComparison.OrdinalIgnoreCase
-                        )
+                        .StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
                 )
                 .OrderByDescending(static name => name, StringComparer.Ordinal)
                 .FirstOrDefault();

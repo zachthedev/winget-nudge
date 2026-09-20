@@ -102,9 +102,10 @@ public sealed class ChangelogCache(
         }
 
         Dictionary<string, CachedChangelog> entries = new(StringComparer.Ordinal);
-        Dictionary<string, CachedChangelog?>? read = JsonFile.Read<
-            Dictionary<string, CachedChangelog?>
-        >(paths.ChangelogCache, deleteIfCorrupt: true);
+        Dictionary<string, CachedChangelog?>? read = JsonFile.Read<Dictionary<string, CachedChangelog?>>(
+            paths.ChangelogCache,
+            deleteIfCorrupt: true
+        );
         foreach ((string key, CachedChangelog? entry) in read ?? [])
         {
             if (entry is { Notes: not null })

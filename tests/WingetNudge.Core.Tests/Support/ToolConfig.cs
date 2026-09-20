@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -78,9 +79,7 @@ public sealed partial class CommitlintConfig
         string initializer = Initializer(source, binding);
         if (initializer.Length == 0)
         {
-            diagnostics.Add(
-                $"The config takes its scopes from {binding}, which it never declares."
-            );
+            diagnostics.Add($"The config takes its scopes from {binding}, which it never declares.");
             return new CommitlintConfig(rules, binding, scopeSource, scopeProperty, diagnostics);
         }
 
@@ -124,10 +123,7 @@ public sealed partial class CommitlintConfig
     [GeneratedRegex(@"\brules\s*:\s*\{")]
     private static partial Regex RulesBlockPattern();
 
-    private static Dictionary<string, CommitlintRule> ReadRules(
-        string source,
-        List<string> diagnostics
-    )
+    private static Dictionary<string, CommitlintRule> ReadRules(string source, List<string> diagnostics)
     {
         Dictionary<string, CommitlintRule> rules = new(StringComparer.Ordinal);
         Match block = RulesBlockPattern().Match(source);
@@ -164,10 +160,7 @@ public sealed partial class CommitlintConfig
             else
             {
                 int nameEnd = index;
-                while (
-                    nameEnd < close
-                    && (char.IsLetterOrDigit(source[nameEnd]) || source[nameEnd] is '_' or '-')
-                )
+                while (nameEnd < close && (char.IsLetterOrDigit(source[nameEnd]) || source[nameEnd] is '_' or '-'))
                 {
                     nameEnd++;
                 }
@@ -179,9 +172,7 @@ public sealed partial class CommitlintConfig
             index = SourceText.SkipTrivia(source, index);
             if (name.Length == 0 || index >= close || source[index] != ':')
             {
-                diagnostics.Add(
-                    $"The rules block holds an entry this reader cannot take, at offset {index}."
-                );
+                diagnostics.Add($"The rules block holds an entry this reader cannot take, at offset {index}.");
                 return rules;
             }
 
@@ -194,10 +185,7 @@ public sealed partial class CommitlintConfig
 
             int valueEnd = SourceText.SkipBalanced(source, index);
             List<string> elements = Elements(source, index, valueEnd);
-            if (
-                elements.Count < 2
-                || !int.TryParse(elements[0], CultureInfo.InvariantCulture, out int level)
-            )
+            if (elements.Count < 2 || !int.TryParse(elements[0], CultureInfo.InvariantCulture, out int level))
             {
                 diagnostics.Add($"The rule {name} names no level and no applicability.");
                 return rules;
@@ -299,10 +287,7 @@ public sealed partial class CommitlintConfig
 /// <summary>The packages a fenced install block tells a contributor to install.</summary>
 /// <param name="PackageIds">Each package id, in the order the block lists them.</param>
 /// <param name="Diagnostics">What the reader could not take.</param>
-public sealed partial record InstallBlock(
-    IReadOnlyList<string> PackageIds,
-    IReadOnlyList<string> Diagnostics
-)
+public sealed partial record InstallBlock(IReadOnlyList<string> PackageIds, IReadOnlyList<string> Diagnostics)
 {
     /// <summary>Reads the first fenced block after a line naming an anchor.</summary>
     /// <remarks>
@@ -316,10 +301,7 @@ public sealed partial record InstallBlock(
     public static InstallBlock Parse(string markdown, string anchor, string language)
     {
         string[] lines = markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-        int mention = Array.FindIndex(
-            lines,
-            line => line.Contains(anchor, StringComparison.Ordinal)
-        );
+        int mention = Array.FindIndex(lines, line => line.Contains(anchor, StringComparison.Ordinal));
         if (mention < 0)
         {
             return new InstallBlock([], [$"The document never names {anchor}."]);
@@ -380,11 +362,7 @@ public static class JsonList
         [
             .. document
                 .RootElement.EnumerateArray()
-                .Select(entry =>
-                    entry.TryGetProperty(property, out JsonElement value)
-                        ? value.GetString() ?? ""
-                        : ""
-                ),
+                .Select(entry => entry.TryGetProperty(property, out JsonElement value) ? value.GetString() ?? "" : ""),
         ];
     }
 }
@@ -416,8 +394,7 @@ public static class CommitScopes
         {
             position++;
             string scope =
-                entry.TryGetProperty(property, out JsonElement value)
-                && value.ValueKind == JsonValueKind.String
+                entry.TryGetProperty(property, out JsonElement value) && value.ValueKind == JsonValueKind.String
                     ? value.GetString() ?? ""
                     : "";
             if (scope.Trim().Length == 0)
@@ -453,5 +430,223 @@ public static class CommitScopes
         }
 
         return problems;
+    }
+}
+
+/// <summary>One .editorconfig, read as the sections it declares.</summary>
+/// <remarks>
+/// Prettier takes indent_style, indent_size and end_of_line from .editorconfig for every option
+/// .prettierrc leaves unset, so a section that disagrees with Prettier's defaults changes how a file
+/// is formatted without a word in .prettierrc. The glob syntax taken is what the files in this
+/// repository write: *, **, ? and {a,b}. A section written with anything richer is reported rather
+/// than guessed at, and it matches nothing.
+/// </remarks>
+public sealed class EditorConfig
+{
+    private readonly IReadOnlyList<(Regex Glob, IReadOnlyDictionary<string, string> Settings)> _sections;
+
+    private EditorConfig(
+        bool isRoot,
+        IReadOnlyList<(Regex Glob, IReadOnlyDictionary<string, string> Settings)> sections,
+        IReadOnlyList<string> diagnostics
+    )
+    {
+        IsRoot = isRoot;
+        _sections = sections;
+        Diagnostics = diagnostics;
+    }
+
+    /// <summary>Whether the file stops the walk to the directories above it.</summary>
+    public bool IsRoot { get; }
+
+    /// <summary>What the reader could not take.</summary>
+    public IReadOnlyList<string> Diagnostics { get; }
+
+    /// <summary>Reads one .editorconfig.</summary>
+    /// <param name="text">The file.</param>
+    /// <returns>Its sections, with a diagnostic for each one the reader cannot take.</returns>
+    public static EditorConfig Parse(string text)
+    {
+        bool isRoot = false;
+        List<(Regex Glob, IReadOnlyDictionary<string, string> Settings)> sections = [];
+        List<string> diagnostics = [];
+        Dictionary<string, string>? current = null;
+        foreach (string raw in text.Split('\n'))
+        {
+            string line = raw.Trim();
+            if (line.Length == 0 || line[0] is '#' or ';')
+            {
+                continue;
+            }
+
+            if (line[0] == '[' && line[^1] == ']')
+            {
+                string glob = line[1..^1];
+                Regex? pattern = GlobPattern(glob);
+                current = new Dictionary<string, string>(StringComparer.Ordinal);
+                if (pattern is null)
+                {
+                    diagnostics.Add($"The section [{glob}] is written with glob syntax this reader cannot take.");
+                    continue;
+                }
+
+                sections.Add((pattern, current));
+                continue;
+            }
+
+            int equals = line.IndexOf('=', StringComparison.Ordinal);
+            if (equals < 0)
+            {
+                diagnostics.Add($"The line \"{line}\" is neither a section nor a setting.");
+                continue;
+            }
+
+            string key = line[..equals].Trim().ToLowerInvariant();
+            string value = line[(equals + 1)..].Trim().ToLowerInvariant();
+            if (current is null)
+            {
+                isRoot |= key == "root" && value == "true";
+                continue;
+            }
+
+            current[key] = value;
+        }
+
+        return new EditorConfig(isRoot, sections, diagnostics);
+    }
+
+    /// <summary>What every .editorconfig between a root and a file gives that file.</summary>
+    /// <remarks>
+    /// The walk runs from the file's directory up to the first file that declares itself root, or to
+    /// the directory given, and the files then apply outermost first so a closer one wins.
+    /// </remarks>
+    /// <param name="root">The directory the walk stops at, whatever the files say.</param>
+    /// <param name="relativePath">The file, from the root, with forward slashes.</param>
+    /// <returns>Each setting by key, lower-cased.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// A file on the walk holds a section the reader cannot take.
+    /// </exception>
+    public static IReadOnlyDictionary<string, string> Resolve(string root, string relativePath)
+    {
+        string[] segments = relativePath.Split('/');
+        List<(EditorConfig Config, string PathFromConfig)> chain = [];
+        for (int depth = segments.Length - 1; depth >= 0; depth--)
+        {
+            string[] parts = [root, .. segments[..depth]];
+            string file = Path.Combine(Path.Combine(parts), ".editorconfig");
+            if (!File.Exists(file))
+            {
+                continue;
+            }
+
+            EditorConfig config = Parse(File.ReadAllText(file));
+            if (config.Diagnostics.Count > 0)
+            {
+                throw new InvalidOperationException($"{file}: {string.Join(" ", config.Diagnostics)}");
+            }
+
+            chain.Add((config, string.Join('/', segments[depth..])));
+            if (config.IsRoot)
+            {
+                break;
+            }
+        }
+
+        Dictionary<string, string> settings = new(StringComparer.Ordinal);
+        for (int index = chain.Count - 1; index >= 0; index--)
+        {
+            chain[index].Config.Apply(chain[index].PathFromConfig, settings);
+        }
+
+        return settings;
+    }
+
+    /// <summary>Merges the settings of every section that names a path, later sections winning.</summary>
+    /// <param name="relativePath">
+    /// The file, from the directory holding this .editorconfig, with forward slashes.
+    /// </param>
+    /// <param name="settings">The settings to merge into.</param>
+    public void Apply(string relativePath, Dictionary<string, string> settings)
+    {
+        foreach ((Regex glob, IReadOnlyDictionary<string, string> section) in _sections)
+        {
+            if (!glob.IsMatch(relativePath))
+            {
+                continue;
+            }
+
+            foreach ((string key, string value) in section)
+            {
+                settings[key] = value;
+            }
+        }
+    }
+
+    // A glob with no slash names a file at any depth. One with a slash is anchored at the directory
+    // holding the .editorconfig.
+    private static Regex? GlobPattern(string glob)
+    {
+        if (
+            glob.Length == 0
+            || glob.Contains('[')
+            || glob.Contains('\\')
+            || glob.Contains("..", StringComparison.Ordinal)
+        )
+        {
+            return null;
+        }
+
+        string path = glob.Contains('/') ? glob.TrimStart('/') : "**/" + glob;
+        StringBuilder pattern = new("^");
+        int braces = 0;
+        for (int index = 0; index < path.Length; index++)
+        {
+            switch (path[index])
+            {
+                case '*' when index + 1 < path.Length && path[index + 1] == '*':
+                    index++;
+                    if (index + 1 < path.Length && path[index + 1] == '/')
+                    {
+                        index++;
+                        pattern.Append("(?:.*/)?");
+                    }
+                    else
+                    {
+                        pattern.Append(".*");
+                    }
+
+                    break;
+                case '*':
+                    pattern.Append("[^/]*");
+                    break;
+                case '?':
+                    pattern.Append("[^/]");
+                    break;
+                case '{' when braces == 0:
+                    braces++;
+                    pattern.Append("(?:");
+                    break;
+                case '}' when braces == 1:
+                    braces--;
+                    pattern.Append(')');
+                    break;
+                case ',' when braces == 1:
+                    pattern.Append('|');
+                    break;
+                case '{' or '}':
+                    return null;
+                case char literal:
+                    pattern.Append(Regex.Escape(literal.ToString()));
+                    break;
+            }
+        }
+
+        if (braces != 0)
+        {
+            return null;
+        }
+
+        pattern.Append('$');
+        return new Regex(pattern.ToString(), RegexOptions.None, TimeSpan.FromSeconds(1));
     }
 }

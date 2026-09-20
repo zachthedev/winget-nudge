@@ -7,10 +7,7 @@
     </PropertyGroup>
     <ItemGroup>
         <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
-        <PackageVersion
-            Include="Microsoft.WindowsPackageManager.ComInterop"
-            Version="$(WinGetVersion)"
-        />
+        <PackageVersion Include="Microsoft.WindowsPackageManager.ComInterop" Version="$(WinGetVersion)" />
         <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.333" />
         <!-- Reads winget's pinning.db. -->
         <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />

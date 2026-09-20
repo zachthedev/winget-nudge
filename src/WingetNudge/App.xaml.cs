@@ -22,10 +22,7 @@ public sealed partial class App : Application
     /// Writes the failure to <c>crash.log</c> in the data directory and keeps the process alive; a
     /// notification-launched window has no console to surface it on.
     /// </summary>
-    private static void OnUnhandledException(
-        object sender,
-        Microsoft.UI.Xaml.UnhandledExceptionEventArgs args
-    )
+    private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs args)
     {
         try
         {

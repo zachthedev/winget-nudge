@@ -28,8 +28,7 @@ public sealed record PackageInfo(
     public string? OfferedVersion { get; init; }
 
     /// <summary>Whether winget names a newer version but will not upgrade to it.</summary>
-    public bool IsHeldBack =>
-        !IsUpdateAvailable && WingetVersion.IsUpgrade(InstalledVersion, OfferedVersion);
+    public bool IsHeldBack => !IsUpdateAvailable && WingetVersion.IsUpgrade(InstalledVersion, OfferedVersion);
 }
 
 /// <summary>Package identity and display name, enough to run and report an upgrade.</summary>

@@ -109,8 +109,7 @@ public sealed partial class UpgradeWindow : Window, IUpgradeInteraction
         }
 
         PhaseText.Text = summary.Canceled ? "Canceled" : "Done";
-        SummaryText.Text =
-            $"{summary.Upgraded} upgraded, {summary.Skipped} skipped, {summary.Failed} failed";
+        SummaryText.Text = $"{summary.Upgraded} upgraded, {summary.Skipped} skipped, {summary.Failed} failed";
         FinishUi();
     }
 
@@ -139,11 +138,7 @@ public sealed partial class UpgradeWindow : Window, IUpgradeInteraction
     {
         if (sender is FrameworkElement { DataContext: UpgradeItem item })
         {
-            AppServices.Current.Preferences.Set(
-                item.Id,
-                PreferenceState.Muted,
-                "muted after a failed upgrade"
-            );
+            AppServices.Current.Preferences.Set(item.Id, PreferenceState.Muted, "muted after a failed upgrade");
             item.Muted();
         }
     }
@@ -190,10 +185,7 @@ public sealed partial class UpgradeWindow : Window, IUpgradeInteraction
         {
             try
             {
-                CloseAppsDialog dialog = new(packageId, processNames)
-                {
-                    XamlRoot = Content.XamlRoot,
-                };
+                CloseAppsDialog dialog = new(packageId, processNames) { XamlRoot = Content.XamlRoot };
                 completion.SetResult(await dialog.ShowForDecisionAsync());
             }
             catch (Exception exception)

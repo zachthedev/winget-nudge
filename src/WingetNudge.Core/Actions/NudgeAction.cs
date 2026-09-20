@@ -15,8 +15,7 @@ public abstract record NudgeAction
     /// <param name="arguments">Key/value pairs from the activation.</param>
     /// <returns>The action, or <see cref="Unknown"/> for anything unrecognized.</returns>
     public static NudgeAction Parse(IReadOnlyDictionary<string, string> arguments) =>
-        arguments.TryGetValue(UpdateActions.ActionKey, out string? action)
-        && action == UpdateActions.Picker
+        arguments.TryGetValue(UpdateActions.ActionKey, out string? action) && action == UpdateActions.Picker
             ? new OpenPicker()
             : new Unknown();
 

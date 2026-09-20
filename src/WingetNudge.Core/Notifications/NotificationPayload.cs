@@ -30,9 +30,7 @@ public static class NotificationPayload
         xml.Append("</binding></visual><actions>");
         foreach (UpdateAction action in UpdateActions.Buttons)
         {
-            xml.Append("<action content=\"")
-                .Append(SecurityElement.Escape(action.Label))
-                .Append('"');
+            xml.Append("<action content=\"").Append(SecurityElement.Escape(action.Label)).Append('"');
             if (action.IsDismiss)
             {
                 xml.Append(" arguments=\"dismiss\" activationType=\"system\"");

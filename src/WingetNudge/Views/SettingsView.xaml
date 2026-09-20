@@ -13,11 +13,7 @@
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
             <StackPanel Spacing="4" Margin="0,0,12,0">
                 <!-- When to check -->
-                <TextBlock
-                    Text="When to check"
-                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                    Margin="0,4,0,4"
-                />
+                <TextBlock Text="When to check" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,4,0,4" />
                 <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <Expander.Header>
                         <Grid ColumnSpacing="12" Padding="0,6">
@@ -25,12 +21,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon
-                                Grid.Column="0"
-                                Glyph="&#xE787;"
-                                FontSize="16"
-                                VerticalAlignment="Center"
-                            />
+                            <FontIcon Grid.Column="0" Glyph="&#xE787;" FontSize="16" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="Check triggers" />
                                 <TextBlock
@@ -111,12 +102,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon
-                                Grid.Column="0"
-                                Glyph="&#xE895;"
-                                FontSize="16"
-                                VerticalAlignment="Center"
-                            />
+                            <FontIcon Grid.Column="0" Glyph="&#xE895;" FontSize="16" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="Quiet checks" />
                                 <TextBlock
@@ -160,11 +146,7 @@
                 </Expander>
 
                 <!-- What to offer -->
-                <TextBlock
-                    Text="What to offer"
-                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                    Margin="0,12,0,4"
-                />
+                <TextBlock Text="What to offer" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,4" />
                 <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <Expander.Header>
                         <Grid ColumnSpacing="12" Padding="0,6">
@@ -172,12 +154,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon
-                                Grid.Column="0"
-                                Glyph="&#xE823;"
-                                FontSize="16"
-                                VerticalAlignment="Center"
-                            />
+                            <FontIcon Grid.Column="0" Glyph="&#xE823;" FontSize="16" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="Offers" />
                                 <TextBlock
@@ -217,11 +194,7 @@
                 </Expander>
 
                 <!-- Manual tools -->
-                <TextBlock
-                    Text="Manual tools"
-                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                    Margin="0,12,0,4"
-                />
+                <TextBlock Text="Manual tools" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,4" />
                 <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <Expander.Header>
                         <Grid ColumnSpacing="12" Padding="0,6">
@@ -229,12 +202,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon
-                                Grid.Column="0"
-                                Glyph="&#xE90F;"
-                                FontSize="16"
-                                VerticalAlignment="Center"
-                            />
+                            <FontIcon Grid.Column="0" Glyph="&#xE90F;" FontSize="16" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="Tools" />
                                 <TextBlock
@@ -260,11 +228,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock
-                                Grid.Column="0"
-                                Text="Registered tools"
-                                VerticalAlignment="Center"
-                            />
+                            <TextBlock Grid.Column="0" Text="Registered tools" VerticalAlignment="Center" />
                             <Button Grid.Column="1" Content="Add a tool" Click="OnAddToolClick" />
                         </Grid>
                         <ItemsControl x:Name="ToolList">
@@ -310,11 +274,7 @@
                 </Expander>
 
                 <!-- Advanced -->
-                <TextBlock
-                    Text="Advanced"
-                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                    Margin="0,12,0,4"
-                />
+                <TextBlock Text="Advanced" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,12,0,4" />
                 <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                     <Expander.Header>
                         <Grid ColumnSpacing="12" Padding="0,6">
@@ -322,12 +282,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <FontIcon
-                                Grid.Column="0"
-                                Glyph="&#xE81C;"
-                                FontSize="16"
-                                VerticalAlignment="Center"
-                            />
+                            <FontIcon Grid.Column="0" Glyph="&#xE81C;" FontSize="16" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="History and diagnostics" />
                                 <TextBlock
@@ -362,12 +317,6 @@
             </StackPanel>
         </ScrollViewer>
 
-        <InfoBar
-            Grid.Row="1"
-            x:Name="MessageBar"
-            IsOpen="False"
-            IsClosable="False"
-            HorizontalAlignment="Left"
-        />
+        <InfoBar Grid.Row="1" x:Name="MessageBar" IsOpen="False" IsClosable="False" HorizontalAlignment="Left" />
     </Grid>
 </UserControl>

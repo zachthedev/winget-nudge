@@ -123,10 +123,7 @@ public sealed class WingetPinReaderTests : IDisposable
 public sealed class PackageInfoHeldBackTests
 {
     private static PackageInfo Package(string installed, string offered, bool updateAvailable) =>
-        new("Some.Package", "Some Package", installed, offered, updateAvailable)
-        {
-            OfferedVersion = offered,
-        };
+        new("Some.Package", "Some Package", installed, offered, updateAvailable) { OfferedVersion = offered };
 
     [Fact]
     public void IsHeldBack_IsTrueWhenWingetNamesANewerVersionButOffersNoUpgrade()
@@ -152,8 +149,6 @@ public sealed class PackageInfoHeldBackTests
     [Fact]
     public void IsHeldBack_IsFalseWithNoOfferedVersion()
     {
-        new PackageInfo("Some.Package", "Some Package", "1.0", "1.0", false)
-            .IsHeldBack.Should()
-            .BeFalse();
+        new PackageInfo("Some.Package", "Some Package", "1.0", "1.0", false).IsHeldBack.Should().BeFalse();
     }
 }
