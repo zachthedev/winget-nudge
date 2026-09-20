@@ -12,8 +12,8 @@ on:
     - cron: "23 4 * * *"
   workflow_dispatch:
 
-# Every credential this workflow uses comes from the app, so the job token gets
-# nothing.
+# Every credential Renovate uses comes from the app. The job token gets nothing
+# here, and the job below grants itself the read its checkout needs.
 permissions: {}
 
 # One Renovate at a time. Two runs would race on the same branches.
@@ -31,7 +31,97 @@ jobs:
     environment:
       name: dependency-updates
       deployment: false
+    # The digest check reads this file out of a checkout. The token can read the
+    # repository and nothing else.
+    permissions:
+      contents: read
     steps:
+      # The workflows directory alone. The job pushes nothing, so the token does
+      # not stay in the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/workflows
+          persist-credentials: false
+      # .github/renovate.json resolves the Renovate image on Docker Hub, where a
+      # tag carries a release timestamp, and the action below runs it from
+      # ghcr.io. A pin written from one registry and pulled from the other is
+      # sound only while both publish the same manifest for the tag. This step
+      # reads the pinned tag out of this file, asks each registry for the digest
+      # of that tag with an anonymous pull token, and fails unless the two
+      # agree. The registry HTTP API reports the same digest that docker buildx
+      # imagetools inspect does, with no daemon. A pin behind both registries
+      # is a warning, because Renovate's digest update is what moves it and a
+      # failure here would stop that run.
+      - name: Renovate image digest
+        shell: bash
+        run: |
+          file=.github/workflows/dependency-updates.yml
+          pins=$(sed -nE 's/^ *renovate-version: ([0-9]+\.[0-9]+\.[0-9]+@sha256:[a-f0-9]{64})$/\1/p' "$file")
+          count=$(printf '%s\n' "$pins" | grep -c . || true)
+          if [ "$count" != 1 ]; then
+            echo "$file carries $count renovate-version pins shaped tag@sha256:digest, and this check reads exactly one." >&2
+            exit 1
+          fi
+          tag=${pins%@*}
+          pinned=${pins#*@}
+
+          # An index digest for a multi-platform tag, and a manifest digest for a
+          # single-platform one, whichever the registry holds.
+          accept='application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
+
+          # The digest of the tag's manifest on one registry, or nothing when the registry
+          # issues no pull token, answers something other than 200, or sends no digest header.
+          # Three attempts with a pause between them: an anonymous pull token is rate limited
+          # per runner address, and Docker Hub allows 100 an hour across every job sharing that
+          # address. Every request carries a deadline, so a registry that accepts the connection
+          # and then stops talking cannot hold the run open to the job timeout.
+          digest() {
+            registry=$1
+            tokenUrl=$2
+            repository=$3
+            for attempt in 1 2 3; do
+              if [ "$attempt" != 1 ]; then
+                sleep 5
+              fi
+              token=$(curl -fsS --max-time 20 "$tokenUrl" | jq -r .token) || continue
+              if [ -z "$token" ] || [ "$token" = null ]; then
+                continue
+              fi
+              answer=$(curl -sS --max-time 20 -o /dev/null -I -w '%{http_code} %header{docker-content-digest}' \
+                -H "Authorization: Bearer $token" -H "Accept: $accept" \
+                "https://$registry/v2/$repository/manifests/$tag") || continue
+              case $answer in
+                '200 sha256:'*)
+                  printf '%s' "${answer#* }"
+                  return 0
+                  ;;
+              esac
+              echo "$registry answered '$answer' for $repository:$tag on attempt $attempt." >&2
+            done
+            return 1
+          }
+
+          # renovate/renovate is the depNameTemplate in .github/renovate.json.
+          # renovatebot/renovate is the action's default renovate-image.
+          hub=$(digest registry-1.docker.io 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:renovate/renovate:pull' renovate/renovate) || hub=
+          ghcr=$(digest ghcr.io 'https://ghcr.io/token?scope=repository:renovatebot/renovate:pull' renovatebot/renovate) || ghcr=
+
+          # A registry that will not answer is a warning rather than a failure. This step runs
+          # ahead of Renovate itself, and Renovate is what raises a security fix, so a rate limit
+          # on a shared runner address must not be what stops one shipping. Two registries that
+          # answer and disagree stays fatal: that is the pin being right on one of them at most,
+          # which is the thing this step exists to catch.
+          if [ -z "$hub" ] || [ -z "$ghcr" ]; then
+            echo "::warning::For tag $tag, Docker Hub gave '${hub:-nothing}' and ghcr.io gave '${ghcr:-nothing}'. The two registries were not compared on this run."
+          elif [ "$hub" != "$ghcr" ]; then
+            echo "For tag $tag, Docker Hub publishes $hub and ghcr.io publishes $ghcr. This file pins $pinned. The pin is right on one registry at most." >&2
+            exit 1
+          elif [ "$hub" != "$pinned" ]; then
+            echo "::warning::Both registries publish $tag as $hub, and this file pins $pinned. Renovate's digest update moves the pin."
+          else
+            echo "Docker Hub and ghcr.io both publish $tag as $hub."
+          fi
+
       # The app's installation token, narrowed to the permissions Renovate's
       # own documentation asks for. Without a permission-* input the token
       # inherits every permission the installation holds, which zizmor's
@@ -62,6 +152,13 @@ jobs:
           renovate-version: 44.94.0@sha256:92e5d715b001c1a75e26f27a34086584f9ca51f0480b2401b3cdda44c05ad3e0
         env:
           RENOVATE_PLATFORM: github
+          # Forces settings over whatever .github/renovate.json resolves to, as
+          # a second layer beneath it rather than the control. The value lives
+          # on the dependency-updates environment rather than in this file: a
+          # literal here sits in the tree a pull request edits, which moves the
+          # setting rather than protecting it. An unset or empty variable makes
+          # Renovate skip the option, so the run is unchanged.
+          RENOVATE_FORCE: ${{ vars.RENOVATE_FORCE }}
           # One repository per run, because an installation token is scoped to
           # one installation.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
