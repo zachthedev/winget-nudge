@@ -113,6 +113,31 @@ public static class Commands
             async (parsed, cancellationToken) =>
             {
                 AppServices services = AppServices.Current;
+
+                // The scheduled check and the quiet interval check are separate tasks, so a
+                // resume that makes both due starts two full winget scans over one set of state
+                // files. The second one has nothing to add, so it stands down.
+                RunLockAttempt attempt = RunLock.Acquire(services.Paths, RunLock.Check);
+                if (attempt is RunLockAttempt.Unavailable unavailable)
+                {
+                    // Task Scheduler is what runs this verb, and its history is the only place a
+                    // headless failure shows, so an unusable lock exits non-zero rather than
+                    // reading as a run that stood down.
+                    AnsiConsole.MarkupLineInterpolated(
+                        CultureInfo.InvariantCulture,
+                        $"[red]\u2717[/] {unavailable.Reason}"
+                    );
+                    return 1;
+                }
+
+                if (attempt is not RunLockAttempt.Taken taken)
+                {
+                    AnsiConsole.MarkupLine("[grey]\u00B7[/] another check is already running");
+                    return 0;
+                }
+
+                using RunLock run = taken.Lock;
+
                 bool quiet = parsed.GetValue(background);
                 UpdateCheckResult result = await services.UpdateCheck.RunAsync(cancellationToken);
                 IReadOnlyList<string> keys = result.Keys;

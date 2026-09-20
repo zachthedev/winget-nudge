@@ -42,4 +42,25 @@ public sealed record DataPaths(string Directory)
 
     /// <summary>What the last notification announced, so a quiet check repeats nothing.</summary>
     public string NotificationState => Path.Combine(Directory, "notification-state.json");
+
+    /// <summary>
+    /// File one run holds an exclusive handle on, so a second process of the same kind stands
+    /// down. It stays empty; the handle is the lock.
+    /// </summary>
+    /// <remarks>
+    /// The name is one of <see cref="RunLock"/>'s two constants rather than any string. This type
+    /// is public and an elevated process builds paths with it, and an unconstrained name reaches
+    /// <see cref="Path.Combine(string, string)"/>, where a rooted or relative one lands outside the
+    /// data directory.
+    /// </remarks>
+    /// <param name="name">Run name, from <see cref="RunLock"/>.</param>
+    /// <returns>Path of the lock file.</returns>
+    /// <exception cref="ArgumentException">The name is neither run name.</exception>
+    public string RunLockFile(string name) =>
+        name is RunLock.Upgrade or RunLock.Check
+            ? Path.Combine(Directory, $"{name}.lock")
+            : throw new ArgumentException(
+                $"'{name}' names no run. The runs are '{RunLock.Upgrade}' and '{RunLock.Check}'.",
+                nameof(name)
+            );
 }
