@@ -188,6 +188,35 @@ public sealed class UpgradeEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_ReportsEveryProgressBeforeItReturns()
+    {
+        _upgrader.On("Git.Git", UpgradeMode.Silent, Fixture.Ok()).On("Bun.Bun", UpgradeMode.Silent, Fixture.Ok());
+        HoldingContext scheduler = new();
+        SynchronizationContext? outer = SynchronizationContext.Current;
+        Task<UpgradeSummary> run;
+        try
+        {
+            SynchronizationContext.SetSynchronizationContext(scheduler);
+            run = Build().RunAsync([Git, Bun], CancellationToken.None);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(outer);
+        }
+
+        await run;
+
+        scheduler.Posted.Should().Be(0, "a queued callback reports after the run says it is done");
+        foreach (string id in (string[])["Git.Git", "Bun.Bun"])
+        {
+            int finished = _ui.Events.FindIndex(e => e is UpgradeEvent.Finished f && f.PackageId == id);
+            int progress = _ui.Events.FindLastIndex(e => e is UpgradeEvent.Progress p && p.PackageId == id);
+            progress.Should().BeGreaterThanOrEqualTo(0, "winget reported a snapshot for {0}", id);
+            progress.Should().BeLessThan(finished, "a finished row must not go back to showing progress");
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_CloseSessionRefuses_ClosesDirectlyAndStillUpgrades()
     {
         FakeCloseSession session = new(ShutdownResult.Refused("RmShutdown failed: ERROR_FAIL_NOACTION_REBOOT"));
@@ -458,6 +487,19 @@ public sealed class UpgradeEngineTests : IDisposable
         session.ShutdownCalls.Should().Be(1);
         session.RestartCalls.Should().Be(1, "a closed editor comes back even when the run dies");
         session.Disposed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A host's scheduler, which never runs what reaches it. A snapshot the engine hands to
+    /// <see cref="System.Progress{T}"/> instead of reporting directly lands here and stays.
+    /// </summary>
+    private sealed class HoldingContext : SynchronizationContext
+    {
+        public int Posted { get; private set; }
+
+        public override void Post(SendOrPostCallback d, object? state) => Posted++;
+
+        public override void Send(SendOrPostCallback d, object? state) => Posted++;
     }
 
     private sealed class ThrowingUpgrader : IPackageUpgrader
