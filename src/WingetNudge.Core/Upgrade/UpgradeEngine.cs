@@ -81,6 +81,7 @@ public interface IUpgradeInteraction
     );
 
     /// <summary>Displays an engine event.</summary>
+    /// <remarks>Arrives on the engine's thread or on winget's callback thread; the host marshals.</remarks>
     /// <param name="upgradeEvent">The event.</param>
     void Report(UpgradeEvent upgradeEvent);
 }
@@ -126,7 +127,7 @@ public sealed class UpgradeEngine(
     /// <summary>Upgrades the packages in order.</summary>
     /// <param name="packages">Packages to upgrade.</param>
     /// <param name="cancellationToken">Stops before the next package; the current install finishes.</param>
-    /// <returns>Run totals.</returns>
+    /// <returns>Run totals, once every event is reported.</returns>
     public async Task<UpgradeSummary> RunAsync(IReadOnlyList<PackageRef> packages, CancellationToken cancellationToken)
     {
         int upgraded = 0;
@@ -383,7 +384,7 @@ public sealed class UpgradeEngine(
         CancellationToken cancellationToken
     )
     {
-        Progress<UpgradeProgress> progress = new(snapshot => ui.Report(new UpgradeEvent.Progress(id, snapshot)));
+        ProgressRelay progress = new(ui, id);
         DateTimeOffset startedAt = (clock ?? TimeProvider.System).GetUtcNow();
 
         UpgradeOutcome outcome = await AttemptAsync(id, UpgradeMode.Silent, progress, cancellationToken)
@@ -478,6 +479,18 @@ public sealed class UpgradeEngine(
             forced.ExtendedHResult ?? (long)forced.InstallerErrorCode,
             startedAt
         );
+    }
+
+    /// <summary>
+    /// Hands a winget progress snapshot to the host on the thread that reports it. The host
+    /// applies events in arrival order, so a package's last snapshot has to land before its
+    /// <see cref="UpgradeEvent.Finished"/>, and none may still be in flight once
+    /// <see cref="RunAsync"/> returns. A callback posted to a scheduler guarantees neither.
+    /// </summary>
+    private sealed class ProgressRelay(IUpgradeInteraction ui, string id) : IProgress<UpgradeProgress>
+    {
+        /// <inheritdoc/>
+        public void Report(UpgradeProgress value) => ui.Report(new UpgradeEvent.Progress(id, value));
     }
 
     private async Task<UpgradeOutcome> AttemptAsync(
