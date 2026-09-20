@@ -76,14 +76,15 @@ which registers the installed copy.
 
 ## Screenshots
 
-The README's screenshots come from a fixed inventory that only a Debug build carries:
+The README's screenshots come from `src/WingetNudge/Services/DemoInventory.cs`, a fixed inventory
+that only a Debug build carries:
 
 ```powershell
 $env:WINGETNUDGE_DEMO = '1'
 & $app
 ```
 
-It lists well-known packages and two tools that are not this machine's, keeps its state in
+It lists well-known packages and tools that are not this machine's, keeps its state in
 `%TEMP%\WingetNudge-demo` rather than the real data directory, answers every web request with a 404,
 and shows the default Windows blue rather than this machine's accent. Update selected, the run
 button and the log links start nothing while it runs, and saving Settings schedules nothing. Every
@@ -120,7 +121,7 @@ Then build the installer directly:
 dotnet build installer/WingetNudge.Installer.wixproj --configuration Release
 ```
 
-That signs `WingetNudge.exe`, both app assemblies and the MSI with the Windows SDK's signtool and a
+That signs `WingetNudge.exe`, the app assemblies and the MSI with the Windows SDK's signtool and a
 DigiCert timestamp. A self-signed certificate verifies only on a machine that trusts it.
 
 ## Winget error codes
