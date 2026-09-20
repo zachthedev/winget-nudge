@@ -2,8 +2,11 @@
   "name": "winget-nudge-tooling",
   "private": true,
   "type": "module",
-  "description": "Commit message linting and markup formatting for the Winget Nudge repository. The project itself is C#.",
+  "description": "Commit message linting, markup formatting and Renovate config validation for the Winget Nudge repository. The project itself is C#.",
   "packageManager": "bun@1.4.2",
+  "trustedDependencies": [
+    "lefthook"
+  ],
   "scripts": {
     "prepare": "lefthook install"
   },
@@ -11,6 +14,7 @@
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
     "lefthook": "^2.1.14",
-    "prettier": "^3.9.6"
+    "prettier": "^3.9.6",
+    "renovate": "44.94.0"
   }
 }

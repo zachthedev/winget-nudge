@@ -22,9 +22,10 @@ concurrency:
 # Every action is pinned to a commit. A tag can be retargeted by its owner with no pull request and
 # no cooldown; a commit cannot. Renovate bumps the hash and keeps the version comment current.
 #
-# The two linter images in the workflows job move the same way, through a custom manager that reads
-# them and .github/gate-tools.json as one dependency each, so a bump moves the tag, the digest and
-# the pin a local gate run uses in one pull request.
+# The workflow linters come from mise. mise.toml carries the version of each one and mise.lock
+# carries the artifact that version resolved to, so both jobs below and a local gate run install
+# the same bytes from the same two files. .github/mise-bootstrap.json pins mise itself, and the
+# SHA-256 of its binary on each platform.
 jobs:
   # The code half of the gate: cake.cs's code target, the same one a contributor runs before a push.
   # The WinUI app and the MSI build only on Windows.
@@ -48,10 +49,43 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: dotnet tool restore
+      # The code target reaches no linter. The linters install here anyway, so a lockfile whose
+      # windows-x64 entries cannot install fails on this leg rather than on a contributor's machine.
+      - name: mise pin
+        id: pin
+        shell: bash
+        run: |
+          jq -r '"version=" + .version' .github/mise-bootstrap.json >> "$GITHUB_OUTPUT"
+          jq -r '"sha256=" + .sha256["windows-x64"]' .github/mise-bootstrap.json >> "$GITHUB_OUTPUT"
+      # cache: false on both legs. The action saves a cache only when it installs, and it installs
+      # on neither, so the input writes nothing and a restored cache would reach the install below
+      # without the action knowing it had.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ steps.pin.outputs.version }}
+          install: false
+          cache: false
+      - name: mise binary
+        shell: bash
+        env:
+          WANT: ${{ steps.pin.outputs.sha256 }}
+        run: |
+          got=$(sha256sum "$(command -v mise)" | cut -d ' ' -f 1)
+          if [ "$got" != "$WANT" ]; then
+            echo "mise on disk hashes $got, and .github/mise-bootstrap.json records $WANT" >&2
+            exit 1
+          fi
+      # MISE_LOCKED_VERIFY_PROVENANCE here as well as on the workflows job, so the windows-x64
+      # entries are re-verified against their attestations on the leg that installs them. mise.toml
+      # sets the same value, and this repeats it so the job does not depend on the file being read.
+      - name: Linters
+        env:
+          MISE_LOCKED_VERIFY_PROVENANCE: "1"
+        run: mise install
       - run: dotnet cake.cs --target=code
 
-  # The workflows half of the gate, from the official images pinned by digest. cake.cs's workflows
-  # target runs the same versions locally and refuses a tag here that disagrees with its pins.
+  # The workflows half of the gate, from the linters mise.toml pins. cake.cs's workflows target
+  # runs the same versions locally, out of the same lockfile.
   workflows:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -59,14 +93,46 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The image carries ShellCheck, so the shell in every run: block is checked. It carries
-      # pyflakes too, which stays off because no Windows package manager ships a pinned build of it.
+      - name: mise pin
+        id: pin
+        run: |
+          jq -r '"version=" + .version' .github/mise-bootstrap.json >> "$GITHUB_OUTPUT"
+          jq -r '"sha256=" + .sha256["linux-x64"]' .github/mise-bootstrap.json >> "$GITHUB_OUTPUT"
+      # cache: false so the install below starts cold and re-verifies every artifact. The action
+      # also exports MISE_TRUSTED_CONFIG_PATHS for the checkout, so mise.toml's settings are in
+      # force for every step after this one without a mise trust of its own.
+      # The gate job says the rest of why neither job caches.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: ${{ steps.pin.outputs.version }}
+          install: false
+          cache: false
+      # The action checks its download against the release's minisign-signed SHASUMS256.txt. This
+      # step checks the binary on disk against the hash this repository records, which is the leg
+      # the repository controls. Every archive the action can pick carries the same binary, so one
+      # hash covers them all.
+      - name: mise binary
+        env:
+          WANT: ${{ steps.pin.outputs.sha256 }}
+        run: |
+          got=$(sha256sum "$(command -v mise)" | cut -d ' ' -f 1)
+          if [ "$got" != "$WANT" ]; then
+            echo "mise on disk hashes $got, and .github/mise-bootstrap.json records $WANT" >&2
+            exit 1
+          fi
+      # MISE_LOCKED_VERIFY_PROVENANCE makes this install re-verify each attestation against the
+      # artifact mise.lock records, rather than trusting the run that wrote the lockfile. This is
+      # the step that makes the attestation a check on every pull request instead of a claim.
+      - name: Linters
+        env:
+          MISE_LOCKED_VERIFY_PROVENANCE: "1"
+        run: mise install
+      # -shellcheck names the pinned binary rather than letting actionlint pick one off PATH.
+      # -pyflakes= because no Windows package manager ships a pinned pyflakes, and a pass that runs
+      # on one leg alone reports findings a contributor cannot reproduce.
       - name: actionlint
-        run: >-
-          docker run --rm --network none --volume "$PWD:/repo:ro" --workdir /repo
-          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-          -pyflakes=
-      # Online here and offline in a local run. The five online audits, such as a pinned commit that
+        run: mise exec -- actionlint -pyflakes= -shellcheck="$(mise which shellcheck)"
+      # Online here and offline in a local run. zizmor's online audits, such as a pinned commit that
       # is not in its action's repository, need a token, and the job token costs nothing.
       # --strict-collection fails on a file zizmor cannot parse rather than dropping it and
       # reporting no findings for a workflow it never read.
@@ -74,9 +140,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          docker run --rm --volume "$PWD:/workspace:ro" --workdir /workspace --env GH_TOKEN
-          ghcr.io/zizmorcore/zizmor:1.30.1@sha256:a2eb396d886c053073405c7a980f2139ba2248ec172243cfa3841e57196e8101
-          --no-progress --strict-collection --config .github/zizmor.yml .github/workflows
+          mise exec -- zizmor --no-progress --strict-collection --config .github/zizmor.yml
+          .github/workflows
 
   # Only on a pull request, because the ruleset on main admits nothing else. A direct push would
   # carry subjects release-please reads and commitlint never saw.
