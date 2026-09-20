@@ -1,0 +1,33 @@
+# The workflow linters, at the versions the local gate and continuous integration both run. One pin
+# per tool: both legs resolve through mise, so no file has to be asserted against another. mise.lock
+# records the artifact each version resolved to, and the gate reads both files.
+
+[tools]
+actionlint = "1.7.12"
+shellcheck = "0.11.0"
+zizmor = "1.30.1"
+
+[settings]
+# mise.lock is written as well as read, so a bump records the artifacts it resolved to.
+lockfile = true
+# An install with no pre-resolved URL fails rather than resolving one of its own.
+locked = true
+# Every install re-verifies the attestation against the artifact rather than reading the
+# provenance line mise.lock carries. Without this an install trusts any lockfile whose entry
+# records a checksum and a provenance type, so the line is a claim rather than a check.
+locked_verify_provenance = true
+# An attestation query that cannot complete is an install error. mise defaults these two the same
+# way; the gate asserts the effective value, because a default is a thing that can change under the
+# repository.
+provenance_api_failures_fatal = true
+github_attestations = true
+
+[settings.aqua]
+github_attestations = true
+
+# locked_scopes is a global-only setting, so this file cannot set it and MISE_LOCKED_SCOPES can
+# drop project from the scopes locked mode covers. mise enforces a config-root locked whatever that
+# list says, so this is the one place locked mode cannot be lifted off this repository's tools. The
+# gate reads locked_scopes as well, so an override is reported rather than merely outranked.
+[tool_config]
+locked = true

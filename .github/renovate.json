@@ -26,8 +26,17 @@
     "description": "The installer is a WiX project, which the NuGet manager does not read by default.",
     "managerFilePatterns": ["/\\.wixproj$/"]
   },
+  "mise": {
+    "description": "The workflow linters. mise.toml holds the version and mise.lock holds the artifacts, and Renovate rewrites both in one pull request by running mise lock. The github-tags datasource behind an aqua tool carries a timestamp, so the three-day cooldown applies to all three.",
+    "groupName": "workflow linters",
+    "semanticCommitType": "chore"
+  },
+  "constraints": {
+    "mise": "2026.9.5"
+  },
   "vulnerabilityAlerts": {
-    "description": "A security fix skips the schedule and the cooldown, the way Dependabot security updates do. Its commit type comes from what is in the group, so a runtime dependency cuts a release and a development one does not.",
+    "description": "A security fix skips the schedule and the cooldown, the way Dependabot security updates do. Its commit type comes from what is in the group, so a runtime dependency cuts a release and a development one does not. The null cooldown is Renovate's own default for this object, written out because cake.cs names every exemption it allows.",
+    "minimumReleaseAge": null,
     "groupName": "security",
     "commitMessageSuffix": "",
     "addLabels": ["security"]
@@ -35,21 +44,18 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Container images pinned by tag and digest in a workflow.",
-      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
-      "matchStrings": [
-        "(?<depName>(?:[a-z0-9-]+(?:\\.[a-z0-9-]+)+/)?[a-z0-9][a-z0-9._/-]*):(?<currentValue>[\\w][\\w.-]*)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      "description": "The mise both legs install: .github/mise-bootstrap.json carries the version cake.cs and ci.yml read, and renovate.json carries the same number under constraints so the Renovate container runs it too. One dependency in two files, moved together. jdx/mise publishes to GitHub releases, which carry a timestamp, so the cooldown applies. Renovate cannot compute the two binary hashes beside the version; the pull request note says how to move them.",
+      "managerFilePatterns": [
+        "/^\\.github/mise-bootstrap\\.json$/",
+        "/^\\.github/renovate\\.json$/"
       ],
-      "datasourceTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "The linter pins a local gate run installs, in .github/gate-tools.json. cake.cs reads the same file at run time and refuses a workflow image that disagrees with it, so the image in ci.yml and the pin here are one dependency. One match spans the version, the image and the digest, so Renovate rewrites the version and the digest together. A tool that ships inside another image writes null for both, which the quoted pattern cannot match, so ShellCheck is skipped.",
-      "managerFilePatterns": ["/^\\.github/gate-tools\\.json$/"],
       "matchStrings": [
-        "\"version\": \"(?<currentValue>[^\"]+)\",[\\s\\S]*?\"image\": \"(?<depName>[^\"]+)\",[\\s\\S]*?\"digest\": \"(?<currentDigest>sha256:[a-f0-9]{64})\""
+        "\"version\": \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\"",
+        "\"mise\": \"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)\""
       ],
-      "datasourceTemplate": "docker"
+      "depNameTemplate": "jdx/mise",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
     },
     {
       "customType": "regex",
@@ -113,27 +119,6 @@
       "groupName": "github actions"
     },
     {
-      "description": "The workflow linters. The image in ci.yml and the pin in .github/gate-tools.json are the same dependency, so one pull request moves the tag, the digest and the local pin together.",
-      "matchManagers": ["custom.regex"],
-      "matchDatasources": ["docker"],
-      "separateMajorMinor": false,
-      "semanticCommitType": "chore"
-    },
-    {
-      "description": "The actionlint image carries ShellCheck, which has no pin of its own to update. Read the version out of the new image and move cake.cs's shellcheck entry by hand.",
-      "matchDepNames": ["rhysd/actionlint"],
-      "groupName": "actionlint",
-      "prBodyNotes": [
-        "ShellCheck is baked into this image and pinned separately in `cake.cs`. Run `docker run --rm --entrypoint shellcheck rhysd/actionlint:<new tag> --version` and move that pin in the same pull request."
-      ]
-    },
-    {
-      "description": "zizmor publishes only to ghcr.io, which returns no release timestamp, so the three-day cooldown cannot be enforced on it. The version is still checked against cake.cs by the gate.",
-      "matchDepNames": ["ghcr.io/zizmorcore/zizmor"],
-      "groupName": "zizmor",
-      "minimumReleaseAgeBehaviour": "timestamp-optional"
-    },
-    {
       "description": "The action composes its image from renovate-version, which carries the tag and the digest together. That is not a version any datasource can read, so the custom manager above owns this pin.",
       "matchManagers": ["github-actions"],
       "matchDepTypes": ["uses-with"],
@@ -141,11 +126,32 @@
       "enabled": false
     },
     {
-      "description": "Renovate updates its own image. The workflow is a ci file, so the commit is a ci commit.",
+      "description": "Renovate updates its own image, as one pull request whatever the bump size. The workflow is a ci file, so the commit is a ci commit.",
       "matchDepNames": ["renovate/renovate"],
       "groupName": "renovate",
+      "separateMajorMinor": false,
       "semanticCommitType": "ci",
       "addLabels": ["ci"]
+    },
+    {
+      "description": "ShellCheck's aqua entry carries a version_filter Renovate does not read, and koalaman/shellcheck publishes moving latest and stable tags. Bound the version shape here rather than leaning on semver to discard them.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["shellcheck"],
+      "extractVersion": "^v?(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "A refreshed mise.lock changes which linter artifact installs and nothing the MSI carries, so it is a chore rather than the fix a NuGet lock refresh is.",
+      "matchManagers": ["mise"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "The two hashes in .github/mise-bootstrap.json are the mise binary per platform, and only a download can produce them, so this pull request stays red until somebody moves them.",
+      "matchDepNames": ["jdx/mise"],
+      "groupName": "mise",
+      "prBodyNotes": [
+        "`.github/mise-bootstrap.json` carries the SHA-256 of the mise binary on each platform, which Renovate cannot compute. Take the `mise-v<version>-linux-x64` and `mise-v<version>-windows-x64.exe` lines from the release's `SHASUMS256.txt`, move both hashes in this pull request, and check that a `jdx.mise` manifest for the version exists in `microsoft/winget-pkgs`, or the gate stays red on both legs."
+      ]
     }
   ],
   "lockFileMaintenance": {

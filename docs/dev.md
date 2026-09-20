@@ -17,13 +17,14 @@ The app also needs the Windows App Runtime 2.4 at run time. Recent App Installer
 updates put it on most machines already; otherwise it comes from Microsoft's
 [Windows App SDK downloads](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads).
 
-The gate's workflow linters install at the versions `.github/gate-tools.json` pins. The gate prints
-these same commands when one is missing or at another version:
+The gate's workflow linters come from [mise](https://mise.jdx.dev) rather than from winget.
+`mise.toml` pins the version of each one, `mise.lock` records the artifact that version resolved to,
+and continuous integration installs from the same two files. `.github/mise-bootstrap.json` pins mise
+itself, and the gate names the exact `winget install` command when mise is missing or at another
+version.
 
 ```powershell
-winget install --id rhysd.actionlint --version 1.7.12 --exact
-winget install --id zizmor.zizmor --version 1.30.1 --exact
-winget install --id koalaman.shellcheck --version 0.11.0 --exact
+winget install --id jdx.mise --exact
 ```
 
 Open a new terminal afterwards, so `PATH` includes what winget added.
@@ -35,12 +36,18 @@ git clone https://github.com/zachthedev/winget-nudge.git
 Set-Location winget-nudge
 bun install
 dotnet tool restore
+mise trust
+mise install
 dotnet cake.cs
 ```
 
 `bun install` also installs the git hooks. `dotnet tool restore` installs CSharpier at the version
-`dotnet-tools.json` pins. `dotnet cake.cs` runs the whole gate, which a pre-push hook runs again
-before anything leaves the machine.
+`dotnet-tools.json` pins. `mise trust` marks this repository's `mise.toml` as one mise may read, and
+`mise install` puts the linters on disk from the artifacts `mise.lock` records. `dotnet cake.cs`
+runs the whole gate, which a pre-push hook runs again before anything leaves the machine.
+
+The gate resolves each linter with `mise which` and runs the path it gets back, so a green run makes
+no network request. `mise install` is the step that needs one.
 
 The first build downloads the `Microsoft.WinGet.Client` package from the PowerShell Gallery and
 checks its hash. It is the only source of `winrtact.dll`, the winget hook that lets an unpackaged
