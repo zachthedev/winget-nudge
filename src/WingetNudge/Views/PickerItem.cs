@@ -198,7 +198,6 @@ public sealed class PickerItem : ISelectableRow
             SetField(ref field, value);
             OnPropertyChanged(nameof(MuteGlyph));
             OnPropertyChanged(nameof(MuteToolTip));
-            OnPropertyChanged(nameof(Opacity));
         }
     }
 
@@ -209,13 +208,9 @@ public sealed class PickerItem : ISelectableRow
         private set
         {
             SetField(ref field, value);
-            OnPropertyChanged(nameof(Opacity));
             OnPropertyChanged(nameof(SkipToolTip));
         }
     }
-
-    /// <summary>Row opacity: dimmed when held back.</summary>
-    public double Opacity => IsMuted || IsSkipped || (!IsChecked && Note.Length > 0) ? 0.55 : 1.0;
 
     /// <summary>How long the offered version has been available.</summary>
     public string Age
@@ -405,7 +400,6 @@ public sealed class PickerItem : ISelectableRow
         OnPropertyChanged(nameof(NoteVisibility));
         OnPropertyChanged(nameof(NoteGlyphVisibility));
         OnPropertyChanged(nameof(Caption));
-        OnPropertyChanged(nameof(Opacity));
     }
 
     private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

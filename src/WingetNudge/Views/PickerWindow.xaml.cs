@@ -3,6 +3,8 @@ using Humanizer;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using WingetNudge.Core.Packages;
 using WingetNudge.Core.Tools;
 using WingetNudge.Core.Tracking;
@@ -24,6 +26,7 @@ public sealed partial class PickerWindow : Window
     private PackageScan? _scan;
     private IReadOnlyList<ToolStatus> _tools = [];
     private SettingsView? _settings;
+    private FocusOrigin? _detailOrigin;
     private bool _activatedOnce;
 
     /// <summary>Creates the picker and starts the inventory query.</summary>
@@ -157,12 +160,26 @@ public sealed partial class PickerWindow : Window
         _ = FillChangelogsAsync(repartitioned, _loadCancellation?.Token ?? CancellationToken.None);
     }
 
+    /// <summary>
+    /// Rebuilds every section from the partition. The rebuild destroys whatever row control has
+    /// focus, so where focus sat is noted first and handed back once the replacement rows exist.
+    /// </summary>
     /// <param name="partition">Packages split by section.</param>
     /// <param name="selection">
     /// Checked state of rows already on screen, keyed by <see cref="ISelectableRow.Key"/>. A row
     /// the user has seen keeps its state; a row arriving for the first time keeps its default.
     /// </param>
     private void Render(PackagePartition partition, Dictionary<string, bool>? selection = null)
+    {
+        FocusOrigin? focus = CaptureFocus();
+        Rebuild(partition, selection);
+        if (focus is FocusOrigin.InRow or FocusOrigin.InList)
+        {
+            RestoreFocus(focus);
+        }
+    }
+
+    private void Rebuild(PackagePartition partition, Dictionary<string, bool>? selection)
     {
         _items.Clear();
         _toolItems.Clear();
@@ -678,6 +695,10 @@ public sealed partial class PickerWindow : Window
     /// <param name="content">The page.</param>
     private void ShowDetail(string title, UIElement content)
     {
+        // Back returns focus to the control that opened the page: a row's notes link, or the
+        // settings button. A row is remembered by key, since a settings save rebuilds the list
+        // behind this page.
+        _detailOrigin = CaptureFocus();
         DetailTitle.Text = title;
         DetailHost.Content = content;
         DetailPage.Visibility = Visibility.Visible;
@@ -693,6 +714,10 @@ public sealed partial class PickerWindow : Window
         DetailHost.Content = null;
         _settings?.Dispose();
         _settings = null;
+        // The back button loses focus with the page it sits on, so focus goes back to what
+        // opened the page.
+        RestoreFocus(_detailOrigin ?? new FocusOrigin.InList(FocusState.Programmatic));
+        _detailOrigin = null;
     }
 
     private void OnNotesClick(object sender, RoutedEventArgs args)
@@ -711,6 +736,168 @@ public sealed partial class PickerWindow : Window
         settings.ListAffected += (_, _) => OnPreferenceChanged();
         _settings = settings;
         ShowDetail("Settings", settings);
+    }
+
+    // ///// Focus /////
+
+    /// <summary>
+    /// Where focus sat before the list changed under it, in terms that outlive the change. A
+    /// rebuild replaces every row control, so one is named by its row key and its x:Name and
+    /// found again in the replacement. A control outside the list survives the rebuild and is
+    /// held as it is.
+    /// </summary>
+    /// <param name="State">How the control had focus, so a keyboard user keeps the focus visual.</param>
+    private abstract record FocusOrigin(FocusState State)
+    {
+        /// <summary>A control inside a row.</summary>
+        /// <param name="Key">The row's <see cref="ISelectableRow.Key"/>.</param>
+        /// <param name="Name">The control's x:Name in the row template.</param>
+        /// <param name="State">How the control had focus.</param>
+        public sealed record InRow(string Key, string Name, FocusState State) : FocusOrigin(State);
+
+        /// <summary>A control in the list but outside any row, which is a section header.</summary>
+        /// <param name="State">How the control had focus.</param>
+        public sealed record InList(FocusState State) : FocusOrigin(State);
+
+        /// <summary>A control the list rebuild leaves in place.</summary>
+        /// <param name="Control">The control itself.</param>
+        /// <param name="State">How the control had focus.</param>
+        public sealed record Elsewhere(Control Control, FocusState State) : FocusOrigin(State);
+    }
+
+    /// <summary>Describes the focused control, or <c>null</c> when no control has focus.</summary>
+    private FocusOrigin? CaptureFocus()
+    {
+        XamlRoot? xamlRoot = Root.XamlRoot;
+        if (xamlRoot is null || FocusManager.GetFocusedElement(xamlRoot) is not Control control)
+        {
+            return null;
+        }
+
+        // Focus() throws on Unfocused, so that state maps to Programmatic.
+        FocusState state =
+            control.FocusState == FocusState.Unfocused
+                ? FocusState.Programmatic
+                : control.FocusState;
+        if (!IsInside(control, Sections))
+        {
+            return new FocusOrigin.Elsewhere(control, state);
+        }
+
+        return control.DataContext is ISelectableRow row
+            ? new FocusOrigin.InRow(row.Key, control.Name, state)
+            : new FocusOrigin.InList(state);
+    }
+
+    /// <summary>
+    /// Hands focus back after the list was rebuilt or shown again. The same control is preferred,
+    /// then the first focusable control in the same row, then the top of the list, then the
+    /// Close button when the list itself is gone.
+    /// </summary>
+    /// <param name="origin">Where focus sat.</param>
+    private void RestoreFocus(FocusOrigin origin)
+    {
+        // A freshly populated ItemsControl has no containers until it is measured. A list
+        // collapsed behind a detail page is measured again once visible. One synchronous pass
+        // covers both, so the containers exist before the lookup below.
+        Root.UpdateLayout();
+        bool landed = origin switch
+        {
+            FocusOrigin.Elsewhere elsewhere => elsewhere.Control.Focus(origin.State),
+            FocusOrigin.InRow row => FocusRow(row.Key, row.Name, origin.State),
+            _ => false,
+        };
+        if (!landed && !FocusFirst(Sections, origin.State))
+        {
+            CloseButton.Focus(origin.State);
+        }
+    }
+
+    /// <summary>Focuses a named control in a row, or the row's first control that will take focus.</summary>
+    /// <param name="key">The row's <see cref="ISelectableRow.Key"/>.</param>
+    /// <param name="name">The control's x:Name in the row template.</param>
+    /// <param name="state">How the control had focus.</param>
+    /// <returns><c>true</c> when the row exists and a control in it took focus.</returns>
+    private bool FocusRow(string key, string name, FocusState state)
+    {
+        DependencyObject? container = RowContainer(key);
+        if (container is null)
+        {
+            return false;
+        }
+
+        // Every package row carries every named control, collapsed where its section does not
+        // offer it. A collapsed control refuses focus, and the row's first control takes it.
+        Control? same = Descendants(container)
+            .OfType<Control>()
+            .FirstOrDefault(control => control.Name == name);
+        return (same is not null && same.Focus(state)) || FocusFirst(container, state);
+    }
+
+    /// <summary>The realized container of the row with <paramref name="key"/>, or <c>null</c>.</summary>
+    private DependencyObject? RowContainer(string key)
+    {
+        foreach (ItemsControl section in Sections.Children.OfType<ItemsControl>())
+        {
+            foreach (object item in section.Items)
+            {
+                if (item is ISelectableRow row && row.Key == key)
+                {
+                    return section.ContainerFromItem(item);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Focuses the first control under <paramref name="root"/> that will take focus.</summary>
+    /// <param name="root">Subtree to search, in tree order.</param>
+    /// <param name="state">How the control had focus.</param>
+    /// <returns><c>true</c> when a control took focus.</returns>
+    private static bool FocusFirst(DependencyObject root, FocusState state)
+    {
+        foreach (Control control in Descendants(root).OfType<Control>())
+        {
+            if (control.Focus(state))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsInside(DependencyObject element, DependencyObject ancestor)
+    {
+        for (
+            DependencyObject? current = element;
+            current is not null;
+            current = VisualTreeHelper.GetParent(current)
+        )
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Every element under <paramref name="root"/> in the visual tree, depth first.</summary>
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int index = 0; index < count; index++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, index);
+            yield return child;
+            foreach (DependencyObject descendant in Descendants(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 
     // ///// Messages /////
