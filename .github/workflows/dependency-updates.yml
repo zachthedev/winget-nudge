@@ -70,11 +70,15 @@ jobs:
           accept='application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
 
           # The digest of the tag's manifest on one registry, or nothing when the registry
-          # issues no pull token, answers something other than 200, or sends no digest header.
-          # Three attempts with a pause between them: an anonymous pull token is rate limited
-          # per runner address, and Docker Hub allows 100 an hour across every job sharing that
-          # address. Every request carries a deadline, so a registry that accepts the connection
-          # and then stops talking cannot hold the run open to the job timeout.
+          # issues no pull token, does not answer, or answers 408, 429 or 5xx. Those get three
+          # attempts with a pause between them: an anonymous pull token is rate limited per
+          # runner address, and Docker Hub allows 100 an hour across every job sharing that
+          # address. Every other status is the registry's answer for the tag, so the function
+          # fails at once and the step fails with it. A missing tag, a moved manifest endpoint,
+          # an Accept header the registry will not serve and a 200 with no digest header all
+          # answer this way. A warning would carry any of them through every run unread.
+          # Every request carries a deadline, so a registry that accepts the connection and
+          # then stops talking cannot hold the run open to the job timeout.
           digest() {
             registry=$1
             tokenUrl=$2
@@ -95,16 +99,22 @@ jobs:
                   printf '%s' "${answer#* }"
                   return 0
                   ;;
+                408*|429*|5[0-9][0-9]*)
+                  echo "$registry answered '$answer' for $repository:$tag on attempt $attempt." >&2
+                  ;;
+                *)
+                  echo "$registry answered '$answer' for $repository:$tag, and a retry would not change that." >&2
+                  return 1
+                  ;;
               esac
-              echo "$registry answered '$answer' for $repository:$tag on attempt $attempt." >&2
             done
-            return 1
+            return 0
           }
 
           # renovate/renovate is the depNameTemplate in .github/renovate.json.
           # renovatebot/renovate is the action's default renovate-image.
-          hub=$(digest registry-1.docker.io 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:renovate/renovate:pull' renovate/renovate) || hub=
-          ghcr=$(digest ghcr.io 'https://ghcr.io/token?scope=repository:renovatebot/renovate:pull' renovatebot/renovate) || ghcr=
+          hub=$(digest registry-1.docker.io 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:renovate/renovate:pull' renovate/renovate) || exit 1
+          ghcr=$(digest ghcr.io 'https://ghcr.io/token?scope=repository:renovatebot/renovate:pull' renovatebot/renovate) || exit 1
 
           # A registry that will not answer is a warning rather than a failure. This step runs
           # ahead of Renovate itself, and Renovate is what raises a security fix, so a rate limit
