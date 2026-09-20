@@ -5,8 +5,8 @@
     <InstallerPlatform>x64</InstallerPlatform>
     <AppProject>..\src\WingetNudge\WingetNudge.csproj</AppProject>
     <PublishDir>$(MSBuildThisFileDirectory)..\src\WingetNudge\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\</PublishDir>
-    <!-- Version comes from Directory.Build.props so the MSI and the exe never disagree. -->
-    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(Version)</DefineConstants>
+    <!-- Version and manufacturer come from Directory.Build.props so the MSI and the exe never disagree. -->
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(Version);Manufacturer=$(Authors)</DefineConstants>
     <!-- Per-user files under the profile have no registry key path; these ICEs assume a machine install. -->
     <!-- ICE61 objects to same-version upgrades, which are deliberate here. -->
     <!-- ICE60 wants a language on every versioned file; the native SQLite library has none. -->

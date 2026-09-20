@@ -1,7 +1,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
     Name="Winget Nudge"
-    Manufacturer="Zach"
+    Manufacturer="$(Manufacturer)"
     Version="$(ProductVersion)"
     UpgradeCode="a4570e1a-5755-41ae-a170-a91e598a5cd6"
     Scope="perUser"
