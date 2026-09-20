@@ -1,6 +1,10 @@
 #:sdk Cake.Sdk
 #:property NuGetLockFilePath=cake.packages.lock.json
 #:property RestoreLockedMode=true
+// Directory.Build.props gives this script the app's win-x64 identifier, and the apphost built for
+// that identifier is a Windows executable on every host. Without one, dotnet run starts the
+// assembly through the host it has, which is what lets the ubuntu job run a target.
+#:property UseAppHost=false
 
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -8,8 +12,9 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 // The gate: every check a change must pass before it leaves the machine. CONTRIBUTING.md lists
-// what each task covers. The pre-push hook runs the check target, and continuous integration runs
-// the code target in one job and the same mise-installed workflow linters in another.
+// what each task covers. The pre-push hook runs the check target. Continuous integration runs the
+// tools target on both of its jobs, which asserts the lockfile and then installs from it, then the
+// code target in one job and the same mise-installed workflow linters in the other.
 
 string target = Argument("target", "check");
 
@@ -132,6 +137,7 @@ Task("policy")
 
 Task("code")
     .Description("Everything continuous integration runs in its gate job")
+    .IsDependentOn("lockfile")
     .IsDependentOn("format")
     .IsDependentOn("prettier")
     .IsDependentOn("policy")
@@ -201,20 +207,59 @@ string[] requiredSettings =
 // mise.toml declares.
 const string lockedScope = "project";
 
-Task("workflows")
-    .Description("actionlint with ShellCheck, then zizmor, over .github, at the versions mise.lock records")
+// The two data files alone, before any process starts and before anything installs from them. A
+// lockfile that disagrees with its pin is the likeliest fault after a bump, and an address in it
+// is what an install fetches, so both are read before the install rather than after. Nothing here
+// resolves mise, so the task needs none on the machine, and check runs it ahead of every other
+// task.
+Task("lockfile")
+    .Description("Every mise.toml pin recorded in mise.lock at the address cake.cs names")
     .Does(() =>
     {
-        // The two data files first, before any process starts: a lockfile that disagrees with
-        // its pin is the likeliest fault after a bump, and reporting it needs no mise on the
-        // machine.
         Dictionary<string, string> versions = MiseVersions("mise.toml");
         Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock");
-        string[] tools = [.. versions.Keys.OrderBy(name => name, StringComparer.Ordinal)];
-        foreach (string tool in tools)
+        foreach (string tool in versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
         {
             RequireRecorded(tool, versions[tool], artifacts);
         }
+    });
+
+// The install continuous integration runs on both jobs, behind the lockfile task. The order is a
+// dependency in this file, so no step in a workflow can install before the assertions run. Outside
+// check, because a local gate resolves linters an install already put on disk and makes no network
+// request. MISE_LOCKED_VERIFY_PROVENANCE makes the install re-verify each attestation against the
+// artifact mise.lock records rather than trusting the run that wrote the lockfile. mise.toml sets
+// the same value, and this repeats it so the install does not depend on the file being read.
+Task("tools")
+    .Description("The linters mise.lock records, installed once the lockfile task has passed them")
+    .IsDependentOn("lockfile")
+    .Does(() =>
+    {
+        FilePath mise = RequireMise();
+        int exit = StartProcess(
+            mise,
+            new ProcessSettings
+            {
+                Arguments = "install",
+                EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["MISE_LOCKED_VERIFY_PROVENANCE"] = "1",
+                },
+            }
+        );
+        if (exit != 0)
+        {
+            throw new CakeException($"mise install exited {exit}.");
+        }
+    });
+
+Task("workflows")
+    .Description("actionlint with ShellCheck, then zizmor, over .github, at the versions mise.lock records")
+    .IsDependentOn("lockfile")
+    .Does(() =>
+    {
+        Dictionary<string, string> versions = MiseVersions("mise.toml");
+        string[] tools = [.. versions.Keys.OrderBy(name => name, StringComparer.Ordinal)];
 
         FilePath mise = RequireMise();
         RequireSettings(mise);
@@ -244,7 +289,13 @@ Task("workflows")
         );
     });
 
-Task("check").Description("The whole gate").IsDependentOn("code").IsDependentOn("workflows");
+// lockfile first by name as well as through code, so the order is stated where the gate is
+// assembled rather than left to the order code lists its own dependencies in.
+Task("check")
+    .Description("The whole gate")
+    .IsDependentOn("lockfile")
+    .IsDependentOn("code")
+    .IsDependentOn("workflows");
 
 // Before any target rather than inside one: installer is what the release workflow builds, and it
 // depends on build alone, so a check living in a task would leave the one build an advisory escape
@@ -699,21 +750,18 @@ void RequireRecorded(string tool, string version, Dictionary<string, MiseArtifac
             relock
         );
 
-        // An entry mise wrote carries both addresses. One it does not is not a reason to leave an
-        // unasserted address in the file.
-        if (artifact.UrlApi.Length > 0)
-        {
-            RequireArtifactAddress(
-                tool,
-                platform,
-                "url_api",
-                artifact.UrlApi,
-                releaseApiHost,
-                $"/repos/{pin.Repository}/releases/",
-                "",
-                relock
-            );
-        }
+        // mise writes both addresses into every entry, so one with a single address is not one mise
+        // wrote, and the gate refuses it rather than passing an address it cannot assert.
+        RequireArtifactAddress(
+            tool,
+            platform,
+            "url_api",
+            artifact.UrlApi,
+            releaseApiHost,
+            $"/repos/{pin.Repository}/releases/",
+            "",
+            relock
+        );
 
         // ShellCheck's aqua entry declares no signer workflow and no checksums file, so mise has
         // no attestation to verify for it and its entry carries a checksum alone.
@@ -739,7 +787,8 @@ void RequireRecorded(string tool, string version, Dictionary<string, MiseArtifac
 // bytes come from, and a substring match over the text passes an address whose host is somewhere
 // else entirely. https, the default port, that exact host, and the path the tool's own releases sit
 // under; the pinned version has to appear in the path of the address the artifact downloads from,
-// so an entry cannot point at another release of the same repository either.
+// so an entry cannot point at another release of the same repository either. An entry with no
+// address at all is refused by name, since mise writes one into every entry.
 void RequireArtifactAddress(
     string tool,
     string platform,
@@ -751,6 +800,13 @@ void RequireArtifactAddress(
     string relock
 )
 {
+    if (address.Length == 0)
+    {
+        throw new CakeException(
+            $"mise.lock records {tool} {platform} with no {field}, and mise writes one into every entry it locks. Write it again with: {relock}"
+        );
+    }
+
     bool sound =
         Uri.TryCreate(address, UriKind.Absolute, out Uri? uri)
         && uri.Scheme == Uri.UriSchemeHttps

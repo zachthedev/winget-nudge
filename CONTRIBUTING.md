@@ -52,10 +52,13 @@ order they run in.
 | `tests`     | The Core suite                                                                               |
 | `installer` | The MSI links, built unsigned whatever `Directory.Signing.props` says                        |
 | `policy`    | Release types, `renovate.json` as repository config, and a Renovate note per wixproj package |
+| `lockfile`  | Every `mise.toml` pin recorded in `mise.lock` at the address `cake.cs` names                 |
 | `workflows` | actionlint with ShellCheck, then zizmor, over `.github`, at the versions `mise.lock` records |
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
-`workflows`.
+`workflows`. `lockfile` reads two data files and starts no process, so it needs no mise on the
+machine, and it is the first task the whole gate runs. `--target=tools` runs `lockfile` and then
+`mise install`; it is the install continuous integration runs, and `check` does not reach it.
 
 `workflows` hands actionlint the ShellCheck binary it resolved, then asks actionlint for a finding
 only ShellCheck reports. actionlint leaves its shell checks off when that binary cannot start, and
@@ -64,13 +67,20 @@ still exits 0. A clean actionlint run counts for nothing until that finding come
 The pre-push hook runs the whole gate. Continuous integration runs the same tasks across the jobs
 `.github/workflows/ci.yml` defines:
 
-- `gate` runs `dotnet cake.cs --target=code` on Windows. It installs the linters first, so a
-  lockfile whose windows-x64 entries cannot install fails here rather than on a contributor's
-  machine.
-- `workflows` installs the same mise-pinned linters on Linux and runs actionlint and zizmor from
-  them. Here zizmor also runs its online audits, which need a token a local run does not have.
+- `gate` runs `dotnet cake.cs --target=tools`, then `dotnet cake.cs --target=code`, on Windows.
+  The linters install on this leg even though `code` reaches none, so a lockfile whose windows-x64
+  entries cannot install fails here rather than on a contributor's machine.
+- `workflows` runs the same `tools` target on Linux and runs actionlint and zizmor from what it
+  installed. Here zizmor also runs its online audits, which need a token a local run does not have.
 
-Both legs install with `MISE_LOCKED_VERIFY_PROVENANCE=1` on a cold cache, so every pull request
+`tools` depends on `lockfile` and then runs `mise install`, so on both legs the lockfile is asserted
+before anything installs from it. An address in `mise.lock` is what an install fetches, and an entry
+naming a repository other than the one `cake.cs` records is refused before anything downloads from
+it. The order is a dependency in `cake.cs`, so no arrangement of workflow steps can install first.
+`check` does not reach `tools`: a local gate resolves linters an earlier `mise install` put on disk
+and makes no network request.
+
+`tools` installs with `MISE_LOCKED_VERIFY_PROVENANCE=1` on a cold cache, so every pull request
 re-verifies the attestations against the artifacts `mise.lock` records on both platforms rather than
 trusting the run that wrote them. `mise.toml` sets the same value, so a local `mise install`
 re-verifies too. Neither leg caches: `jdx/mise-action` saves a cache only when it installs, and both
@@ -80,8 +90,8 @@ jobs install with `mise` itself afterwards.
 
 `.github/workflows/codeql.yml` runs CodeQL code scanning on the same events, plus a weekly schedule.
 It is advanced setup, a committed workflow, rather than the default setup a repository setting turns
-on and leaves nothing in the tree for. Two jobs report, and a branch ruleset names them by the check
-names below:
+on and leaves nothing in the tree for. Two jobs report, and the branch ruleset on `main` requires
+them by the check names below, beside the checks the `ci` workflow reports:
 
 - `Analyze (csharp)` runs on Windows with `build-mode: none`, which extracts every C# source without
   building the solution. Code a build generates is outside the database, which here is the XAML
@@ -108,6 +118,12 @@ why an approach was rejected. Code comments describe the code as it is now.
 
 A pull request merges by squash, merge or rebase. A squash of several commits takes the pull
 request's title as its subject, which is why the title is held to the same rules.
+
+The ruleset on `main` requires one approving review from a code owner, and `CODEOWNERS` names the
+owner alone. GitHub does not count an author's approval of their own pull request, so `gh pr merge`
+on the owner's pull request is refused with `the base branch policy prohibits the merge`.
+`gh pr merge --admin` is the way through: it merges on the owner's bypass of the ruleset rather than
+on a review. Wait for green checks before running it, because a bypass enforces nothing.
 
 ## Where code goes
 
