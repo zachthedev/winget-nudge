@@ -1,4 +1,19 @@
-<Project>
+<!--
+    TreatAsLocalProperty names WarningsNotAsErrors alone, so a global property of that name, which
+    is what -p: on a command line sets, loses to the assignment below instead of replacing it.
+    AuditPipeline stays a global property, because -p:AuditPipeline=false is the documented escape
+    CONTRIBUTING.md describes under Releases and the weekly advisories job passes.
+-->
+<Project TreatAsLocalProperty="WarningsNotAsErrors">
+    <!--
+        Machine-local settings such as the signing certificate thumbprint; never committed.
+        Imported ahead of the audit block, so nothing it sets can rewrite WarningsNotAsErrors.
+    -->
+    <Import
+        Project="$(MSBuildThisFileDirectory)Directory.Signing.props"
+        Condition="Exists('$(MSBuildThisFileDirectory)Directory.Signing.props')"
+    />
+
     <PropertyGroup>
         <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
         <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
@@ -8,14 +23,39 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-        <!-- Low and moderate advisories warn; high and critical break the build. -->
-        <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902</WarningsNotAsErrors>
+        <!--
+            Restore audits every package against nuget.org's advisory database. NuGetAuditMode
+            defaults to all for a net10.0 target, so the audit covers the transitive graph too.
+
+            NU1900 is a network, DNS or timeout failure fetching that database. NU1905 is an audit
+            source with no database. Both warn, so an outage or an egress-less runner still builds.
+            NU1901 and NU1902 are low and moderate advisories, and both warn. The advisories job in
+            .github/workflows/ci.yml reports all four weekly.
+
+            The list is assigned rather than appended to, so these four are the whole of it however
+            the property arrives. MSBuild reads an environment variable as a property, and an
+            exported WarningsNotAsErrors would otherwise seed the list with any advisory it names.
+            The policy task in cake.cs refuses a build whose environment sets either name.
+        -->
+        <WarningsNotAsErrors>NU1900;NU1901;NU1902;NU1905</WarningsNotAsErrors>
+        <!--
+            NU1903 and NU1904, high and critical, fail every build, the release build included. The
+            cost of a wrong block is bounded. release-please creates each release as a draft. The
+            msi job in release.yml publishes it, so a failed build leaves a draft with no assets.
+            That workflow's dispatch input rebuilds an existing tag. Reverse this the first time a
+            release is blocked by an advisory that does not affect shipped code.
+
+            AuditPipeline=false turns the two back into warnings for one build. The flag is
+            legitimate only beside the written record CONTRIBUTING.md describes under Releases.
+        -->
+        <WarningsNotAsErrors Condition="'$(AuditPipeline)' == 'false'"
+            >$(WarningsNotAsErrors);NU1903;NU1904</WarningsNotAsErrors>
         <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
         <!-- Renovate regenerates the lock files from Linux, where a Windows target needs this. -->
         <EnableWindowsTargeting>true</EnableWindowsTargeting>
         <AnalysisLevel>latest-Recommended</AnalysisLevel>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-        <Authors>Zach</Authors>
+        <Authors>ZachTheDev</Authors>
         <Product>Winget Nudge</Product>
         <!-- release-please rewrites the version between these markers in each release pull request. -->
         <!-- x-release-please-start-version -->
@@ -24,10 +64,4 @@
         <!-- Windows SDK build tools used for signing; the installer resolves signtool from here. -->
         <WindowsSdkBinVersion>10.0.26100.0</WindowsSdkBinVersion>
     </PropertyGroup>
-
-    <!-- Machine-local settings such as the signing certificate thumbprint; never committed. -->
-    <Import
-        Project="$(MSBuildThisFileDirectory)Directory.Signing.props"
-        Condition="Exists('$(MSBuildThisFileDirectory)Directory.Signing.props')"
-    />
 </Project>
