@@ -146,7 +146,7 @@ public static class Commands
                 {
                     AnsiConsole.MarkupLineInterpolated(
                         CultureInfo.InvariantCulture,
-                        $"[grey]·[/] refreshed, {"update".ToQuantity(keys.Count)} pending, staying quiet"
+                        $"[grey]\u00B7[/] refreshed, {"update".ToQuantity(keys.Count)} pending, staying quiet"
                     );
                     return 0;
                 }
@@ -155,7 +155,7 @@ public static class Commands
                 if (quiet && !services.Notifications.HasNews(keys))
                 {
                     AnsiConsole.MarkupLine(
-                        "[grey]·[/] refreshed, nothing new since the last notice"
+                        "[grey]\u00B7[/] refreshed, nothing new since the last notice"
                     );
                     return 0;
                 }
@@ -165,12 +165,12 @@ public static class Commands
                     services.Notifications.Record(keys);
                     AnsiConsole.MarkupLineInterpolated(
                         CultureInfo.InvariantCulture,
-                        $"[green]✓[/] {"update".ToQuantity(result.Names.Count)}, notification shown"
+                        $"[green]\u2713[/] {"update".ToQuantity(result.Names.Count)}, notification shown"
                     );
                 }
                 else
                 {
-                    AnsiConsole.MarkupLine("[grey]·[/] no updates");
+                    AnsiConsole.MarkupLine("[grey]\u00B7[/] no updates");
                 }
 
                 return 0;
@@ -312,12 +312,12 @@ public static class Commands
                     {
                         AnsiConsole.MarkupLineInterpolated(
                             CultureInfo.InvariantCulture,
-                            $"[green]✓[/] upgrading {"package".ToQuantity(count)}"
+                            $"[green]\u2713[/] upgrading {"package".ToQuantity(count)}"
                         );
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine("[grey]·[/] nothing eligible");
+                        AnsiConsole.MarkupLine("[grey]\u00B7[/] nothing eligible");
                     }
 
                     return 0;
@@ -326,13 +326,13 @@ public static class Commands
                 {
                     if (Launcher.IsElevationDeclined(exception))
                     {
-                        AnsiConsole.MarkupLine("[red]✗[/] elevation declined");
+                        AnsiConsole.MarkupLine("[red]\u2717[/] elevation declined");
                     }
                     else
                     {
                         AnsiConsole.MarkupLineInterpolated(
                             CultureInfo.InvariantCulture,
-                            $"[red]✗[/] launch failed: {exception.Message}"
+                            $"[red]\u2717[/] launch failed: {exception.Message}"
                         );
                     }
 
@@ -365,14 +365,14 @@ public static class Commands
             {
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
-                    $"[green]✓[/] scheduled task  {registrar.CheckTaskName}"
+                    $"[green]\u2713[/] scheduled task  {registrar.CheckTaskName}"
                 );
             }
             else
             {
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
-                    $"[grey]·[/] no check triggers enabled; {registrar.CheckTaskName} removed"
+                    $"[grey]\u00B7[/] no check triggers enabled; {registrar.CheckTaskName} removed"
                 );
             }
 
@@ -380,14 +380,14 @@ public static class Commands
             {
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
-                    $"[green]✓[/] quiet check     every {"hour".ToQuantity(settings.BackgroundCheckHours)}"
+                    $"[green]\u2713[/] quiet check     every {"hour".ToQuantity(settings.BackgroundCheckHours)}"
                 );
             }
             else
             {
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
-                    $"[grey]·[/] quiet check off; {registrar.BackgroundTaskName} removed"
+                    $"[grey]\u00B7[/] quiet check off; {registrar.BackgroundTaskName} removed"
                 );
             }
 
@@ -396,13 +396,13 @@ public static class Commands
                 registrar.CreateShortcut();
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
-                    $"[green]✓[/] shortcut        {registrar.ShortcutPath}"
+                    $"[green]\u2713[/] shortcut        {registrar.ShortcutPath}"
                 );
             }
 
             AnsiConsole.MarkupLineInterpolated(
                 CultureInfo.InvariantCulture,
-                $"[green]✓[/] notifications   registered for {services.ExecutablePath}"
+                $"[green]\u2713[/] notifications   registered for {services.ExecutablePath}"
             );
         });
         return command;
@@ -431,7 +431,7 @@ public static class Commands
             }
 
             Microsoft.Windows.AppNotifications.AppNotificationManager.Default.UnregisterAll();
-            AnsiConsole.MarkupLine("[green]✓[/] unregistered");
+            AnsiConsole.MarkupLine("[green]\u2713[/] unregistered");
         });
         return command;
     }
@@ -460,7 +460,7 @@ public static class Commands
                 int versions = tracking.Values.Sum(static entry => entry.Count);
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
-                    $"[green]✓[/] tracking seeded  {"version".ToQuantity(versions)} across {"package".ToQuantity(tracking.Count)}"
+                    $"[green]\u2713[/] tracking seeded  {"version".ToQuantity(versions)} across {"package".ToQuantity(tracking.Count)}"
                 );
                 return 0;
             }
@@ -492,7 +492,7 @@ public static class Commands
             Dictionary<string, ToolDefinition> tools = AppServices.Current.Tools.Load();
             if (tools.Count == 0)
             {
-                AnsiConsole.MarkupLine("[grey]·[/] no tools registered");
+                AnsiConsole.MarkupLine("[grey]\u00B7[/] no tools registered");
                 return;
             }
 
@@ -580,7 +580,7 @@ public static class Commands
             AppServices.Current.Tools.Register(toolId, definition);
             AnsiConsole.MarkupLineInterpolated(
                 CultureInfo.InvariantCulture,
-                $"[green]✓[/] registered {toolId}"
+                $"[green]\u2713[/] registered {toolId}"
             );
         });
         return command;
@@ -598,14 +598,14 @@ public static class Commands
             {
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
-                    $"[green]✓[/] removed {toolId}"
+                    $"[green]\u2713[/] removed {toolId}"
                 );
             }
             else
             {
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
-                    $"[grey]·[/] {toolId} was not registered"
+                    $"[grey]\u00B7[/] {toolId} was not registered"
                 );
             }
 
@@ -633,7 +633,7 @@ public static class Commands
                 {
                     AnsiConsole.MarkupLineInterpolated(
                         CultureInfo.InvariantCulture,
-                        $"[red]✗[/] {toolId} is not registered"
+                        $"[red]\u2717[/] {toolId} is not registered"
                     );
                     return 1;
                 }
@@ -649,7 +649,7 @@ public static class Commands
                     cancellationToken
                 );
                 ToolStatus status = new(toolId, definition, currentVersion, latestVersion);
-                AnsiConsole.Markup(status.UpdateAvailable ? "[yellow]![/] " : "[green]✓[/] ");
+                AnsiConsole.Markup(status.UpdateAvailable ? "[yellow]![/] " : "[green]\u2713[/] ");
                 AnsiConsole.MarkupLineInterpolated(
                     CultureInfo.InvariantCulture,
                     $"{status.Name}  current {currentVersion ?? "?"}  latest {latestVersion ?? "?"}"
