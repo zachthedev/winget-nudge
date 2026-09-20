@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Microsoft.UI.Xaml;
 using WingetNudge.Core.Packages;
 using WingetNudge.Core.Preferences;
+using WingetNudge.Core.Storage;
 using WingetNudge.Core.Upgrade;
 using WingetNudge.Services;
 
@@ -54,6 +55,28 @@ public sealed partial class UpgradeWindow : Window, IUpgradeInteraction
         }
 
         _started = true;
+
+        // Two scheduled tasks and a manual launch can all reach this window, and two winget
+        // upgrades running together fight over the same installers and the same outcome log.
+        RunLockAttempt attempt = RunLock.Acquire(AppServices.Current.Paths, RunLock.Upgrade);
+        if (attempt is RunLockAttempt.Unavailable unavailable)
+        {
+            PhaseText.Text = "Cannot start";
+            SummaryText.Text = unavailable.Reason;
+            FinishUi();
+            return;
+        }
+
+        if (attempt is not RunLockAttempt.Taken taken)
+        {
+            PhaseText.Text = "Another upgrade is already running";
+            SummaryText.Text = "nothing was installed; close this and try again when it finishes";
+            FinishUi();
+            return;
+        }
+
+        using RunLock run = taken.Lock;
+
         UpgradeEngine engine = AppServices.Current.CreateUpgradeEngine(this);
         UpgradeSummary summary;
         try

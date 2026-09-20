@@ -102,6 +102,11 @@ Release notes are cached per version in `changelog-cache.json`, and `notificatio
 records what the last notification named. Startup deletes half-written state files a killed process
 left behind.
 
+`check.lock` is held while a scheduled or manual check runs, so a second check stands down.
+`upgrade.lock` is held for the duration of an upgrade, so a second upgrade shows "already running"
+and installs nothing. A crash frees both, because Windows closes a dead process's handles, so a
+stale lock file needs no manual cleanup.
+
 On first run, the app copies state from the older PowerShell version's
 `%LOCALAPPDATA%\WingetUpdater` folder if it exists, so muted packages, tracking history and
 registered tools carry over.

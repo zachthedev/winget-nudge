@@ -480,3 +480,145 @@ public sealed class StartupRegistrarTriggerTests
             .Be(TimeSpan.FromMinutes(15));
     }
 }
+
+public sealed class RunLockTests : IDisposable
+{
+    private readonly TempData _data = new();
+
+    public void Dispose() => _data.Dispose();
+
+    [Fact]
+    public void Acquire_WhileHeld_StandsDown()
+    {
+        using RunLock first = Taken(RunLock.Acquire(_data.Paths, RunLock.Upgrade));
+
+        RunLock
+            .Acquire(_data.Paths, RunLock.Upgrade)
+            .Should()
+            .BeOfType<RunLockAttempt.Held>("a second upgrade must stand down while one runs");
+    }
+
+    [Fact]
+    public void Acquire_AfterRelease_Succeeds()
+    {
+        Taken(RunLock.Acquire(_data.Paths, RunLock.Check)).Dispose();
+
+        using RunLock second = Taken(RunLock.Acquire(_data.Paths, RunLock.Check));
+
+        second.Should().NotBeNull("the next run takes a lock the last one released");
+    }
+
+    [Theory]
+    [InlineData(RunLock.Check, RunLock.Upgrade)]
+    [InlineData(RunLock.Upgrade, RunLock.Check)]
+    public void Acquire_ForAnotherName_IsUnaffected(string held, string wanted)
+    {
+        using RunLock holder = Taken(RunLock.Acquire(_data.Paths, held));
+
+        using RunLock other = Taken(RunLock.Acquire(_data.Paths, wanted));
+
+        other.Should().NotBeNull("a check and an upgrade lock separate runs");
+    }
+
+    [Fact]
+    public void Acquire_WithAReadOnlyLockFile_ReportsWhyRatherThanThrowing()
+    {
+        string file = _data.Paths.RunLockFile(RunLock.Upgrade);
+        Directory.CreateDirectory(_data.Paths.Directory);
+        File.WriteAllText(file, "");
+        File.SetAttributes(file, FileAttributes.ReadOnly);
+
+        try
+        {
+            RunLockAttempt attempt = RunLock.Acquire(_data.Paths, RunLock.Upgrade);
+
+            attempt
+                .Should()
+                .BeOfType<RunLockAttempt.Unavailable>(
+                    "any process running as the user can set that attribute, and it survives a reboot"
+                )
+                .Which.Reason.Should()
+                .Contain(file, "the caller shows the reason to someone who has to fix it");
+        }
+        finally
+        {
+            File.SetAttributes(file, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
+    public void Acquire_WithADirectoryInTheLockFilePlace_ReportsWhyRatherThanThrowing()
+    {
+        Directory.CreateDirectory(_data.Paths.RunLockFile(RunLock.Check));
+
+        RunLock
+            .Acquire(_data.Paths, RunLock.Check)
+            .Should()
+            .BeOfType<RunLockAttempt.Unavailable>("a directory is not a file to open");
+    }
+
+    [Fact]
+    public void Acquire_ThroughAFileInTheDataDirectoryPlace_IsNotReadAsAnotherRun()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_data.Paths.Directory) ?? _data.Root);
+        File.WriteAllText(_data.Paths.Directory, "");
+
+        RunLock
+            .Acquire(_data.Paths, RunLock.Upgrade)
+            .Should()
+            .BeOfType<RunLockAttempt.Unavailable>(
+                "an IOException that is not a sharing violation is not a second run holding the lock"
+            );
+    }
+
+    [Fact]
+    public void Acquire_ThroughAReparsePoint_ReportsWhyRatherThanThrowing()
+    {
+        string elsewhere = Path.Combine(_data.Root, "elsewhere");
+        Directory.CreateDirectory(elsewhere);
+        try
+        {
+            Directory.CreateSymbolicLink(_data.Paths.Directory, elsewhere);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+        {
+            Assert.Skip("a directory link needs Developer Mode or SeCreateSymbolicLinkPrivilege");
+        }
+
+        RunLock
+            .Acquire(_data.Paths, RunLock.Upgrade)
+            .Should()
+            .BeOfType<RunLockAttempt.Unavailable>(
+                "the elevated process refuses to write through a link any user process can plant"
+            );
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Upgrade")]
+    [InlineData(@"..\..\evil")]
+    [InlineData(@"C:\Windows\Temp\evil")]
+    public void RunLockFile_ForANameThatIsNoRun_Throws(string name)
+    {
+        Action naming = () => _data.Paths.RunLockFile(name);
+
+        naming
+            .Should()
+            .Throw<ArgumentException>("a rooted or relative name lands outside the data directory")
+            .WithMessage($"*{name}*");
+    }
+
+    [Theory]
+    [InlineData(RunLock.Upgrade)]
+    [InlineData(RunLock.Check)]
+    public void RunLockFile_ForARunName_SitsInTheDataDirectory(string name)
+    {
+        _data
+            .Paths.RunLockFile(name)
+            .Should()
+            .Be(Path.Combine(_data.Paths.Directory, $"{name}.lock"));
+    }
+
+    private static RunLock Taken(RunLockAttempt attempt) =>
+        attempt.Should().BeOfType<RunLockAttempt.Taken>().Which.Lock;
+}
