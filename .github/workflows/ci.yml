@@ -24,8 +24,10 @@ concurrency:
 #
 # The workflow linters come from mise. mise.toml carries the version of each one and mise.lock
 # carries the artifact that version resolved to, so both jobs below and a local gate run install
-# the same bytes from the same two files. .github/mise-bootstrap.json pins mise itself, and the
-# SHA-256 of its binary on each platform.
+# the same bytes from the same two files. Both jobs install through cake.cs's tools target, which
+# asserts those two files and then runs the install, so the order is a dependency in that file and
+# not a step order here. .github/mise-bootstrap.json pins mise itself, and the SHA-256 of its
+# binary on each platform.
 jobs:
   # The code half of the gate: cake.cs's code target, the same one a contributor runs before a push.
   # The WinUI app and the MSI build only on Windows.
@@ -75,13 +77,12 @@ jobs:
             echo "mise on disk hashes $got, and .github/mise-bootstrap.json records $WANT" >&2
             exit 1
           fi
-      # MISE_LOCKED_VERIFY_PROVENANCE here as well as on the workflows job, so the windows-x64
-      # entries are re-verified against their attestations on the leg that installs them. mise.toml
-      # sets the same value, and this repeats it so the job does not depend on the file being read.
+      # The tools target asserts mise.lock against mise.toml and cake.cs's pins, then runs mise
+      # install with MISE_LOCKED_VERIFY_PROVENANCE set, so the windows-x64 entries are re-verified
+      # against their attestations on the leg that installs them. An entry whose address is not the
+      # repository cake.cs names is refused before the install fetches from it.
       - name: Linters
-        env:
-          MISE_LOCKED_VERIFY_PROVENANCE: '1'
-        run: mise install
+        run: dotnet cake.cs --target=tools
       - run: dotnet cake.cs --target=code
 
   # The workflows half of the gate, from the linters mise.toml pins. cake.cs's workflows target
@@ -93,6 +94,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The SDK global.json names, for the one cake target this job runs. That target restores
+      # Cake.Sdk alone, so there is no package graph to key a cache on.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
       - name: mise pin
         id: pin
         run: |
@@ -120,13 +126,12 @@ jobs:
             echo "mise on disk hashes $got, and .github/mise-bootstrap.json records $WANT" >&2
             exit 1
           fi
-      # MISE_LOCKED_VERIFY_PROVENANCE makes this install re-verify each attestation against the
-      # artifact mise.lock records, rather than trusting the run that wrote the lockfile. This is
-      # the step that makes the attestation a check on every pull request instead of a claim.
+      # The same tools target as the gate job: the lockfile assertions, then mise install with
+      # MISE_LOCKED_VERIFY_PROVENANCE set, so each attestation is re-verified against the artifact
+      # mise.lock records rather than trusted from the run that wrote the lockfile. This is the step
+      # that makes the attestation a check on every pull request instead of a claim.
       - name: Linters
-        env:
-          MISE_LOCKED_VERIFY_PROVENANCE: '1'
-        run: mise install
+        run: dotnet cake.cs --target=tools
       # -shellcheck names the pinned binary rather than letting actionlint pick one off PATH.
       # -pyflakes= because no Windows package manager ships a pinned pyflakes, and a pass that runs
       # on one leg alone reports findings a contributor cannot reproduce.
