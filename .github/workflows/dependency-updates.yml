@@ -162,13 +162,6 @@ jobs:
           renovate-version: 44.94.0@sha256:92e5d715b001c1a75e26f27a34086584f9ca51f0480b2401b3cdda44c05ad3e0
         env:
           RENOVATE_PLATFORM: github
-          # Forces settings over whatever .github/renovate.json resolves to, as
-          # a second layer beneath it rather than the control. The value lives
-          # on the dependency-updates environment rather than in this file: a
-          # literal here sits in the tree a pull request edits, which moves the
-          # setting rather than protecting it. An unset or empty variable makes
-          # Renovate skip the option, so the run is unchanged.
-          RENOVATE_FORCE: ${{ vars.RENOVATE_FORCE }}
           # One repository per run, because an installation token is scoped to
           # one installation.
           RENOVATE_REPOSITORIES: ${{ github.repository }}
