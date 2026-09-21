@@ -1,0 +1,34 @@
+# Dependabot here opens security fixes for NuGet packages, direct and transitive. Renovate opens every
+# version bump and every security fix for a package Directory.Packages.props names. Those come from
+# the kind preset this repository extends in .github/renovate.json.
+#
+# The NuGet updater reads no dependency-type from an allow entry. This file therefore cannot keep
+# Dependabot off a direct package the way the Rust file does. A direct NuGet advisory gets two pull
+# requests, one per bot. Whichever merges second closes itself. A transitive advisory gets one, from
+# Dependabot, as a PackageVersion pin or a parent bump.
+#
+# The repository setting "Dependabot security updates" turns the security half on.
+# open-pull-requests-limit: 0 keeps the version half off. Security pull requests take no cooldown and
+# no schedule, so the schedule key below is inert. The file format requires it.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    labels:
+      - dependencies
+      - security
+    commit-message:
+      prefix: fix(deps)
+
+  # Actions have no transitive dependencies, and Renovate fixes an action advisory. The wildcard
+  # ignore is what silences security pull requests here. The limit alone leaves them on.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: '*'
