@@ -234,12 +234,13 @@ against `main`, carrying the next version and the changelog it would ship. The c
 the version: a breaking change bumps the major, a `feat` the minor and anything else the changelog
 carries the patch.
 
-`changelog-sections` in `release-please-config.json` decides which types reach that pull request,
-and `hidden` there is the release switch rather than a display preference. release-please opens no
-pull request when the changelog it rendered came out empty. `feat`, `fix`, `perf`, `refactor`,
-`docs`, `build` and `revert` release. `chore`, `ci`, `test` and `style` stay hidden, which keeps a
-Renovate tooling bump or a formatting commit from shipping an MSI. A breaking change reaches the
-changelog whatever its type says, and takes the major. The `policy` task holds that table.
+`changelog-sections` in `release-please-config.json` decides which types cut a release, and `hidden`
+there is the release switch rather than a display preference. release-please opens no pull request
+when the changelog it rendered came out empty. The visible set is the one the `zachthedev/.github`
+handbook names, and every other type stays hidden, which keeps a README edit, a Renovate tooling
+bump or a formatting commit from shipping an MSI. A breaking change reaches the changelog whatever
+its type says, and takes the major. `initial-version` in the same file names the first version the
+tool cuts.
 
 Merging that pull request tags the commit and creates the GitHub release as a draft. The `release`
 workflow then builds the MSI, checks that its version matches the tag, and waits for a maintainer to
