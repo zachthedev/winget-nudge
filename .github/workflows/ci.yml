@@ -6,7 +6,7 @@ on:
   pull_request:
 
 # The token can read the checkout and nothing else, so a compromised action on a runner cannot
-# push, release or write to the repository.
+# push, release or write to the repository. The snapshot job is the one exception, and it says why.
 permissions:
   contents: read
 
@@ -138,6 +138,63 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$TITLE" | bunx --no-install commitlint
 
+  # The NuGet graph of the restored tree as an SPDX file. GitHub's graph reads each csproj alone
+  # and never Directory.Packages.props, so without a snapshot every NuGet package reads ">= 0" and
+  # a bump is invisible to dependency-review below. The SBOM tool is the stack's own pin in
+  # dotnet-tools.json, Microsoft-signed on nuget.org, and it reads the project.assets.json files a
+  # restore writes, which is why one runs first. This job holds the read token alone: the restore
+  # and the tool run third-party code, and the write the submission needs lives in the next job,
+  # which runs nothing but the pinned submission action over this job's artifact.
+  sbom:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - run: dotnet tool restore
+      - run: dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true
+      - run: dotnet sbom-tool generate -b . -bc . -pn winget-nudge -pv 0.0.0 -ps zachthedev -nsb https://zachthe.dev -m sbom
+      # A tool that found no project.assets.json exits 0 with a hollow file, and a snapshot with
+      # no packages passes the review on ">= 0" as if nothing ran. The solution restores more
+      # packages than this, so a count below it is a run that read nothing.
+      - run: jq -e '(.packages | length) > 10' sbom/_manifest/spdx_2.2/manifest.spdx.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: sbom/_manifest/spdx_2.2/manifest.spdx.json
+          if-no-files-found: error
+
+  # Submits that SPDX file as the dependency snapshot for this head. contents: write is what the
+  # submission API needs; the key raises a Dependabot pull request's read-only token too. A fork's
+  # token cannot be raised, so the sbom job above runs for heads this repository owns alone and a
+  # fork pull request keeps the review below over what the graph reads. No checkout: repoSha and
+  # repoRef name the commit, and the action reads the file and downloads nothing.
+  snapshot:
+    needs: sbom
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: sbom
+      - uses: advanced-security/spdx-dependency-submission-action@b009efcf8b9d562a4569d2028c276522232e631f # v0.4.0
+        with:
+          filePath: sbom
+          manifestPath: Directory.Packages.props
+          repoSha: ${{ github.event.pull_request.head.sha || github.sha }}
+          repoRef: refs/heads/${{ github.head_ref || github.ref_name }}
+
   # Diffs GitHub's dependency graph between the base and the head of a pull request, and fails on a
   # high or critical advisory against a package the pull request adds or moves. A package the pull
   # request leaves alone passes here whatever is published against it: the restore audit in
@@ -147,15 +204,28 @@ jobs:
   #
   # The graph reads package.json and the workflows. It reads each csproj too, where Central Package
   # Management leaves no version, so it records every NuGet package as ">= 0" and a bump in
-  # Directory.Packages.props changes nothing it can see, so the NuGet leg is uncovered here until a
-  # snapshot from the restored graph is submitted. The action reads the working tree only for a
+  # Directory.Packages.props changes nothing it can see; the snapshot job above is what puts real
+  # NuGet versions in front of this compare. The action reads the working tree only for a
   # config-file input, so there is no checkout.
+  # !cancelled(), so a fork pull request whose snapshot job did not run still gets the review over
+  # package.json and the workflows, with NuGet reading ">= 0" there as it did before the snapshot.
+  # A snapshot that failed is another matter: the compare would read ">= 0" and pass, so the first
+  # step refuses to review behind a failed snapshot.
   dependency-review:
-    if: github.event_name == 'pull_request'
+    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    needs: snapshot
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - if: needs.snapshot.result == 'failure'
+        run: |
+          echo 'The snapshot job failed, so this compare would read every NuGet package as ">= 0".' >&2
+          exit 1
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
           fail-on-scopes: runtime, development, unknown
+          # The submission API indexes a snapshot after it answers, and a compare that runs first
+          # falls back to the manifest graph, where every NuGet package reads ">= 0" and passes.
+          retry-on-snapshot-warnings: true
+          retry-on-snapshot-warnings-timeout: 300
