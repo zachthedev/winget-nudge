@@ -46,46 +46,46 @@ machine, and it is the first task the whole gate runs. `--target=tools` runs `lo
 only ShellCheck reports. actionlint leaves its shell checks off when that binary cannot start, and
 still exits 0. A clean actionlint run counts for nothing until that finding comes back.
 
-The pre-push hook runs the whole gate. Continuous integration runs the same tasks across the jobs
-`.github/workflows/ci.yml` defines:
+The pre-push hook runs the whole gate. zizmor runs its online audits wherever `gh auth token`
+answers, so a logged-in local run and continuous integration audit alike, and a run with no token
+stays offline and green. gh reads `GH_TOKEN` before its keyring, so a fine-grained read-only token
+there is the least a local run can hand zizmor.
 
-- `gate` runs `dotnet cake.cs --target=tools`, then `dotnet cake.cs --target=code`, on Windows.
-  The linters install on this leg even though `code` reaches none, so a lockfile whose windows-x64
-  entries cannot install fails here rather than on a contributor's machine.
-- `workflows` runs the same `tools` target on Linux and runs actionlint and zizmor from what it
-  installed. zizmor runs its online audits wherever `gh auth token` answers, so a logged-in local run
-  and this leg audit alike, and a run with no token stays offline and green. gh reads `GH_TOKEN`
-  before its keyring, so a fine-grained read-only token there is the least a local run can hand
-  zizmor.
+`tools` depends on `lockfile` and then runs `mise install`, so the lockfile is asserted before
+anything installs from it. An address in `mise.lock` is what an install fetches, and an entry naming
+a repository other than the one `cake.cs` records is refused before anything downloads from it. The
+order is a dependency in `cake.cs`, so on the `gate` job no arrangement of steps can install first.
+The Linux linter leg installs through mise alone, with the attestations verified. `check` does
+not reach `tools`: a local gate resolves linters an earlier `mise install` put on disk, and the
+one network request it makes is zizmor's online audit when `gh` holds a token. `tools` installs
+with the attestations re-verified on a cold cache, so every pull request checks the artifacts
+`mise.lock` records rather than trusting the run that wrote them.
 
-`tools` depends on `lockfile` and then runs `mise install`, so on both legs the lockfile is asserted
-before anything installs from it. An address in `mise.lock` is what an install fetches, and an entry
-naming a repository other than the one `cake.cs` records is refused before anything downloads from
-it. The order is a dependency in `cake.cs`, so no arrangement of workflow steps can install first.
-`check` does not reach `tools`: a local gate resolves linters an earlier `mise install` put on disk,
-and the one network request it makes is zizmor's online audit when `gh` holds a token.
+Continuous integration is five workflow files under `.github/workflows`. The shared jobs call the
+reusable workflows in `zachthedev/.github`, pinned by commit with the version beside it:
 
-`tools` installs with `MISE_LOCKED_VERIFY_PROVENANCE=1` on a cold cache, so every pull request
-re-verifies the attestations against the artifacts `mise.lock` records on both platforms rather than
-trusting the run that wrote them. `mise.toml` sets the same value, so a local `mise install`
-re-verifies too. Neither leg caches: `jdx/mise-action` saves a cache only when it installs, and both
-jobs install with `mise` itself afterwards.
-
-- `commits` checks every commit in a pull request, and its title, with commitlint.
-
-`.github/workflows/codeql.yml` runs CodeQL code scanning on the same events, plus a weekly schedule.
-It is advanced setup, a committed workflow, rather than the default setup a repository setting turns
-on and leaves nothing in the tree for. Two jobs report, and the branch ruleset on `main` requires
-them by the check names below, beside the checks the `ci` workflow reports:
-
-- `Analyze (csharp)` runs on Windows with `build-mode: none`, which extracts every C# source without
-  building the solution. Code a build generates is outside the database, which here is the XAML
-  compiler's partial classes.
-- `Analyze (actions)` runs on Linux over the workflows in `.github`. It overlaps the `workflows` job
-  without replacing it. actionlint and zizmor read a workflow's own configuration, such as an
-  unpinned action or a permission wider than a job asks for. CodeQL's Actions queries follow
-  attacker-controlled data from an event payload into a `run:` block, an action input or an
-  artifact. Neither reports the other's findings, so dropping one leaves a gap.
+- `ci.yml`, on every pull request and push to `main`: `gate` runs `dotnet cake.cs --target=tools`
+  and then the whole gate on Windows; `commits` lints every commit and the title with commitlint;
+  `workflows` runs actionlint and zizmor on Linux from the same `mise.lock`; `sbom` and `snapshot`
+  submit the NuGet graph of the restored tree, so `dependency-review` compares real versions
+  against the base and, on the release pull request, against the last release tag.
+- `cd.yml`, on every push to `main`: `release-pr` keeps the release pull request open and tags the
+  merge that releases; `build` builds the MSI and checks its version against the tag; `publish`
+  attaches it with `SHA256SUMS` and a build provenance attestation and flips the draft public once
+  the `release` environment's reviewer approves.
+- `codeql.yml`, on the same events plus a Thursday schedule: CodeQL code scanning as advanced
+  setup, a committed workflow rather than the default setup a repository setting turns on and leaves
+  nothing in the tree for. The checks report as `codeql / Analyze (<language>)`, the names the
+  branch ruleset requires. `Analyze (csharp)` runs on Windows with `build-mode: none`, which
+  extracts every C# source without building the solution, so code a build generates, here the XAML
+  compiler's partial classes, is outside the database. `Analyze (actions)` reads the workflows under
+  `.github`. It overlaps the `workflows` job without replacing it: actionlint and zizmor read a
+  workflow's own configuration, such as an unpinned action or a permission wider than a job asks
+  for, and CodeQL's Actions queries follow attacker-controlled data from an event payload into a
+  `run:` block, an action input or an artifact. Neither reports the other's findings.
+- `deps.yml`, daily: Renovate, under the updater app's credentials in the `deps` environment.
+- `audit.yml`, weekly: the NuGet advisory report over the locked graph, and zizmor's online audits
+  over the pinned actions. A red run there is a report, never a check.
 
 ## Commit messages
 
@@ -152,14 +152,10 @@ directory the test owns.
   NuGet leg is uncovered there.
 - [Renovate](https://docs.renovatebot.com) proposes updates on Monday mornings, one grouped pull
   request per ecosystem, and never for a version younger than three days.
-  `.github/workflows/dependency-updates.yml` runs it under a GitHub App. `.github/renovate.json`
-  extends the `csharp-installer` preset in `zachthedev/.github`, which holds the schedule, the
-  cooldown and the grouping, and adds what is true of this repository alone.
-- That workflow runs the Renovate image from ghcr.io. A step before Renovate asks ghcr.io and
-  Docker Hub for the digest of the pinned tag and fails the run when they disagree, so the pin is
-  the image both registries serve. A registry that will not answer after three attempts is a
-  warning instead: the step runs ahead of Renovate, and Renovate is what raises a security fix, so
-  an anonymous pull token's rate limit must not be what stops one shipping.
+  `.github/workflows/deps.yml` calls the shared `deps` workflow, which runs it under the updater
+  app's credentials from the `deps` environment. `.github/renovate.json` extends the
+  `csharp-installer` preset in `zachthedev/.github`, which holds the schedule, the cooldown and
+  the grouping, and adds what is true of this repository alone.
 - A security fix skips both the schedule and the wait. `bunfig.toml` still holds the wait for Bun's
   own resolution, so a security bump can leave the pull request red with
   `blocked by minimum-release-age`. Audit the version, then run
@@ -216,12 +212,12 @@ bump or a formatting commit from shipping an MSI. A breaking change reaches the 
 its type says, and takes the major. `initial-version` in the same file names the first version the
 tool cuts.
 
-Merging that pull request tags the commit and creates the GitHub release as a draft. The `release`
-workflow then builds the MSI, checks that its version matches the tag, and waits for a maintainer to
-approve the `release` environment. Only then does it attach the MSI, its `SHA256SUMS` and a build
-provenance attestation, and publish the draft, so a visitor never reaches a release with nothing on
-it. Running that workflow by hand with a tag rebuilds and reattaches the assets for an existing
-release.
+Merging that pull request tags the commit and creates the GitHub release as a draft, in the same
+`cd.yml` run that then builds the MSI, checks that its version matches the tag, and waits for a
+maintainer to approve the `release` environment. Only then does it attach the MSI, its `SHA256SUMS`
+and a build provenance attestation, and publish the draft, so a visitor never reaches a release
+with nothing on it. Nothing rebuilds an existing release: the publish refuses a tag that does not
+name the run's commit, so a release that failed is recovered by cutting the next version.
 
 A release publishes through an advisory. Nothing blocks after the merge: users hold the version
 they have until the next one, and the fix ships as the next version. Renovate's `security` group

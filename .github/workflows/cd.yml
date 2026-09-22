@@ -1,0 +1,95 @@
+name: cd
+
+# The release path, on every push to main. release-pr keeps the release pull request open and,
+# on the push that merges it, tags the commit and creates the draft release. build then builds the
+# MSI from that same commit and publish attaches it, attested, and flips the draft public once
+# the release environment's reviewer approves. No dispatch input: publish refuses a tag that does
+# not name the run's commit, so a rebuild after the next merge could never pass, and a failed
+# release is recovered by cutting the next version.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  # The release pull request and, on a merge, the tag and the draft. Every credential is the
+  # releaser app's, from the release-pr environment. The called job names that environment, so
+  # its variable and secret resolve from this repository's environment of that name. This job
+  # runs in no environment, so it cannot pass an environment secret by name. inherit is the one
+  # form that reaches it.
+  release-pr:
+    uses: zachthedev/.github/.github/workflows/release-pr.yml@c53d09e393028ceddee0d761f2a7963394289a72 # v0.1.0
+    secrets: inherit # zizmor: ignore[secrets-inherit]
+
+  # Builds the MSI for the release this push created. The push commit is the tagged commit, so
+  # the default checkout is the right one and no ref is named. No cache: a release is built from
+  # nothing a pull request could have written.
+  build:
+    needs: release-pr
+    if: needs.release-pr.outputs.released == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.release-pr.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - run: dotnet cake.cs --target=installer
+      # The MSI and the executable carry the version release-please wrote, so both have to match
+      # the tag before anything is published.
+      - name: Check the version and stage the assets
+        shell: pwsh
+        run: |
+          $version = $env:TAG.Substring(1)
+          $msi = 'installer/bin/Release/WingetNudge.msi'
+
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $database = $installer.OpenDatabase((Resolve-Path $msi).Path, 0)
+          $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property`` = 'ProductVersion'")
+          $view.Execute()
+          $productVersion = $view.Fetch().StringData(1)
+          $view.Close()
+          if ($productVersion -ne $version) {
+              throw "The MSI says $productVersion and the tag says $version."
+          }
+
+          $exe = 'src/WingetNudge/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish/WingetNudge.exe'
+          $fileVersion = (Get-Item $exe).VersionInfo.FileVersion
+          if ($fileVersion -ne "$version.0") {
+              throw "WingetNudge.exe says $fileVersion and the tag says $version."
+          }
+
+          New-Item -Path dist -ItemType Directory | Out-Null
+          $asset = "WingetNudge-$version-x64.msi"
+          Copy-Item -Path $msi -Destination "dist/$asset"
+          $hash = (Get-FileHash -Path "dist/$asset" -Algorithm SHA256).Hash.ToLowerInvariant()
+          # sha256sum's format, so `sha256sum --check` and Get-FileHash both read it.
+          [System.IO.File]::WriteAllText("dist/SHA256SUMS", "$hash  $asset`n")
+      # Flat: publish attaches every file at the root of the artifact.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: msi
+          path: dist/*
+          if-no-files-found: error
+
+  # Attaches the MSI and its checksum to the draft, records a build provenance attestation, and
+  # flips the draft public. The called job runs in the release environment, whose reviewer holds
+  # the approval. The calling job grants what the called job declares.
+  publish:
+    needs: [release-pr, build]
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: zachthedev/.github/.github/workflows/publish.yml@c53d09e393028ceddee0d761f2a7963394289a72 # v0.1.0
+    with:
+      tag: ${{ needs.release-pr.outputs.tag }}
+      artifacts: msi
+      flip: true

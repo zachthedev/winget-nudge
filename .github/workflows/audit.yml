@@ -1,13 +1,16 @@
 name: audit
 
-# The whole-tree NuGet advisory report, on its own clock. A report, never a check: nothing merges,
-# releases or deploys through this file, and a red run means work to pick up rather than a change
-# refused. The pull request checks in ci.yml hold what a change adds. This file reports what the
-# world found about the tree since. It is a fifth workflow file because the report has its own
-# clock and its own reader, and a scheduled job inside ci.yml would run the gate's triggers on the
-# report's timetable.
+# The whole-tree reports, on their own clock. A red run is a report, never a check: it means work
+# to pick up rather than a change refused. Nothing merges, releases or deploys through this file.
+# The pull request checks in ci.yml hold what a change adds. This file reports what the world
+# found about the tree since.
+#
+# audit lists every NuGet advisory against the locked graph, whatever its severity. workflows runs
+# zizmor's online audits over the pinned actions: a pinned commit outside its action's repository,
+# a stale action ref, a known-vulnerable action. Those answers change with no pull request, so a
+# schedule is what asks again.
 on:
-  # Weekly. The hour is clear of the Renovate and CodeQL crons.
+  # Weekly. The hour is clear of the deps and CodeQL crons.
   schedule:
     - cron: '23 7 * * 1'
   workflow_dispatch:
@@ -38,3 +41,10 @@ jobs:
           dotnet package list --project WingetNudge.slnx --vulnerable --include-transitive \
             --no-restore | tee advisories.txt
           printf '~~~\n%s\n~~~\n' "$(cat advisories.txt)" >> "$GITHUB_STEP_SUMMARY"
+
+  # The calling job grants what the called job declares. The called workflow installs from
+  # mise.lock, so no install step of this repository's own runs here.
+  workflows:
+    permissions:
+      contents: read
+    uses: zachthedev/.github/.github/workflows/workflows.yml@c53d09e393028ceddee0d761f2a7963394289a72 # v0.1.0
