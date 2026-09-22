@@ -10,76 +10,31 @@ on:
     branches: [main]
   pull_request:
   # Weekly, so a query published after the last change to this repository still reports against
-  # this tree. Thursday, clear of ci.yml's Monday cron and of dependency-updates.yml's daily one.
+  # this tree. Thursday, clear of the audit and deps crons.
   schedule:
     - cron: '37 9 * * 4'
 
-# No job gets a permission it does not name for itself.
 permissions: {}
 
-concurrency:
-  group: codeql-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-# Every action is pinned to a commit, as in every other workflow here. A tag can be retargeted by
-# its owner with no pull request and no cooldown; a commit cannot. Renovate's github-actions manager
-# bumps the hash and keeps the version comment current.
 jobs:
-  # Two languages. GitHub also detects JavaScript and TypeScript here, and neither is analyzed: the
-  # only JavaScript in the tree is commitlint.config.js, there is no TypeScript, and both are
-  # tooling rather than code the MSI carries.
+  # Two languages, one analysis each in the shared workflow, which names each check run
+  # Analyze (<language>) under this job. GitHub also detects JavaScript here, and it is not
+  # analyzed: the only JavaScript in the tree is commitlint.config.js, tooling rather than code the
+  # MSI carries.
   #
-  # The job name is what the check run is called, so `Analyze (csharp)` and `Analyze (actions)` are
-  # the names a branch ruleset requires. A matrix job with no name of its own takes every value in
-  # the entry, runner included, which would move the name with the runner.
-  analyze:
-    name: Analyze (${{ matrix.language }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+  # csharp on Windows: build-mode none still resolves dependencies through dotnet restore, every
+  # project here targets net10.0-windows10.0.26100.0, and global-json-file puts the SDK the restore
+  # needs on the runner. A server-side flag can turn C# buildless analysis off, at which point the
+  # init action falls back to autobuild, and autobuild for this solution builds nowhere else.
+  # actions on the default runner reads the workflows under .github; the workflows job in ci.yml
+  # reads the same files with actionlint and zizmor, and CONTRIBUTING.md says which covers what.
+  # The calling job grants what the called job declares.
+  codeql:
     permissions:
-      # Uploading the results to code scanning.
       security-events: write
-      # Reading the checkout. GitHub's documentation names both of these reads for a private
-      # repository, and granting them here keeps visibility from deciding what this workflow does.
       contents: read
       actions: read
-    strategy:
-      # One language failing still reports the other.
-      fail-fast: false
-      matrix:
-        include:
-          # Windows. build-mode none still resolves dependencies through dotnet restore, and every
-          # project here targets net10.0-windows10.0.26100.0. A server-side flag can also turn C#
-          # buildless analysis off, at which point the init action falls back to autobuild, and
-          # autobuild for this solution builds nowhere else.
-          - language: csharp
-            runner: windows-latest
-          # The workflows under .github. The workflows job in ci.yml reads the same files with
-          # actionlint and zizmor, and CONTRIBUTING.md says which one covers what.
-          - language: actions
-            runner: ubuntu-latest
-    steps:
-      # This job pushes nothing, so the job token does not stay in the checkout for the steps that
-      # follow it.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # global.json pins the SDK, and the extractor's restore runs under that pin. A runner whose
-      # preinstalled SDK does not satisfy it resolves no dependency at all. No cache: nothing here
-      # builds, and the restore the extractor runs is its own.
-      - if: matrix.language == 'csharp'
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: global.json
-      # build-mode none extracts the sources without building them, so no leg here builds the
-      # solution or the MSI. What a build would generate stays outside the database, which for this
-      # repository is the XAML compiler's partial classes. WingetErrorCodes.g.cs is committed, so it
-      # is read like any other source file.
-      - uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: none
-      # The category is what keeps one language's results from replacing the other's.
-      - uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
-        with:
-          category: '/language:${{ matrix.language }}'
+    uses: zachthedev/.github/.github/workflows/codeql.yml@c53d09e393028ceddee0d761f2a7963394289a72 # v0.1.0
+    with:
+      languages: '[{"language": "csharp", "runs-on": "windows-latest"}, {"language": "actions"}]'
+      global-json-file: global.json
