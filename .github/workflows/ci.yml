@@ -4,11 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Weekly, so an advisory published against an action this repository has not changed still
-  # reaches the online zizmor audits below, and the advisories job reports every NuGet advisory
-  # against the committed package graph.
-  schedule:
-    - cron: '23 7 * * 1'
 
 # The token can read the checkout and nothing else, so a compromised action on a runner cannot
 # push, release or write to the repository.
@@ -138,7 +133,8 @@ jobs:
       - name: actionlint
         run: mise exec -- actionlint -pyflakes= -shellcheck="$(mise which shellcheck)"
       # Online here, as a local run is whenever gh holds a token. zizmor's online audits, such as a
-      # pinned commit that is not in its action's repository, need one, and the job token costs nothing.
+      # pinned commit that is not in its action's repository, need one, and the job token costs
+      # nothing.
       # --strict-collection fails on a file zizmor cannot parse rather than dropping it and
       # reporting no findings for a workflow it never read.
       - name: zizmor
@@ -178,14 +174,16 @@ jobs:
 
   # Diffs GitHub's dependency graph between the base and the head of a pull request, and fails on a
   # high or critical advisory against a package the pull request adds or moves. A package the pull
-  # request leaves alone passes here whatever is published against it: the advisories job below and
-  # the restore audit in Directory.Build.props are what report those. Every scope is named because
-  # the default blocks runtime alone, and every npm package here is a development dependency.
+  # request leaves alone passes here whatever is published against it: the restore audit in
+  # Directory.Build.props and the weekly audit workflow are what report those. Every scope is
+  # named because the default blocks runtime alone, and every npm package here is a development
+  # dependency.
   #
   # The graph reads package.json and the workflows. It reads each csproj too, where Central Package
   # Management leaves no version, so it records every NuGet package as ">= 0" and a bump in
-  # Directory.Packages.props changes nothing it can see. NU1903 and NU1904 at restore are the NuGet
-  # gate. The action reads the working tree only for a config-file input, so there is no checkout.
+  # Directory.Packages.props changes nothing it can see, so the NuGet leg is uncovered here until a
+  # snapshot from the restored graph is submitted. The action reads the working tree only for a
+  # config-file input, so there is no checkout.
   dependency-review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -195,29 +193,3 @@ jobs:
         with:
           fail-on-severity: high
           fail-on-scopes: runtime, development, unknown
-
-  # The weekly NuGet advisory report. Directory.Build.props lets NU1900, NU1901, NU1902 and NU1905
-  # warn rather than fail, and this job is what keeps exempt from meaning ignored. The restore runs
-  # with AuditPipeline=false, so no advisory fails it. The listing then prints every advisory
-  # against the locked graph, transitive packages included, and exits 0 with findings. It exits 1
-  # only when it cannot reach the vulnerability data, so a report that never ran cannot read green.
-  advisories:
-    if: github.event_name == 'schedule'
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          global-json-file: global.json
-      - run: dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true -p:AuditPipeline=false
-      # --no-restore, because the implicit restore would run without the property above and fail
-      # on the very advisory this job exists to report. The summary gets the same text in a fence.
-      - name: Advisories
-        shell: bash
-        run: |
-          dotnet package list --project WingetNudge.slnx --vulnerable --include-transitive \
-            --no-restore | tee advisories.txt
-          printf '~~~\n%s\n~~~\n' "$(cat advisories.txt)" >> "$GITHUB_STEP_SUMMARY"
