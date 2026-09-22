@@ -5,34 +5,34 @@ the rules every change follows.
 
 ## Prerequisites
 
-Windows 11 on x64, with winget 1.29 or newer. Everything else installs with winget:
+Windows 11 on x64, with winget 1.29 or newer. The app is WinUI 3 and the installer is an MSI, so
+neither builds anywhere else. Everything below installs with winget; open a new terminal afterwards,
+so `PATH` includes what it added.
 
 ```powershell
 winget install --id Microsoft.DotNet.SDK.10 --exact
 winget install --id Oven-sh.Bun --exact
 winget install --id Microsoft.PowerShell --exact
-```
-
-The app also needs the Windows App Runtime 2.4 at run time. Recent App Installer and WinUI app
-updates put it on most machines already; otherwise it comes from Microsoft's
-[Windows App SDK downloads](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads).
-
-The gate's workflow linters come from [mise](https://mise.jdx.dev) rather than from winget.
-`mise.toml` pins the version of each one, `mise.lock` records the artifact that version resolved to,
-and continuous integration installs from the same two files. `.github/mise-bootstrap.json` pins mise
-itself, and the gate names the exact `winget install` command when mise is missing or at another
-version.
-
-```powershell
 winget install --id jdx.mise --exact
 ```
 
-Open a new terminal afterwards, so `PATH` includes what winget added.
+- The .NET SDK, at the version `global.json` names. It also pins Cake.Sdk, which runs the gate.
+- [Bun](https://bun.sh), at the version `package.json` names in `packageManager`. It runs
+  commitlint, prettier and lefthook.
+- PowerShell 7, for the scripts under `tools` and the commands in this document.
+- [mise](https://mise.jdx.dev), at the version `.github/mise-bootstrap.json` pins. It installs
+  actionlint, zizmor and ShellCheck: `mise.toml` pins the version of each one, `mise.lock` records
+  the artifact that version resolved to, and continuous integration installs from the same two
+  files. The gate names the exact `winget install` command when mise itself is missing or at another
+  version.
+
+The app needs the Windows App Runtime at run time. [install.md](install.md#requirements) names the
+version and where it comes from.
 
 ## First run
 
 ```powershell
-git clone -c core.symlinks=true https://github.com/zachthedev/winget-nudge.git
+git clone https://github.com/zachthedev/winget-nudge.git
 Set-Location winget-nudge
 bun install
 dotnet tool restore
@@ -41,9 +41,7 @@ mise install
 dotnet cake.cs
 ```
 
-`-c core.symlinks=true` is there because `CLAUDE.md` is a symlink to `AGENTS.md`, and Windows
-materializes one only under Developer Mode. `bun install` also installs the git hooks.
-`dotnet tool restore` installs CSharpier at the version
+`bun install` also installs the git hooks. `dotnet tool restore` installs CSharpier at the version
 `dotnet-tools.json` pins. `mise trust` marks this repository's `mise.toml` as one mise may read, and
 `mise install` puts the linters on disk from the artifacts `mise.lock` records. `dotnet cake.cs`
 runs the whole gate, which a pre-push hook runs again before anything leaves the machine.
@@ -56,7 +54,7 @@ The first build downloads the `Microsoft.WinGet.Client` package from the PowerSh
 checks its hash. It is the only source of `winrtact.dll`, the winget hook that lets an unpackaged
 process marshal winget's COM objects.
 
-## Running the app
+## Running it
 
 ```powershell
 dotnet build src/WingetNudge
@@ -65,8 +63,8 @@ $app = 'src/WingetNudge/bin/Debug/net10.0-windows10.0.26100.0/win-x64/WingetNudg
 & $app check
 ```
 
-The first opens the picker, and the second runs a verb from the table in the
-[README](../README.md#command-line). The executable is a GUI process, so a verb's output reaches the
+The first opens the picker, and the second runs a verb from the table in
+[usage.md](usage.md#command-line). The executable is a GUI process, so a verb's output reaches the
 terminal only when the terminal launched it directly. `dotnet run` starts it through another
 process, and the output never arrives.
 
@@ -76,6 +74,21 @@ the app survives is written to `crash.log` there. Deleting a file there resets w
 Running `register` from a build output points both scheduled tasks and the notification registration
 at that build. Run `unregister` from the same build before deleting it, or install the MSI again,
 which registers the installed copy.
+
+## Generated files
+
+`src/WingetNudge.Core/Packages/WingetErrorCodes.g.cs` comes from the installed winget's own error
+table, and the failure text on a package card comes from it. Rerun the script when a winget upgrade
+adds codes:
+
+```powershell
+./tools/Update-WingetErrorCodes.ps1
+```
+
+## Tests that need a real thing
+
+None. Winget, the Restart Manager, Task Scheduler and notifications sit behind seams, and every test
+passes a substitute; [CONTRIBUTING.md](../CONTRIBUTING.md#tests) names them.
 
 ## Screenshots
 
@@ -126,16 +139,6 @@ dotnet build installer/WingetNudge.Installer.wixproj --configuration Release
 
 That signs `WingetNudge.exe`, the app assemblies and the MSI with the Windows SDK's signtool and a
 DigiCert timestamp. A self-signed certificate verifies only on a machine that trusts it.
-
-## Winget error codes
-
-`tools/Update-WingetErrorCodes.ps1` regenerates
-`src/WingetNudge.Core/Packages/WingetErrorCodes.g.cs` from the installed winget's own table. The
-failure text on a package card comes from it. Rerun it when a winget upgrade adds codes:
-
-```powershell
-./tools/Update-WingetErrorCodes.ps1
-```
 
 ## Moving to a new winget release
 

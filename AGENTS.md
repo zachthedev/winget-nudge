@@ -1,20 +1,38 @@
-# Agents in this repository
+# Winget Nudge
 
-Everything a contributor needs is in the human-facing files. This one only points at them.
+A `csharp-installer` repository. [README.md](README.md) says what the app is.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/dev.md](docs/dev.md) before changing anything.
-They bind an agent as they bind a person, and nothing here repeats them.
+## Read first
 
-One rule is for agents alone. **Never run `register`, `unregister`, `upgrade`, `update-all` or
-`check` from a build output** unless the user asks. They change this machine's scheduled tasks,
-notification registration and installed packages, and the real scheduled tasks here run the
-installed app.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/dev.md](docs/dev.md) before changing anything. They
+bind an agent as they bind a person.
 
-## The documentation
+## Verify
 
-| File                               | Holds                                                                |
-| ---------------------------------- | -------------------------------------------------------------------- |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | The toolchain, the gate, commits, tests, dependencies and releases   |
-| [docs/dev.md](docs/dev.md)         | The first run, running the app, the MSI and signing, winget releases |
-| [README.md](README.md)             | What the app does, installing it, its command line and its data      |
-| [SECURITY.md](SECURITY.md)         | What counts as a vulnerability, and how to report one                |
+- `dotnet cake.cs` runs the whole gate.
+- `dotnet cake.cs --target=code` runs everything but the workflow linters.
+- `dotnet cake.cs --description` lists every task and what it checks.
+- `dotnet cake.cs --target=<task>` runs one task and the tasks it depends on.
+
+[CONTRIBUTING.md#the-gate](CONTRIBUTING.md#the-gate) says what the rows cover.
+
+## Never
+
+- Never run `register`, `unregister`, `upgrade`, `update-all` or `check` from a build output unless
+  the user asks. They change this machine's scheduled tasks, notification registration and installed
+  packages, and the real scheduled tasks here run the installed app.
+- Never edit the version in `Directory.Build.props` or `CHANGELOG.md` by hand
+  ([releases](CONTRIBUTING.md#releases)).
+- Never hand-edit `mise.lock` ([what never happens](CONTRIBUTING.md#what-never-happens)).
+- Never disable an analyzer, suppress a finding or delete an assertion to make the gate pass
+  ([what never happens](CONTRIBUTING.md#what-never-happens)).
+- Never invent a commit scope ([commit messages](CONTRIBUTING.md#commit-messages)).
+
+## Deviations
+
+A comment beside a line that names the handbook records a deliberate deviation. It is a decision, not
+a defect.
+
+## Where the rest is
+
+[README.md#documentation](README.md#documentation).
