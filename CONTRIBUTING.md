@@ -152,15 +152,14 @@ directory the test owns.
   NuGet leg is uncovered there.
 - [Renovate](https://docs.renovatebot.com) proposes updates on Monday mornings, one grouped pull
   request per ecosystem, and never for a version younger than three days.
-  `.github/workflows/dependency-updates.yml` runs it under a GitHub App, and `.github/renovate.json`
-  decides what it proposes.
-- That workflow runs the Renovate image from ghcr.io, and `.github/renovate.json` resolves its
-  version and digest on Docker Hub, which carries the release timestamp the cooldown needs. A step
-  before Renovate asks both registries for the digest of the pinned tag and fails the run when they
-  disagree, so the pin Renovate writes from one registry is the image the other serves. A registry
-  that will not answer after three attempts is a warning instead: the step runs ahead of Renovate,
-  and Renovate is what raises a security fix, so an anonymous pull token's rate limit must not be
-  what stops one shipping.
+  `.github/workflows/dependency-updates.yml` runs it under a GitHub App. `.github/renovate.json`
+  extends the `csharp-installer` preset in `zachthedev/.github`, which holds the schedule, the
+  cooldown and the grouping, and adds what is true of this repository alone.
+- That workflow runs the Renovate image from ghcr.io. A step before Renovate asks ghcr.io and
+  Docker Hub for the digest of the pinned tag and fails the run when they disagree, so the pin is
+  the image both registries serve. A registry that will not answer after three attempts is a
+  warning instead: the step runs ahead of Renovate, and Renovate is what raises a security fix, so
+  an anonymous pull token's rate limit must not be what stops one shipping.
 - A security fix skips both the schedule and the wait. `bunfig.toml` still holds the wait for Bun's
   own resolution, so a security bump can leave the pull request red with
   `blocked by minimum-release-age`. Audit the version, then run
