@@ -1,0 +1,9 @@
+# Gitignored files copied into every new worktree the Claude Code CLI
+# creates, in .gitignore syntax. A file is copied when it both matches a
+# pattern here and is ignored by .gitignore.
+#
+# Promote an edit made inside a worktree back to the canonical checkout with
+# ~/.claude/scripts/Sync-WorktreeConfig.ps1, run from that worktree. Seeding
+# only ever goes canonical to worktree.
+Directory.Signing.props
+.claude/settings.local.json

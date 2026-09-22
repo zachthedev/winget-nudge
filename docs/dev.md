@@ -32,7 +32,7 @@ Open a new terminal afterwards, so `PATH` includes what winget added.
 ## First run
 
 ```powershell
-git clone https://github.com/zachthedev/winget-nudge.git
+git clone -c core.symlinks=true https://github.com/zachthedev/winget-nudge.git
 Set-Location winget-nudge
 bun install
 dotnet tool restore
@@ -41,7 +41,9 @@ mise install
 dotnet cake.cs
 ```
 
-`bun install` also installs the git hooks. `dotnet tool restore` installs CSharpier at the version
+`-c core.symlinks=true` is there because `CLAUDE.md` is a symlink to `AGENTS.md`, and Windows
+materializes one only under Developer Mode. `bun install` also installs the git hooks.
+`dotnet tool restore` installs CSharpier at the version
 `dotnet-tools.json` pins. `mise trust` marks this repository's `mise.toml` as one mise may read, and
 `mise install` puts the linters on disk from the artifacts `mise.lock` records. `dotnet cake.cs`
 runs the whole gate, which a pre-push hook runs again before anything leaves the machine.
