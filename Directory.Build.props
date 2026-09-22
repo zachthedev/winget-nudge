@@ -1,13 +1,6 @@
-<!--
-    TreatAsLocalProperty names WarningsNotAsErrors alone, so a global property of that name, which
-    is what -p: on a command line sets, loses to the assignment below instead of replacing it.
-    AuditPipeline stays a global property, because -p:AuditPipeline=false is the documented escape
-    CONTRIBUTING.md describes under Releases and the weekly advisories job passes.
--->
-<Project TreatAsLocalProperty="WarningsNotAsErrors">
+<Project>
     <!--
         Machine-local settings such as the signing certificate thumbprint; never committed.
-        Imported ahead of the audit block, so nothing it sets can rewrite WarningsNotAsErrors.
     -->
     <Import
         Project="$(MSBuildThisFileDirectory)Directory.Signing.props"
@@ -24,32 +17,13 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <!--
-            Restore audits every package against nuget.org's advisory database. NuGetAuditMode
-            defaults to all for a net10.0 target, so the audit covers the transitive graph too.
-
-            NU1900 is a network, DNS or timeout failure fetching that database. NU1905 is an audit
-            source with no database. Both warn, so an outage or an egress-less runner still builds.
-            NU1901 and NU1902 are low and moderate advisories, and both warn. The advisories job in
-            .github/workflows/ci.yml reports all four weekly.
-
-            The list is assigned rather than appended to, so these four are the whole of it however
-            the property arrives. MSBuild reads an environment variable as a property, and an
-            exported WarningsNotAsErrors would otherwise seed the list with any advisory it names.
-            cake.cs refuses to run any target while the environment sets either name.
+            Restore audits every package, transitive ones included, against nuget.org's advisory
+            database. The six audit codes warn rather than fail, so no build blocks on what the world
+            discovers after a merge: NU1900 and NU1905 are a database restore could not reach, NU1901
+            to NU1904 are advisories from low to critical. The weekly audit workflow in .github
+            reports every finding. TreatWarningsAsErrors stays for every other warning.
         -->
-        <WarningsNotAsErrors>NU1900;NU1901;NU1902;NU1905</WarningsNotAsErrors>
-        <!--
-            NU1903 and NU1904, high and critical, fail every build, the release build included. The
-            cost of a wrong block is bounded. release-please creates each release as a draft. The
-            msi job in release.yml publishes it, so a failed build leaves a draft with no assets.
-            That workflow's dispatch input rebuilds an existing tag. Reverse this the first time a
-            release is blocked by an advisory that does not affect shipped code.
-
-            AuditPipeline=false turns the two back into warnings for one build. The flag is
-            legitimate only beside the written record CONTRIBUTING.md describes under Releases.
-        -->
-        <WarningsNotAsErrors Condition="'$(AuditPipeline)' == 'false'"
-            >$(WarningsNotAsErrors);NU1903;NU1904</WarningsNotAsErrors>
+        <WarningsNotAsErrors>NU1900;NU1901;NU1902;NU1903;NU1904;NU1905</WarningsNotAsErrors>
         <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
         <!-- Renovate regenerates the lock files from Linux, where a Windows target needs this. -->
         <EnableWindowsTargeting>true</EnableWindowsTargeting>

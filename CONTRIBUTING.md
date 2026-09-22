@@ -141,19 +141,15 @@ directory the test owns.
 - NuGet versions live in `Directory.Packages.props`, and every project has a `packages.lock.json`.
   The gate restores in locked mode, so a changed package graph fails until the lock files are
   regenerated and committed with it.
-- Restore audits every package, transitive ones included, against nuget.org's advisory database. A
-  high or critical advisory, `NU1903` or `NU1904`, fails the build. A low or moderate one, `NU1901`
-  or `NU1902`, warns. A database restore could not reach, `NU1900` or `NU1905`, warns too, so an
-  outage on nuget.org builds. `Directory.Build.props` records why the two severities stay errors and
-  the condition that reverses it. Exempt is not ignored: the `advisories` job in
-  `.github/workflows/ci.yml` runs on the weekly schedule and lists every advisory against the locked
-  graph, whatever its severity, in the run's summary.
+- Restore audits every package, transitive ones included, against nuget.org's advisory database,
+  and every finding warns. The weekly `audit` workflow in `.github/workflows/audit.yml` lists every
+  advisory against the locked graph, whatever its severity, in the run's summary.
 - On a pull request, the `dependency-review` job in `.github/workflows/ci.yml` diffs GitHub's
   dependency graph between base and head. It fails on a high or critical advisory against a package
   the pull request adds or moves, and passes a package it leaves alone. The graph reads
   `package.json` and the workflows. For NuGet it reads each `.csproj`, where Central Package
-  Management leaves no version, so a bump in `Directory.Packages.props` is invisible to it. The
-  restore audit is the NuGet gate.
+  Management leaves no version, so a bump in `Directory.Packages.props` is invisible to it and the
+  NuGet leg is uncovered there.
 - [Renovate](https://docs.renovatebot.com) proposes updates on Monday mornings, one grouped pull
   request per ecosystem, and never for a version younger than three days.
   `.github/workflows/dependency-updates.yml` runs it under a GitHub App, and `.github/renovate.json`
@@ -230,30 +226,9 @@ provenance attestation, and publish the draft, so a visitor never reaches a rele
 it. Running that workflow by hand with a tag rebuilds and reattaches the assets for an existing
 release.
 
-A high or critical NuGet advisory fails the release build as it fails every other, so a merged
-release pull request can leave a draft with no assets. The way out is a version without the
-advisory. Renovate's `security` group opens that bump without waiting for the schedule, and merging
-it cuts the next release. Running the `release` workflow by hand with the tag rebuilds the draft
-once the advisory is withdrawn.
-
-Shipping through an advisory is a decision, and its record lives beside the exception.
-`Directory.Build.props` takes a `NuGetAuditSuppress` item whose `Include` is the advisory URL. The
-comment on that item carries what the advisory blocks, why shipping is safer than waiting, and the
-condition that removes the item. Commit it as `build`, so release-please cuts the release, and
-delete it in the change that meets the condition. The weekly `advisories` job lists a suppressed
-advisory all the same, so the exception stays visible for as long as it lasts.
-
-`AuditPipeline=false` on a `dotnet restore` or `dotnet build` turns `NU1903` and `NU1904` back into
-warnings for that one invocation. The weekly report restores with it, and a maintainer can build
-with it to read what a blocked build would produce. No workflow passes it to a release build, and it
-is legitimate only beside the record above.
-
-A command line is the only place it belongs. MSBuild reads an environment variable as a property, so
-an exported `AuditPipeline` reaches every build with nothing on a command line to see, and an
-exported `WarningsNotAsErrors` names an advisory to exempt without mentioning `AuditPipeline` at
-all. `cake.cs` refuses to run any target while either name is set in the environment, and
-`Directory.Build.props` assigns `WarningsNotAsErrors` outright rather than appending to what it
-inherits, so nothing it inherits reaches the list.
+A release publishes through an advisory. Nothing blocks after the merge: users hold the version
+they have until the next one, and the fix ships as the next version. Renovate's `security` group
+opens that bump without waiting for the schedule, and merging it cuts the release.
 
 Never edit the version in `Directory.Build.props` or `CHANGELOG.md` by hand. release-please owns
 both.

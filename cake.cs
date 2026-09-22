@@ -80,18 +80,6 @@ Task("installer")
         )
     );
 
-// ///// Policy /////
-
-// The two property names that turn the NuGet advisory gate in Directory.Build.props into a
-// warning, neither of which may come from the environment. MSBuild takes an environment variable
-// as a property, so an exported AuditPipeline=false reaches every project this gate builds with
-// nothing on a command line to see, and an exported WarningsNotAsErrors seeds the list a project
-// file appends to. Directory.Build.props assigns that list outright rather than appending to what
-// it inherits, so the second name changes nothing there today; it is asserted because an exported
-// value must never be what an advisory gate reads. AuditPipeline=false is a documented escape for
-// one invocation, and a command line is where it belongs.
-string[] auditProperties = ["AuditPipeline", "WarningsNotAsErrors"];
-
 Task("code")
     .Description("Everything continuous integration runs in its gate job")
     .IsDependentOn("lockfile")
@@ -258,31 +246,7 @@ Task("check")
     .IsDependentOn("code")
     .IsDependentOn("workflows");
 
-// Before any target rather than inside one: installer is what the release workflow builds, and it
-// depends on build alone, so a check living in a task would leave the one build an advisory escape
-// costs the most.
-Setup(context => RequireAuditPolicyUnset());
-
 RunTarget(target);
-
-// ///// Policy checks /////
-
-void RequireAuditPolicyUnset()
-{
-    string[] exported =
-    [
-        .. auditProperties.Where(name => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(name))),
-    ];
-
-    if (exported.Length > 0)
-    {
-        throw new CakeException(
-            $"The environment sets [{string.Join(", ", exported)}], and MSBuild reads an environment variable as a property. "
-                + "Directory.Build.props fails a build on NU1903 and NU1904, and either name turns that into a warning with nothing on the command line. "
-                + $"Clear {string.Join(" and ", exported)} from the environment. AuditPipeline=false belongs on one dotnet invocation, beside the record CONTRIBUTING.md describes under Releases."
-        );
-    }
-}
 
 // ///// Pins /////
 

@@ -1,0 +1,40 @@
+name: audit
+
+# The whole-tree NuGet advisory report, on its own clock. A report, never a check: nothing merges,
+# releases or deploys through this file, and a red run means work to pick up rather than a change
+# refused. The pull request checks in ci.yml hold what a change adds. This file reports what the
+# world found about the tree since. It is a fifth workflow file because the report has its own
+# clock and its own reader, and a scheduled job inside ci.yml would run the gate's triggers on the
+# report's timetable.
+on:
+  # Weekly. The hour is clear of the Renovate and CodeQL crons.
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      # Directory.Build.props lets every audit code warn, so the restore reports and never fails.
+      - run: dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true
+      # The listing prints every advisory against the locked graph, transitive packages included,
+      # and exits 0 with findings. It exits 1 only when it cannot reach the vulnerability data, so
+      # a report that never ran cannot read green. The summary gets the same text in a fence.
+      - name: Advisories
+        shell: bash
+        run: |
+          dotnet package list --project WingetNudge.slnx --vulnerable --include-transitive \
+            --no-restore | tee advisories.txt
+          printf '~~~\n%s\n~~~\n' "$(cat advisories.txt)" >> "$GITHUB_STEP_SUMMARY"
