@@ -50,7 +50,9 @@ Download `WingetNudge-<version>-x64.msi` from the
 [latest release](https://github.com/zachthedev/winget-nudge/releases/latest) and run it. It installs
 for your account only, with no administrator prompt, into `%LOCALAPPDATA%\Programs\Winget Nudge`. It
 adds a Start menu shortcut and an entry in Apps & features, and registers the scheduled checks and
-the notification before setup finishes. A newer MSI replaces the installed one.
+the notification before setup finishes. A newer MSI replaces the installed one. The MSI and the
+executable carry the numeric version alone, so a prerelease is no upgrade path over the release it
+follows.
 
 Release MSIs are not code-signed yet
 ([issue 1](https://github.com/zachthedev/winget-nudge/issues/1)), so SmartScreen may stop the first
@@ -126,8 +128,9 @@ token to `api.github.com` and nowhere else.
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) has the rules, and [docs/dev.md](docs/dev.md) takes a fresh clone
-to a running app. Report security problems privately, as [SECURITY.md](SECURITY.md) describes.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rules, `dotnet cake.cs` is the gate every change passes
+before it leaves the machine, and [docs/dev.md](docs/dev.md) takes a fresh clone to a running app.
+Report security problems privately, as [SECURITY.md](SECURITY.md) describes.
 
 Winget Nudge is not affiliated with or endorsed by Microsoft.
 

@@ -7,7 +7,8 @@ publishing it first.
 
 ## Reporting
 
-Open a private advisory: <https://github.com/zachthedev/winget-nudge/security/advisories/new>
+Open a private advisory: <https://github.com/zachthedev/winget-nudge/security/advisories/new>, or
+email <hey@zachthe.dev>.
 
 Never open a public issue for a vulnerability. Everything else belongs in the issue tracker.
 
