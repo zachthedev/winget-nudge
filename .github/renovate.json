@@ -35,7 +35,7 @@
     "mise": "2026.9.5"
   },
   "vulnerabilityAlerts": {
-    "description": "A security fix skips the schedule and the cooldown, the way Dependabot security updates do. Its commit type comes from what is in the group, so a runtime dependency cuts a release and a development one does not. The null cooldown is Renovate's own default for this object, written out so the one exemption from the three-day wait sits beside the group it applies to. The gate's policy task runs renovate-config-validator --strict --no-global over this file, which is what checks its shape.",
+    "description": "A security fix skips the schedule and the cooldown, the way Dependabot security updates do. Its commit type comes from what is in the group, so a runtime dependency cuts a release and a development one does not. The null cooldown is Renovate's own default for this object, written out so the one exemption from the three-day wait sits beside the group it applies to.",
     "minimumReleaseAge": null,
     "groupName": "security",
     "commitMessageSuffix": "",

@@ -41,19 +41,8 @@ dotnet cake.cs
 ```
 
 [Cake](https://cakebuild.net) runs every task in `cake.cs`, each after the tasks it depends on. It
-stops at the first failure and prints a summary table. The table below lists the checks, not the
-order they run in.
-
-| Task        | What it checks                                                                               |
-| ----------- | -------------------------------------------------------------------------------------------- |
-| `format`    | C# formatting, through CSharpier                                                             |
-| `prettier`  | Markdown, YAML and JSON formatting                                                           |
-| `build`     | Every project in Release and Debug, analyzer warnings as errors, lock files honored          |
-| `tests`     | The Core suite                                                                               |
-| `installer` | The MSI links, built unsigned whatever `Directory.Signing.props` says                        |
-| `policy`    | Release types, `renovate.json` as repository config, and a Renovate note per wixproj package |
-| `lockfile`  | Every `mise.toml` pin recorded in `mise.lock` at the address `cake.cs` names                 |
-| `workflows` | actionlint with ShellCheck, then zizmor, over `.github`, at the versions `mise.lock` records |
+stops at the first failure and prints a summary table. `dotnet cake.cs --description` lists every
+task and what it checks, and `dotnet cake.cs --tree` prints the order they run in.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
 `workflows`. `lockfile` reads two data files and starts no process, so it needs no mise on the
@@ -71,14 +60,17 @@ The pre-push hook runs the whole gate. Continuous integration runs the same task
   The linters install on this leg even though `code` reaches none, so a lockfile whose windows-x64
   entries cannot install fails here rather than on a contributor's machine.
 - `workflows` runs the same `tools` target on Linux and runs actionlint and zizmor from what it
-  installed. Here zizmor also runs its online audits, which need a token a local run does not have.
+  installed. zizmor runs its online audits wherever `gh auth token` answers, so a logged-in local run
+  and this leg audit alike, and a run with no token stays offline and green. gh reads `GH_TOKEN`
+  before its keyring, so a fine-grained read-only token there is the least a local run can hand
+  zizmor.
 
 `tools` depends on `lockfile` and then runs `mise install`, so on both legs the lockfile is asserted
 before anything installs from it. An address in `mise.lock` is what an install fetches, and an entry
 naming a repository other than the one `cake.cs` records is refused before anything downloads from
 it. The order is a dependency in `cake.cs`, so no arrangement of workflow steps can install first.
-`check` does not reach `tools`: a local gate resolves linters an earlier `mise install` put on disk
-and makes no network request.
+`check` does not reach `tools`: a local gate resolves linters an earlier `mise install` put on disk,
+and the one network request it makes is zizmor's online audit when `gh` holds a token.
 
 `tools` installs with `MISE_LOCKED_VERIFY_PROVENANCE=1` on a cold cache, so every pull request
 re-verifies the attestations against the artifacts `mise.lock` records on both platforms rather than
@@ -108,7 +100,7 @@ assertion to make it pass without saying why in the same change.
 ## Commit messages
 
 [Conventional Commits](https://www.conventionalcommits.org), enforced by the commit-msg hook and by
-the `commits` job. The header and every body line stay within 72 characters.
+the `commits` job. The header and body line limits are the ones `commitlint.config.js` sets.
 `.github/commit-scopes.json` lists each scope and what it covers, and commitlint accepts no other.
 Omit the scope rather than invent one. A new top-level area earns a scope in that file, in the
 change that adds the area.

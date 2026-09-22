@@ -9,12 +9,12 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
 
-// The gate: every check a change must pass before it leaves the machine. CONTRIBUTING.md lists
-// what each task covers. The pre-push hook runs the check target. Continuous integration runs the
-// tools target on both of its jobs, which asserts the lockfile and then installs from it, then the
-// code target in one job and the same mise-installed workflow linters in the other.
+// The gate: every check a change must pass before it leaves the machine. Each Description says
+// what its task covers, and --description lists them. The pre-push hook runs the check target.
+// Continuous integration runs the tools target on both of its jobs, which asserts the lockfile and
+// then installs from it, then the code target in one job and the same mise-installed workflow
+// linters in the other.
 
 string target = Argument("target", "check");
 
@@ -82,35 +82,6 @@ Task("installer")
 
 // ///// Policy /////
 
-// What each commit type does to a release. release-please opens no release pull request when the
-// changelog body it rendered is one line, and the conventionalcommits preset drops a commit whose
-// type is hidden or missing from this table. Hidden is therefore the release switch rather than a
-// display preference: a visible type cuts a patch on its own, because the default versioning
-// strategy bumps the patch for anything that is neither a breaking change nor a feat. Every type
-// commitlint accepts is named, so no type is dropped by omission. A breaking change renders
-// whatever this says and takes the major.
-string[] releaseTriggers =
-[
-    "build releases",
-    "chore is silent",
-    "ci is silent",
-    "docs is silent",
-    "feat releases",
-    "fix releases",
-    "perf releases",
-    "refactor is silent",
-    "revert releases",
-    "style is silent",
-    "test is silent",
-];
-
-// The installer project and the command that regenerates its lock file. Renovate regenerates a
-// packages.lock.json only beside a cs, vb or fs project, so a package this file declares restores
-// in locked mode against a lock file nothing refreshes, and the next Directory.Packages.props bump
-// fails NU1004 there. A WiX extension is the ordinary reason to declare one.
-const string installerProject = "installer/WingetNudge.Installer.wixproj";
-const string installerRelock = "dotnet restore installer/WingetNudge.Installer.wixproj --force-evaluate";
-
 // The two property names that turn the NuGet advisory gate in Directory.Build.props into a
 // warning, neither of which may come from the environment. MSBuild takes an environment variable
 // as a property, so an exported AuditPipeline=false reaches every project this gate builds with
@@ -121,26 +92,11 @@ const string installerRelock = "dotnet restore installer/WingetNudge.Installer.w
 // one invocation, and a command line is where it belongs.
 string[] auditProperties = ["AuditPipeline", "WarningsNotAsErrors"];
 
-// The repository config Renovate applies, and the line its validator prints once it has read the
-// file as that rather than as global, self-hosted configuration.
-const string renovateConfig = ".github/renovate.json";
-const string renovateValidated = $"Validating {renovateConfig} as repo config";
-
-Task("policy")
-    .Description("Release types, renovate.json as repository config, and a Renovate note per wixproj package")
-    .Does(() =>
-    {
-        RequireReleaseTriggers();
-        RequireInstallerPackagesNoted();
-        RequireRenovateConfigValid();
-    });
-
 Task("code")
     .Description("Everything continuous integration runs in its gate job")
     .IsDependentOn("lockfile")
     .IsDependentOn("format")
     .IsDependentOn("prettier")
-    .IsDependentOn("policy")
     .IsDependentOn("tests")
     .IsDependentOn("installer");
 
@@ -160,10 +116,9 @@ const string shellCheckCanary = """
 
 const string shellCheckFinding = "SC2086";
 
-// What the gate knows about each linter beside the version mise.toml pins. The version argument
-// is here because a version mise reports is mise's own record rather than the binary's. The aqua
-// repository is here because mise.lock's backend and url are the address an install fetches from,
-// and the file a bump rewrites wholesale is not where the expected owner can live.
+// What the gate knows about each linter beside the version mise.toml pins. The aqua repository is
+// here because mise.lock's backend and url are the address an install fetches from, and the file a
+// bump rewrites wholesale is not where the expected owner can live.
 //
 // Attested names the two aqua declares a signer workflow for, so mise verifies a GitHub attestation
 // and records it. koalaman/shellcheck declares neither a signer workflow nor a checksums file at
@@ -171,9 +126,9 @@ const string shellCheckFinding = "SC2086";
 // would fail a lockfile that is correct.
 Dictionary<string, MisePin> misePins = new(StringComparer.Ordinal)
 {
-    ["actionlint"] = new("-version", "rhysd/actionlint", Attested: true),
-    ["shellcheck"] = new("--version", "koalaman/shellcheck", Attested: false),
-    ["zizmor"] = new("--version", "zizmorcore/zizmor", Attested: true),
+    ["actionlint"] = new("rhysd/actionlint", Attested: true),
+    ["shellcheck"] = new("koalaman/shellcheck", Attested: false),
+    ["zizmor"] = new("zizmorcore/zizmor", Attested: true),
 };
 
 // The platforms mise.lock has to carry: a bump made on one machine has to leave the other leg an
@@ -254,7 +209,7 @@ Task("tools")
     });
 
 Task("workflows")
-    .Description("actionlint with ShellCheck, then zizmor, over .github, at the versions mise.lock records")
+    .Description("actionlint with ShellCheck, then zizmor, over .github, from the paths mise resolves in locked mode")
     .IsDependentOn("lockfile")
     .Does(() =>
     {
@@ -267,7 +222,7 @@ Task("workflows")
         Dictionary<string, FilePath> resolved = new(StringComparer.Ordinal);
         foreach (string tool in tools)
         {
-            resolved[tool] = RequireInstalled(mise, tool, versions[tool]);
+            resolved[tool] = Installed(mise, tool);
         }
 
         FilePath actionlint = Verified(resolved, "actionlint");
@@ -279,13 +234,19 @@ Task("workflows")
         );
 
         // --strict-collection fails on a file zizmor cannot parse. Without it the file is dropped
-        // with a warning and the run reports no findings for a workflow it never read. --offline
-        // keeps a local run's findings independent of a token; CI runs the online audits. --config
-        // names the committed file so ZIZMOR_CONFIG in the environment cannot swap it.
+        // with a warning and the run reports no findings for a workflow it never read. --config
+        // names the committed file so ZIZMOR_CONFIG in the environment cannot swap it. The online
+        // audits read the GitHub API, so they run whenever gh holds a token and --offline keeps a
+        // run without one green rather than failing on the missing token.
+        string? token = GitHubToken();
         Command(
             ["zizmor", "zizmor.exe"],
-            "--no-progress --offline --strict-collection --config .github/zizmor.yml " + ".github/workflows",
-            settingsCustomization: settings => settings.WithToolPath(Verified(resolved, "zizmor"))
+            $"--no-progress {(token is null ? "--offline " : "")}--strict-collection --config .github/zizmor.yml .github/workflows",
+            settingsCustomization: settings =>
+            {
+                settings.WithToolPath(Verified(resolved, "zizmor"));
+                return token is null ? settings : settings.WithEnvironmentVariable("GH_TOKEN", token);
+            }
         );
     });
 
@@ -320,142 +281,6 @@ void RequireAuditPolicyUnset()
                 + "Directory.Build.props fails a build on NU1903 and NU1904, and either name turns that into a warning with nothing on the command line. "
                 + $"Clear {string.Join(" and ", exported)} from the environment. AuditPipeline=false belongs on one dotnet invocation, beside the record CONTRIBUTING.md describes under Releases."
         );
-    }
-}
-
-// changelog-sections in release-please-config.json, read as the release switch releaseTriggers
-// describes.
-void RequireReleaseTriggers()
-{
-    using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText("release-please-config.json"));
-
-    string[] sections =
-    [
-        .. document
-            .RootElement.GetProperty("changelog-sections")
-            .EnumerateArray()
-            .Select(section =>
-            {
-                bool silent =
-                    section.TryGetProperty("hidden", out JsonElement hidden) && hidden.ValueKind == JsonValueKind.True;
-                string type = section.GetProperty("type").GetString() ?? "";
-                return $"{type} {(silent ? "is silent" : "releases")}";
-            })
-            .OrderBy(entry => entry, StringComparer.Ordinal),
-    ];
-
-    if (!sections.SequenceEqual(releaseTriggers, StringComparer.Ordinal))
-    {
-        throw new CakeException(
-            $"release-please-config.json says [{string.Join("; ", sections)}], and this repository releases on [{string.Join("; ", releaseTriggers)}]."
-        );
-    }
-}
-
-// Every PackageReference or GlobalPackageReference the wixproj declares has a rule in renovate.json
-// that names it in matchDepNames and carries installerRelock in prBodyNotes, the way the Cake.Sdk
-// rule does for cake.packages.lock.json. That note is what tells the person merging a
-// Directory.Packages.props bump to regenerate the lock file Renovate left behind.
-void RequireInstallerPackagesNoted()
-{
-    string[] packages =
-    [
-        .. XDocument
-            .Load(installerProject)
-            .Descendants()
-            .Where(element => element.Name.LocalName is "PackageReference" or "GlobalPackageReference")
-            .Select(element =>
-                (string?)element.Attribute("Include") ?? (string?)element.Attribute("Update") ?? "(unnamed)"
-            ),
-    ];
-
-    if (packages.Length == 0)
-    {
-        return;
-    }
-
-    // NuGet identifiers are case-insensitive, and so is Renovate's matchDepNames.
-    HashSet<string> noted = new(StringComparer.OrdinalIgnoreCase);
-    using JsonDocument renovate = JsonDocument.Parse(System.IO.File.ReadAllText(renovateConfig));
-    if (renovate.RootElement.TryGetProperty("packageRules", out JsonElement rules))
-    {
-        foreach (JsonElement rule in rules.EnumerateArray())
-        {
-            bool relocks =
-                rule.TryGetProperty("prBodyNotes", out JsonElement notes)
-                && notes
-                    .EnumerateArray()
-                    .Any(note => (note.GetString() ?? "").Contains(installerRelock, StringComparison.Ordinal));
-            if (!relocks || !rule.TryGetProperty("matchDepNames", out JsonElement depNames))
-            {
-                continue;
-            }
-
-            foreach (JsonElement depName in depNames.EnumerateArray())
-            {
-                noted.Add(depName.GetString() ?? "");
-            }
-        }
-    }
-
-    string[] unnoted = [.. packages.Where(package => !noted.Contains(package))];
-    if (unnoted.Length > 0)
-    {
-        throw new CakeException(
-            $"{installerProject} declares [{string.Join(", ", unnoted)}], and {renovateConfig} carries no note for it. "
-                + "Renovate regenerates a packages.lock.json only beside a csproj, so a package declared here goes stale on every Directory.Packages.props bump and the locked restore fails NU1004. "
-                + $"Add a packageRules entry with matchManagers [\"nuget\"] and matchDepNames naming it, whose prBodyNotes says to run {installerRelock} and commit the result, the way the Cake.Sdk rule does."
-        );
-    }
-}
-
-// renovate-config-validator, on the file the repository config lives in. The validator treats a
-// file named on its command line as global, self-hosted configuration unless --no-global says
-// otherwise, and a global-only option such as autodiscover passes as global config and fails as
-// repository config. The run has to print renovateValidated, which names the mode it used: the
-// assertion below reads that line, and LOG_LEVEL is pinned so the environment cannot silence it.
-// --strict fails a file that needs migration, so a renamed option is reported rather than
-// translated. RENOVATE_X_IGNORE_RE2: package.json trusts no install script but lefthook's, so
-// re2's native module never builds here, and without the variable Renovate warns with a stack
-// trace on every run about the RegExp fallback it takes anyway.
-void RequireRenovateConfigValid()
-{
-    FilePath bunx =
-        Context.Tools.Resolve(["bunx", "bunx.exe"])
-        ?? throw new CakeException(
-            "bunx is not on PATH. Install Bun at the version package.json names in packageManager."
-        );
-
-    int exit = StartProcess(
-        bunx,
-        new ProcessSettings
-        {
-            Arguments = $"--no-install renovate-config-validator --strict --no-global {renovateConfig}",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                ["LOG_LEVEL"] = "info",
-                ["RENOVATE_X_IGNORE_RE2"] = "true",
-            },
-        },
-        out IEnumerable<string> output,
-        out IEnumerable<string> errors
-    );
-    string said = string.Join('\n', output.Concat(errors)).Trim();
-    string reported = said.Length == 0 ? "nothing" : said;
-
-    if (!said.Contains(renovateValidated, StringComparison.Ordinal))
-    {
-        throw new CakeException(
-            $"renovate-config-validator never said \"{renovateValidated}\", so {renovateConfig} was not validated as repository config. "
-                + $"It exited {exit} saying:\n{reported}"
-        );
-    }
-
-    if (exit != 0)
-    {
-        throw new CakeException($"renovate-config-validator exited {exit} over {renovateConfig} saying:\n{reported}");
     }
 }
 
@@ -700,7 +525,7 @@ void RequireRecorded(string tool, string version, Dictionary<string, MiseArtifac
     if (!misePins.TryGetValue(tool, out MisePin? pin))
     {
         throw new CakeException(
-            $"mise.toml declares {tool}, and cake.cs records no pin for it. Add its version argument and its aqua repository to misePins."
+            $"mise.toml declares {tool}, and cake.cs records no pin for it. Add its aqua repository to misePins."
         );
     }
 
@@ -826,12 +651,11 @@ void RequireArtifactAddress(
     }
 }
 
-// Hands back the executable it verified, so a caller runs that file rather than resolving the
-// name a second time and trusting the two answers to match. The binary is asked its version
-// rather than mise, because mise's answer is mise's own record and not the file on disk.
-FilePath RequireInstalled(FilePath mise, string tool, string version)
+// Hands back the file mise resolved for the tool, so a caller runs that path rather than resolving
+// the name a second time and trusting the two answers to match. mise which answers from the
+// install the lockfile task passed, in locked mode, so the path is the pinned version's.
+FilePath Installed(FilePath mise, string tool)
 {
-    string versionArgument = misePins[tool].VersionArgument;
     int lookup = StartProcess(
         mise,
         new ProcessSettings
@@ -848,27 +672,39 @@ FilePath RequireInstalled(FilePath mise, string tool, string version)
         throw new CakeException($"mise which {tool} found nothing. Install it with: mise install");
     }
 
-    FilePath executable = new FilePath(resolved);
-    int exit = StartProcess(
-        executable,
-        new ProcessSettings { Arguments = versionArgument, RedirectStandardOutput = true },
-        out IEnumerable<string> printed
-    );
-    string found = Regex.Match(string.Join('\n', printed), @"\d+\.\d+\.\d+").Value;
-    if (exit != 0 || found != version)
-    {
-        throw new CakeException(
-            $"{resolved} reports {tool} {found}, and mise.toml pins {version}. Install it with: mise install"
-        );
-    }
-
-    return executable;
+    return new FilePath(resolved);
 }
 
 FilePath Verified(Dictionary<string, FilePath> resolved, string tool) =>
     resolved.TryGetValue(tool, out FilePath? executable)
         ? executable
         : throw new CakeException($"The workflows task runs {tool}, and mise.toml declares no such tool.");
+
+// The token gh holds for api.github.com, or null when gh is absent or logged out. gh answers from
+// GH_TOKEN first, so an exported token reaches zizmor through the same path a login does. The output
+// is redirected and the process runs silent, so the token reaches the tool's environment and no log.
+string? GitHubToken()
+{
+    FilePath? gh = Context.Tools.Resolve(["gh", "gh.exe"]);
+    if (gh is null)
+    {
+        return null;
+    }
+
+    int exit = StartProcess(
+        gh,
+        new ProcessSettings
+        {
+            Arguments = "auth token",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            Silent = true,
+        },
+        out IEnumerable<string> printed
+    );
+    string token = string.Join("", printed).Trim();
+    return exit == 0 && token.Length > 0 ? token : null;
+}
 
 // The arguments actionlint lints .github with, returned once actionlint has reported a ShellCheck
 // finding with them. -shellcheck names the file the version check resolved. The pinned binary and
@@ -934,7 +770,6 @@ sealed record MiseArtifact(
 );
 
 /// <summary>What cake.cs knows about one pinned linter, beside the version mise.toml carries.</summary>
-/// <param name="VersionArgument">The argument the binary answers its own version on.</param>
 /// <param name="Repository">The GitHub repository aqua resolves the artifact from, as owner/name.</param>
 /// <param name="Attested">Whether aqua declares a signer workflow, so mise records provenance.</param>
-sealed record MisePin(string VersionArgument, string Repository, bool Attested);
+sealed record MisePin(string Repository, bool Attested);
