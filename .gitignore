@@ -15,8 +15,10 @@ Directory.Signing.props
 .idea/
 launchSettings.json
 
-# Claude Code permissions a contributor grants themselves. .claude/settings.json is shared.
+# Claude Code permissions a contributor grants themselves, and the worktrees the CLI creates.
+# .claude/settings.json is shared.
 .claude/settings.local.json
+.claude/worktrees/
 
 # github/gitignore VisualStudio.gitignore
 #
