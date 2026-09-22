@@ -187,22 +187,20 @@ directory the test owns.
   the right repository.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
-  whatever `locked_scopes` says. The gate reads both, plus `locked_scopes` itself, so a
-  `MISE_LOCKED_SCOPES` that drops `project` is reported rather than left to outrank the file in
-  silence.
+  whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
+  entry carries, so a bare `mise lock` writes both legs and the gate refuses an entry for a
+  platform the list does not name. One gap no setting reports: `MISE_BACKENDS_<TOOL>` overrides a
+  tool's backend from the environment.
 - ShellCheck is a pinned dependency of this repository on both legs. The `rhysd/actionlint` image
   bundles a ShellCheck copied out of `koalaman/shellcheck-alpine:stable` when that image is built,
   so a run through the image has no pin on the ShellCheck it executes. One `mise.toml` entry drives
   the binary both legs run.
-- mise itself is pinned in `.github/mise-bootstrap.json`, with the SHA-256 of its binary on each
-  platform. `jdx/mise-action` checks its download against the release's minisign-signed
-  `SHASUMS256.txt`, and a step after it checks the installed binary against the recorded hash, so
-  two independent checks cover the tool that verifies the linters. The gate hashes the `mise` it
-  resolved against the same entry, so a local run identifies mise by its bytes rather than by the
-  version mise prints about itself. Renovate moves the version and cannot compute those hashes, so
-  its pull request carries a note and stays red until they move with it.
+- mise itself is pinned on the `jdx/mise-action` line in `.github/workflows/ci.yml`. The action
+  verifies its download against the release's minisign-signed `SHASUMS256.txt`, which is the check
+  on the tool that verifies the linters. A local run takes whichever mise is on `PATH`.
 - `cake.cs` restores in locked mode against `cake.packages.lock.json`. After changing the Cake.Sdk
-  version in `global.json`, regenerate it with `dotnet restore cake.cs --force-evaluate`.
+  version in `global.json` or the Tomlyn version in `Directory.Packages.props`, regenerate it with
+  `dotnet restore cake.cs --force-evaluate`.
 
 ## Releases
 
@@ -239,7 +237,6 @@ certificate; [docs/dev.md](docs/dev.md) shows how.
 ## What never happens
 
 - No hand edit of `mise.lock`. Its entries are the addresses an install fetches and the checksums it
-  verifies against, so a hand-written line is an address nobody verified. Write it with
-  `mise lock --platform linux-x64,windows-x64`.
+  verifies against, so a hand-written line is an address nobody verified. Write it with `mise lock`.
 - No analyzer disabled, finding suppressed or assertion deleted to make the gate pass without saying
   why in the same change. A task that fails is reporting something.

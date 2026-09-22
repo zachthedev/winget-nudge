@@ -21,8 +21,8 @@ concurrency:
 # carries the artifact that version resolved to, so both jobs below and a local gate run install
 # the same bytes from the same two files. Both jobs install through cake.cs's tools target, which
 # asserts those two files and then runs the install, so the order is a dependency in that file and
-# not a step order here. .github/mise-bootstrap.json pins mise itself, and the SHA-256 of its
-# binary on each platform.
+# not a step order here. jdx/mise-action pins mise itself on its version line and verifies the
+# download against the release's minisign-signed checksums.
 jobs:
   # The code half of the gate: cake.cs's code target, the same one a contributor runs before a push.
   # The WinUI app and the MSI build only on Windows.
@@ -48,30 +48,14 @@ jobs:
       - run: dotnet tool restore
       # The code target reaches no linter. The linters install here anyway, so a lockfile whose
       # windows-x64 entries cannot install fails on this leg rather than on a contributor's machine.
-      - name: mise pin
-        id: pin
-        shell: bash
-        run: |
-          jq -r '"version=" + .version' .github/mise-bootstrap.json >> "$GITHUB_OUTPUT"
-          jq -r '"sha256=" + .sha256["windows-x64"]' .github/mise-bootstrap.json >> "$GITHUB_OUTPUT"
       # cache: false on both legs. The action saves a cache only when it installs, and it installs
       # on neither, so the input writes nothing and a restored cache would reach the install below
       # without the action knowing it had.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          version: ${{ steps.pin.outputs.version }}
+          version: 2026.9.5
           install: false
           cache: false
-      - name: mise binary
-        shell: bash
-        env:
-          WANT: ${{ steps.pin.outputs.sha256 }}
-        run: |
-          got=$(sha256sum "$(command -v mise)" | cut -d ' ' -f 1)
-          if [ "$got" != "$WANT" ]; then
-            echo "mise on disk hashes $got, and .github/mise-bootstrap.json records $WANT" >&2
-            exit 1
-          fi
       # The tools target asserts mise.lock against mise.toml and cake.cs's pins, then runs mise
       # install with MISE_LOCKED_VERIFY_PROVENANCE set, so the windows-x64 entries are re-verified
       # against their attestations on the leg that installs them. An entry whose address is not the
@@ -94,33 +78,15 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
-      - name: mise pin
-        id: pin
-        run: |
-          jq -r '"version=" + .version' .github/mise-bootstrap.json >> "$GITHUB_OUTPUT"
-          jq -r '"sha256=" + .sha256["linux-x64"]' .github/mise-bootstrap.json >> "$GITHUB_OUTPUT"
       # cache: false so the install below starts cold and re-verifies every artifact. The action
       # also exports MISE_TRUSTED_CONFIG_PATHS for the checkout, so mise.toml's settings are in
       # force for every step after this one without a mise trust of its own.
       # The gate job says the rest of why neither job caches.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          version: ${{ steps.pin.outputs.version }}
+          version: 2026.9.5
           install: false
           cache: false
-      # The action checks its download against the release's minisign-signed SHASUMS256.txt. This
-      # step checks the binary on disk against the hash this repository records, which is the leg
-      # the repository controls. Every archive the action can pick carries the same binary, so one
-      # hash covers them all.
-      - name: mise binary
-        env:
-          WANT: ${{ steps.pin.outputs.sha256 }}
-        run: |
-          got=$(sha256sum "$(command -v mise)" | cut -d ' ' -f 1)
-          if [ "$got" != "$WANT" ]; then
-            echo "mise on disk hashes $got, and .github/mise-bootstrap.json records $WANT" >&2
-            exit 1
-          fi
       # The same tools target as the gate job: the lockfile assertions, then mise install with
       # MISE_LOCKED_VERIFY_PROVENANCE set, so each attestation is re-verified against the artifact
       # mise.lock records rather than trusted from the run that wrote the lockfile. This is the step

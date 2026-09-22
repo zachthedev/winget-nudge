@@ -5,10 +5,10 @@
 // that identifier is a Windows executable on every host. Without one, dotnet run starts the
 // assembly through the host it has, which is what lets the ubuntu job run a target.
 #:property UseAppHost=false
+#:package Tomlyn
 
-using System.Security.Cryptography;
-using System.Text.Json;
-using System.Text.RegularExpressions;
+using Tomlyn;
+using Tomlyn.Model;
 
 // The gate: every check a change must pass before it leaves the machine. Each Description says
 // what its task covers, and --description lists them. The pre-push hook runs the check target.
@@ -119,36 +119,14 @@ Dictionary<string, MisePin> misePins = new(StringComparer.Ordinal)
     ["zizmor"] = new("zizmorcore/zizmor", Attested: true),
 };
 
-// The platforms mise.lock has to carry: a bump made on one machine has to leave the other leg an
-// artifact to install from.
-string[] lockedPlatforms = ["linux-x64", "windows-x64"];
-
 // The host each address in mise.lock has to name, and the path under it. A url elsewhere is an
 // install fetching bytes from elsewhere, whatever the rest of the entry says.
 const string releaseHost = "github.com";
 const string releaseApiHost = "api.github.com";
 
-// Every mise setting the gate leans on. mise defaults locked, lockfile and locked_verify_provenance
-// to off, so those three are what a missing mise.toml or MISE_SAFE=1 takes away, and any of the six
-// can be switched off by its MISE_ environment variable.
-//
-// These six are not the whole of what can be switched off. MISE_LOCKED_SCOPES leaves every one of
-// them reading true while dropping this repository's tools out of locked mode, so lockedScope is
-// read separately below and mise.toml's [tool_config] locked is what holds when the list narrows.
-string[] requiredSettings =
-[
-    "locked",
-    "lockfile",
-    "locked_verify_provenance",
-    "github_attestations",
-    "provenance_api_failures_fatal",
-    "aqua.github_attestations",
-];
-
-// The config scope this repository's tools come from. locked_scopes lists the scopes
-// invocation-wide locked mode covers, and a list without this one lifts it off every tool
-// mise.toml declares.
-const string lockedScope = "project";
+// The command that rewrites mise.lock from mise.toml. lockfile_platforms in mise.toml is what makes
+// a bare lock write every platform the gate reads, so no flag repeats the list here.
+const string relock = "mise lock";
 
 // The two data files alone, before any process starts and before anything installs from them. A
 // lockfile that disagrees with its pin is the likeliest fault after a bump, and an address in it
@@ -159,20 +137,21 @@ Task("lockfile")
     .Description("Every mise.toml pin recorded in mise.lock at the address cake.cs names")
     .Does(() =>
     {
-        Dictionary<string, string> versions = MiseVersions("mise.toml");
-        Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock");
-        foreach (string tool in versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
+        MiseConfig config = ReadMiseConfig("mise.toml");
+        Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms);
+        foreach (string tool in config.Versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
         {
-            RequireRecorded(tool, versions[tool], artifacts);
+            RequireRecorded(tool, config.Versions[tool], config.Platforms, artifacts);
         }
     });
 
 // The install continuous integration runs on both jobs, behind the lockfile task. The order is a
 // dependency in this file, so no step in a workflow can install before the assertions run. Outside
 // check, because a local gate resolves linters an install already put on disk and makes no network
-// request. MISE_LOCKED_VERIFY_PROVENANCE makes the install re-verify each attestation against the
-// artifact mise.lock records rather than trusting the run that wrote the lockfile. mise.toml sets
-// the same value, and this repeats it so the install does not depend on the file being read.
+// request. The three settings in the environment are the ones the install leans on: locked mode,
+// the lockfile read, and re-verifying each attestation against the artifact mise.lock records rather
+// than trusting the run that wrote it. mise.toml sets all three, and this repeats them so the install
+// does not depend on the file being read or on the environment leaving them alone.
 Task("tools")
     .Description("The linters mise.lock records, installed once the lockfile task has passed them")
     .IsDependentOn("lockfile")
@@ -186,6 +165,8 @@ Task("tools")
                 Arguments = "install",
                 EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
+                    ["MISE_LOCKED"] = "1",
+                    ["MISE_LOCKFILE"] = "1",
                     ["MISE_LOCKED_VERIFY_PROVENANCE"] = "1",
                 },
             }
@@ -201,11 +182,10 @@ Task("workflows")
     .IsDependentOn("lockfile")
     .Does(() =>
     {
-        Dictionary<string, string> versions = MiseVersions("mise.toml");
-        string[] tools = [.. versions.Keys.OrderBy(name => name, StringComparer.Ordinal)];
+        MiseConfig config = ReadMiseConfig("mise.toml");
+        string[] tools = [.. config.Versions.Keys.OrderBy(name => name, StringComparer.Ordinal)];
 
         FilePath mise = RequireMise();
-        RequireSettings(mise);
 
         Dictionary<string, FilePath> resolved = new(StringComparer.Ordinal);
         foreach (string tool in tools)
@@ -250,26 +230,25 @@ RunTarget(target);
 
 // ///// Pins /////
 
-// mise.toml's [tools] table, which is where the linter versions live rather than here: a formatter
-// moves source, and a pin that moves is a pin no tool can read. Both legs install from this file,
-// so no version has to be asserted against another file's copy of itself.
-Dictionary<string, string> MiseVersions(string path)
+// mise.toml, read as TOML: the [tools] table is where the linter versions live rather than here,
+// because a formatter moves source and a pin that moves is a pin no tool can read. Both legs
+// install from this file, so no version has to be asserted against another file's copy of itself.
+// lockfile_platforms is the list every mise.lock entry has to carry, so a bump made on one machine
+// leaves the other leg an artifact to install from.
+MiseConfig ReadMiseConfig(string path)
 {
+    TomlTable table = ReadToml(path);
     Dictionary<string, string> versions = new(StringComparer.Ordinal);
-    bool tools = false;
-    foreach (string line in System.IO.File.ReadAllLines(path))
+    if (table.TryGetValue("tools", out object? tools) && tools is TomlTable declared)
     {
-        string text = line.Trim();
-        if (text.StartsWith('['))
+        foreach (KeyValuePair<string, object> pin in declared)
         {
-            tools = text == "[tools]";
-            continue;
-        }
-
-        Match declaration = Regex.Match(text, """^([A-Za-z0-9_.-]+)\s*=\s*"([^"]+)"$""");
-        if (tools && declaration.Success)
-        {
-            versions[declaration.Groups[1].Value] = declaration.Groups[2].Value;
+            // mise takes a table form too, which pins a version the gate would then never assert.
+            versions[pin.Key] =
+                pin.Value as string
+                ?? throw new CakeException(
+                    $"{path} pins {pin.Key} as something other than a version string, and the gate asserts a string pin alone."
+                );
         }
     }
 
@@ -278,213 +257,129 @@ Dictionary<string, string> MiseVersions(string path)
         throw new CakeException($"{path} declares no tool under [tools].");
     }
 
-    return versions;
+    string[] platforms =
+        table.TryGetValue("settings", out object? settings)
+        && settings is TomlTable declaredSettings
+        && declaredSettings.TryGetValue("lockfile_platforms", out object? listed)
+        && listed is TomlArray names
+            ? [.. names.OfType<string>()]
+            : [];
+    if (platforms.Length == 0)
+    {
+        throw new CakeException(
+            $"{path} sets no lockfile_platforms under [settings], so a bare {relock} would record this machine's platform alone."
+        );
+    }
+
+    return new MiseConfig(versions, platforms);
 }
 
-// mise.lock as mise writes it: [[tools.<name>]] carries the version, and each platform sits under
-// it in a quoted dotted key. The reader keeps the fields the gate asserts. A line it cannot take
-// leaves the field empty, and every assertion below reads an empty field as a refusal, so an
-// unfamiliar shape stops the gate rather than passing it.
-Dictionary<string, MiseArtifact> MiseArtifacts(string path)
+// mise.lock as mise writes it, read as TOML: [[tools.<name>]] carries the version, the specifiers
+// and the backend, and each platform sits under it in a quoted dotted key. mise picks the element
+// whose specifiers name the requested version, so a tool with more than one element is refused
+// outright: mise.toml pins one version per tool and mise lock writes one element per pin, and the
+// gate would otherwise assert one element while mise installs from another. A field the entry lacks
+// reads as empty, and every assertion below reads an empty field as a refusal, so an unfamiliar
+// shape stops the gate rather than passing it. A platform table lockfile_platforms does not name is
+// refused the same way: an install never reads it, so nothing verifies what it records.
+Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms)
 {
     if (!System.IO.File.Exists(path))
     {
         throw new CakeException(
-            $"{path} is missing, so nothing records which artifact a version resolved to. "
-                + "Write it with: mise trust; mise lock --platform linux-x64,windows-x64"
+            $"{path} is missing, so nothing records which artifact a version resolved to. Write it with: mise trust; {relock}"
         );
     }
 
-    Dictionary<string, string> versions = new(StringComparer.Ordinal);
-    Dictionary<string, string> backends = new(StringComparer.Ordinal);
-    Dictionary<string, Dictionary<string, string>> fields = new(StringComparer.Ordinal);
-    string tool = "";
-    string platform = "";
-
-    foreach (string line in System.IO.File.ReadAllLines(path))
+    TomlTable table = ReadToml(path);
+    Dictionary<string, MiseArtifact> artifacts = new(StringComparer.Ordinal);
+    if (!table.TryGetValue("tools", out object? tools) || tools is not TomlTable locked)
     {
-        string text = line.Trim();
-        Match entry = Regex.Match(text, """^\[\[tools\.([A-Za-z0-9_.-]+)\]\]$""");
-        if (entry.Success)
-        {
-            tool = entry.Groups[1].Value;
-            platform = "";
-            continue;
-        }
+        return artifacts;
+    }
 
-        Match locked = Regex.Match(text, """^\[tools\.([A-Za-z0-9_.-]+)\."platforms\.([A-Za-z0-9_.-]+)"\]$""");
-        if (locked.Success)
-        {
-            tool = locked.Groups[1].Value;
-            platform = locked.Groups[2].Value;
-            fields[$"{tool} {platform}"] = new Dictionary<string, string>(StringComparer.Ordinal);
-            continue;
-        }
-
-        if (text.StartsWith('['))
-        {
-            tool = "";
-            platform = "";
-            continue;
-        }
-
-        Match assignment = Regex.Match(text, """^([A-Za-z0-9_]+)\s*=\s*"?([^"]*)"?$""");
-        if (tool.Length == 0 || !assignment.Success)
+    foreach (KeyValuePair<string, object> tool in locked)
+    {
+        if (tool.Value is not TomlTableArray entries || entries.Count == 0)
         {
             continue;
         }
 
-        if (platform.Length == 0)
+        if (entries.Count != 1)
         {
-            switch (assignment.Groups[1].Value)
+            throw new CakeException(
+                $"{path} records {entries.Count} entries for {tool.Key}, and mise.toml pins one version, so {relock} writes one. Write it again with: {relock}"
+            );
+        }
+
+        TomlTable entry = entries[0];
+        string version = Text(entry, "version");
+        string backend = Text(entry, "backend");
+        string[] specifiers =
+            entry.TryGetValue("specifiers", out object? requested) && requested is TomlArray listed
+                ? [.. listed.OfType<string>()]
+                : [];
+        foreach (KeyValuePair<string, object> field in entry)
+        {
+            if (!field.Key.StartsWith("platforms.", StringComparison.Ordinal) || field.Value is not TomlTable platform)
             {
-                case "version":
-                    versions[tool] = assignment.Groups[2].Value;
-                    break;
-                case "backend":
-                    backends[tool] = assignment.Groups[2].Value;
-                    break;
+                continue;
             }
 
-            continue;
+            string name = field.Key["platforms.".Length..];
+            if (!platforms.Contains(name, StringComparer.Ordinal))
+            {
+                throw new CakeException(
+                    $"{path} records {tool.Key} for {name}, and mise.toml's lockfile_platforms names [{string.Join(", ", platforms)}]. Write it again with: {relock}"
+                );
+            }
+
+            artifacts[$"{tool.Key} {name}"] = new MiseArtifact(
+                version,
+                specifiers,
+                backend,
+                Text(platform, "checksum"),
+                Text(platform, "provenance"),
+                Text(platform, "url"),
+                Text(platform, "url_api")
+            );
         }
-
-        fields[$"{tool} {platform}"][assignment.Groups[1].Value] = assignment.Groups[2].Value;
-    }
-
-    Dictionary<string, MiseArtifact> artifacts = new(StringComparer.Ordinal);
-    foreach (KeyValuePair<string, Dictionary<string, string>> entry in fields)
-    {
-        string name = entry.Key[..entry.Key.IndexOf(' ')];
-        artifacts[entry.Key] = new MiseArtifact(
-            versions.TryGetValue(name, out string? version) ? version : "",
-            backends.TryGetValue(name, out string? backend) ? backend : "",
-            entry.Value.TryGetValue("checksum", out string? checksum) ? checksum : "",
-            entry.Value.TryGetValue("provenance", out string? provenance) ? provenance : "",
-            entry.Value.TryGetValue("url", out string? url) ? url : "",
-            entry.Value.TryGetValue("url_api", out string? urlApi) ? urlApi : ""
-        );
     }
 
     return artifacts;
 }
 
-// The mise that reads those two files. .github/mise-bootstrap.json carries the version, and the
-// hashes continuous integration checks its download against, so the tool that verifies the linters
-// is pinned the way the linters are.
-FilePath RequireMise()
+// One TOML file as the dynamic model. Tomlyn answers null for an empty document, which reads as a
+// table with nothing in it, so every assertion downstream refuses it by name. A parse error names
+// the file, which Tomlyn's own message does not.
+static TomlTable ReadToml(string path)
 {
-    using JsonDocument bootstrap = JsonDocument.Parse(System.IO.File.ReadAllText(".github/mise-bootstrap.json"));
-    string version =
-        bootstrap.RootElement.GetProperty("version").GetString()
-        ?? throw new CakeException(".github/mise-bootstrap.json names no mise version.");
-    string install = $"winget install --id jdx.mise --version {version} --exact";
-
-    FilePath? executable = Context.Tools.Resolve(["mise", "mise.exe"]);
-    if (executable is null)
+    try
     {
-        throw new CakeException($"mise is not installed. Install it with: {install}");
+        return TomlSerializer.Deserialize<TomlTable>(System.IO.File.ReadAllText(path), TomlSerializerOptions.Default)
+            ?? new TomlTable();
     }
-
-    int exit = StartProcess(
-        executable,
-        new ProcessSettings { Arguments = "--version", RedirectStandardOutput = true },
-        out IEnumerable<string> output
-    );
-    string found = Regex.Match(string.Join('\n', output), @"\d+\.\d+\.\d+").Value;
-    if (exit != 0 || found != version)
+    catch (TomlException error)
     {
-        throw new CakeException(
-            $"mise {found} is installed, and .github/mise-bootstrap.json pins {version}. Install it with: {install}"
-        );
-    }
-
-    // The bytes on disk, against the entry for this platform. The version above is what mise says
-    // about itself, which is the binary's own claim. Continuous integration checks the same entry
-    // after its own download, so both legs identify mise the same way.
-    string platform = OperatingSystem.IsWindows() ? "windows-x64" : "linux-x64";
-    if (!bootstrap.RootElement.GetProperty("sha256").TryGetProperty(platform, out JsonElement pinned))
-    {
-        throw new CakeException($".github/mise-bootstrap.json records no sha256 for {platform}.");
-    }
-
-    string want = pinned.GetString() ?? "";
-    string hash = Convert
-        .ToHexString(SHA256.HashData(System.IO.File.ReadAllBytes(executable.FullPath)))
-        .ToLowerInvariant();
-    if (!hash.Equals(want, StringComparison.OrdinalIgnoreCase))
-    {
-        throw new CakeException(
-            $"{executable.FullPath} hashes {hash}, and .github/mise-bootstrap.json records {want} for {platform}. Install it with: {install}"
-        );
-    }
-
-    return executable;
-}
-
-// What mise has in force, not what mise.toml says. mise applies a project [settings] table whether
-// or not the file is trusted, so trust is not what this guards. An environment variable such as
-// MISE_LOCKED=0 outranks the file, and MISE_SAFE=1 drops project settings altogether. mise settings
-// get answers with the effective value. mise settings ls --all lays each config file's own values
-// over the effective table, so it reports the file wherever the two differ, and a gate reading it
-// would pass a setting an override had switched off.
-void RequireSettings(FilePath mise)
-{
-    foreach (string setting in requiredSettings)
-    {
-        string reported = MiseSetting(mise, setting);
-        if (reported != "true")
-        {
-            string variable = "MISE_" + setting.Replace('.', '_').ToUpperInvariant();
-            throw new CakeException(
-                $"mise reports {setting} as {reported}, and the gate needs it true. "
-                    + $"mise.toml sets it, so clear {variable} or MISE_SAFE from the environment."
-            );
-        }
-    }
-
-    // Every setting above reads true with this list narrowed, so the loop is blind to it on its
-    // own. locked_scopes is global-only, so mise.toml cannot set it and MISE_LOCKED_SCOPES outranks
-    // whatever the user config says. mise.toml's [tool_config] locked is enforced whatever this
-    // reports, and this reports the override rather than leaving it silent.
-    string scopes = MiseSetting(mise, "locked_scopes");
-    if (!scopes.Contains($"\"{lockedScope}\"", StringComparison.Ordinal))
-    {
-        throw new CakeException(
-            $"mise reports locked_scopes as {scopes}, and the gate needs it to cover \"{lockedScope}\", the scope mise.toml's tools come from. "
-                + "Clear MISE_LOCKED_SCOPES from the environment, or widen the list in the user config."
-        );
+        throw new CakeException($"{path}: {error.Message}");
     }
 }
 
-// One effective setting, as mise reports it rather than as mise.toml writes it.
-string MiseSetting(FilePath mise, string setting)
-{
-    int exit = StartProcess(
-        mise,
-        new ProcessSettings
-        {
-            Arguments = $"settings get {setting}",
-            RedirectStandardOutput = true,
-            Silent = true,
-        },
-        out IEnumerable<string> output
-    );
-    string reported = string.Join('\n', output).Trim();
-    if (exit != 0)
-    {
-        throw new CakeException(
-            $"mise settings get {setting} exited {exit} saying: " + (reported.Length == 0 ? "nothing" : reported)
-        );
-    }
+// One string field of a TOML table, or empty when the table lacks it or holds another type.
+static string Text(TomlTable table, string key) =>
+    table.TryGetValue(key, out object? value) && value is string text ? text : "";
 
-    return reported;
-}
+// The mise that reads those two files. Continuous integration pins its version on the action line
+// and verifies the download against the release's signed checksums; a local run takes whichever
+// mise is on PATH, and mise itself refuses a lockfile entry it cannot verify.
+FilePath RequireMise() =>
+    Context.Tools.Resolve(["mise", "mise.exe"])
+    ?? throw new CakeException("mise is not installed. Install it with: winget install --id jdx.mise --exact");
 
 // What mise.lock has to say about one pinned tool before anything installs from it. Every branch
 // here reads the two data files alone, so a bump that left the lockfile behind is reported by
 // name on a machine with no mise at all.
-void RequireRecorded(string tool, string version, Dictionary<string, MiseArtifact> artifacts)
+void RequireRecorded(string tool, string version, string[] platforms, Dictionary<string, MiseArtifact> artifacts)
 {
     if (!misePins.TryGetValue(tool, out MisePin? pin))
     {
@@ -493,23 +388,14 @@ void RequireRecorded(string tool, string version, Dictionary<string, MiseArtifac
         );
     }
 
-    const string relock = "mise lock --platform linux-x64,windows-x64";
     string backend = $"aqua:{pin.Repository}";
-    foreach (string platform in lockedPlatforms)
+    foreach (string platform in platforms)
     {
-        if (!artifacts.TryGetValue($"{tool} {platform}", out MiseArtifact? artifact))
-        {
-            throw new CakeException(
-                $"mise.toml pins {tool} {version}, and mise.lock records no {platform} artifact for it. Write one with: {relock}"
-            );
-        }
-
-        if (artifact.Version != version)
-        {
-            throw new CakeException(
-                $"mise.toml pins {tool} {version}, and mise.lock records {artifact.Version} for {platform}. Write it again with: {relock}"
-            );
-        }
+        // A platform the lockfile lacks reads as an entry with every field empty, so the checksum
+        // assertion is what refuses it.
+        MiseArtifact artifact = artifacts.TryGetValue($"{tool} {platform}", out MiseArtifact? recorded)
+            ? recorded
+            : new MiseArtifact("", [], "", "", "", "", "");
 
         if (artifact.Checksum.Length == 0)
         {
@@ -518,9 +404,20 @@ void RequireRecorded(string tool, string version, Dictionary<string, MiseArtifac
             );
         }
 
+        // specifiers is the field mise selects an entry on, and version is what it installs, so
+        // both have to be the one pin exactly. A prefix such as 1.7 would pass the url check below
+        // and fail only at install time, on the leg that has mise.
+        if (artifact.Version != version || !artifact.Specifiers.SequenceEqual([version], StringComparer.Ordinal))
+        {
+            throw new CakeException(
+                $"mise.toml pins {tool} {version}, and mise.lock records version \"{artifact.Version}\" with specifiers [{string.Join(", ", artifact.Specifiers)}]. Write it again with: {relock}"
+            );
+        }
+
         // The backend decides which registry entry the artifact comes from, and the two addresses
         // are what the bytes arrive over. Every one of them is asserted against misePins in this
-        // file, so a rewrite confined to mise.lock cannot move an install to another owner.
+        // file, so a rewrite confined to mise.lock cannot move an install to another owner or another
+        // version.
         if (artifact.Backend != backend)
         {
             throw new CakeException(
@@ -726,6 +623,7 @@ string ProvenAnalyzers(FilePath actionlint, FilePath shellcheck)
 /// <param name="UrlApi">The release asset address, empty when the entry carries none.</param>
 sealed record MiseArtifact(
     string Version,
+    string[] Specifiers,
     string Backend,
     string Checksum,
     string Provenance,
@@ -737,3 +635,8 @@ sealed record MiseArtifact(
 /// <param name="Repository">The GitHub repository aqua resolves the artifact from, as owner/name.</param>
 /// <param name="Attested">Whether aqua declares a signer workflow, so mise records provenance.</param>
 sealed record MisePin(string Repository, bool Attested);
+
+/// <summary>What mise.toml declares: the pinned version of each tool, and the platforms the lockfile carries.</summary>
+/// <param name="Versions">Tool name to the version mise.toml pins.</param>
+/// <param name="Platforms">The lockfile_platforms list every mise.lock entry has to carry.</param>
+sealed record MiseConfig(Dictionary<string, string> Versions, string[] Platforms);
