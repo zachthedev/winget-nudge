@@ -146,7 +146,7 @@ DigiCert timestamp. A self-signed certificate verifies only on a machine that tr
 pins the matching PowerShell module. Change both in `Directory.Packages.props`, in one commit:
 
 ```powershell
-$version = '1.29.290'
+$version = '1.29.380'
 Invoke-WebRequest -Uri "https://www.powershellgallery.com/api/v2/package/Microsoft.WinGet.Client/$version" -OutFile "$env:TEMP\winget-client.nupkg"
 (Get-FileHash -Path "$env:TEMP\winget-client.nupkg" -Algorithm SHA256).Hash
 ```

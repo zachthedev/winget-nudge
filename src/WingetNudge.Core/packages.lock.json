@@ -32,9 +32,9 @@
       },
       "Microsoft.WindowsPackageManager.ComInterop": {
         "type": "Direct",
-        "requested": "[1.29.290, )",
-        "resolved": "1.29.290",
-        "contentHash": "zNh//6UdtVEUhoN68RQ+scPTms3LkEd9N73+YLXkYmT+A0iqCkUx2QcnXaP+AHqN22T+sbddDeRY6N5CWFAq3Q=="
+        "requested": "[1.29.380, )",
+        "resolved": "1.29.380",
+        "contentHash": "O2KWbqShmCi9KZgmweDo2DxPFDskM8IDtXkhnVt1d/lNL22eBqPAM69YobFLbMUB+cdTQrApQJx+qhQRXkiltw=="
       },
       "TaskScheduler": {
         "type": "Direct",

@@ -2,8 +2,8 @@
     <PropertyGroup>
         <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
         <!-- One winget release: the COM projection and the winrtact.dll pulled from the matching PowerShell module. -->
-        <WinGetVersion>1.29.290</WinGetVersion>
-        <WinGetModuleSha256>726602001E6137EFFF66AA73C197C6AB6396AE2F9634D0ADAADA17EC5068EE46</WinGetModuleSha256>
+        <WinGetVersion>1.29.380</WinGetVersion>
+        <WinGetModuleSha256>3469E5747EB6B100E51FED3F2057386B5BA60BC8955A6669B5C2EB562E316619</WinGetModuleSha256>
     </PropertyGroup>
     <ItemGroup>
         <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
