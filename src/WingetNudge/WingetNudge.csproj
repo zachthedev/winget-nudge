@@ -39,10 +39,12 @@
     <!--
     winrtact.dll is winget's undocked reg-free WinRT hook. It ships only inside the WinGet
     PowerShell module, so the build pulls the module package matching $(WinGetVersion) from the
-    PowerShell Gallery, checks its hash, and copies the x64 DLL beside the executable.
+    PowerShell Gallery, checks its hash, and copies the x64 DLL beside the executable. The cache
+    directory carries the version, so a bump downloads and checks the new module rather than
+    reusing the DLL an earlier version extracted.
   -->
     <PropertyGroup>
-        <WinGetModuleDirectory>$(BaseIntermediateOutputPath)psgallery\</WinGetModuleDirectory>
+        <WinGetModuleDirectory>$(BaseIntermediateOutputPath)psgallery\$(WinGetVersion)\</WinGetModuleDirectory>
         <WinGetModulePackage>$(WinGetModuleDirectory)Microsoft.WinGet.Client.$(WinGetVersion).nupkg</WinGetModulePackage>
         <WinRtActivationDll>$(WinGetModuleDirectory)extracted\net8.0-windows10.0.26100.0\SharedDependencies\x64\winrtact.dll</WinRtActivationDll>
     </PropertyGroup>

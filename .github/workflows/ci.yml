@@ -103,7 +103,8 @@ jobs:
           cache-dependency-path: '**/packages.lock.json'
       - run: dotnet tool restore
       - run: dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true
-      - run: dotnet sbom-tool generate -b . -bc . -pn winget-nudge -pv 0.0.0 -ps zachthedev -nsb https://zachthe.dev -m sbom
+      # The tool refuses an output directory that does not exist.
+      - run: mkdir sbom && dotnet sbom-tool generate -b . -bc . -pn winget-nudge -pv 0.0.0 -ps zachthedev -nsb https://zachthe.dev -m sbom
       # A tool that found no project.assets.json exits 0 with a hollow file, and a snapshot with
       # no packages passes the review on ">= 0" as if nothing ran. The solution restores more
       # packages than this, so a count below it is a run that read nothing.
