@@ -48,8 +48,9 @@ materializes one only under Developer Mode. `bun install` also installs the git 
 `mise install` puts the linters on disk from the artifacts `mise.lock` records. `dotnet cake.cs`
 runs the whole gate, which a pre-push hook runs again before anything leaves the machine.
 
-The gate resolves each linter with `mise which` and runs the path it gets back, so a green run makes
-no network request. `mise install` is the step that needs one.
+The gate resolves each linter with `mise which` and runs the path it gets back. `mise install` is
+the step that needs the network; the gate itself reaches it only for zizmor's online audits, when
+`gh auth token` answers.
 
 The first build downloads the `Microsoft.WinGet.Client` package from the PowerShell Gallery and
 checks its hash. It is the only source of `winrtact.dll`, the winget hook that lets an unpackaged

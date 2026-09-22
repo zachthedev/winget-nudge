@@ -137,8 +137,8 @@ jobs:
       # on one leg alone reports findings a contributor cannot reproduce.
       - name: actionlint
         run: mise exec -- actionlint -pyflakes= -shellcheck="$(mise which shellcheck)"
-      # Online here and offline in a local run. zizmor's online audits, such as a pinned commit that
-      # is not in its action's repository, need a token, and the job token costs nothing.
+      # Online here, as a local run is whenever gh holds a token. zizmor's online audits, such as a
+      # pinned commit that is not in its action's repository, need one, and the job token costs nothing.
       # --strict-collection fails on a file zizmor cannot parse rather than dropping it and
       # reporting no findings for a workflow it never read.
       - name: zizmor

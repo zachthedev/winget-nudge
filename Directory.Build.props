@@ -35,7 +35,7 @@
             The list is assigned rather than appended to, so these four are the whole of it however
             the property arrives. MSBuild reads an environment variable as a property, and an
             exported WarningsNotAsErrors would otherwise seed the list with any advisory it names.
-            The policy task in cake.cs refuses a build whose environment sets either name.
+            cake.cs refuses to run any target while the environment sets either name.
         -->
         <WarningsNotAsErrors>NU1900;NU1901;NU1902;NU1905</WarningsNotAsErrors>
         <!--
