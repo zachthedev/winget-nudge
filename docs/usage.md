@@ -1,0 +1,61 @@
+# Usage
+
+What the picker and `--help` do not carry: the verbs, where the data lives, and what the app
+contacts.
+
+## Command line
+
+| Verb                                    | Does                                                                                      |
+| --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| _(none)_ or `picker`                    | Open the picker.                                                                          |
+| `check`                                 | Query winget and show the notification when upgrades exist. The scheduled task runs this. |
+| `check --background`                    | The quiet interval check. Notifies only for unannounced versions, and only when enabled.  |
+| `update-all`                            | Upgrade every eligible package in the elevated window.                                    |
+| `upgrade --id X [--name N] ...`         | Upgrade specific packages. Relaunches itself elevated.                                    |
+| `register` / `unregister`               | Both scheduled tasks, the shortcut, and the notification registration.                    |
+| `tool list` / `add` / `remove` / `test` | Manage tools tracked outside winget.                                                      |
+| `tracking init`                         | Seed version tracking with every installed package. `check` does this on first run too.   |
+
+Registering a tool:
+
+```powershell
+WingetNudge.exe tool add bun --name Bun --current bun --version --current-regex '^(\d+\.\d+\.\d+)$' `
+  --latest-url https://api.github.com/repos/oven-sh/bun/releases/latest --latest-field tag_name `
+  --latest-regex '^bun-v(.+)$' --upgrade 'bun upgrade'
+```
+
+`WingetNudge.exe` is a GUI process, so a verb's output reaches the terminal only when that terminal
+launched it directly.
+
+## Settings and data
+
+Everything lives in `%LOCALAPPDATA%\WingetNudge`. **Settings** in the picker edits `settings.json`:
+the hours to wait after a release, the weekly check's day and hour, whether to check after sign-in,
+the quiet check's interval, and whether a quiet check may notify. Saving re-registers both scheduled
+tasks.
+
+Release notes are cached per version in `changelog-cache.json`, and `notification-state.json`
+records what the last notification named. Startup deletes half-written state files a killed process
+left behind.
+
+`check.lock` is held while a scheduled or manual check runs, so a second check stands down.
+`upgrade.lock` is held for the duration of an upgrade, so a second upgrade shows "already running"
+and installs nothing. A crash frees both, because Windows closes a dead process's handles, so a
+stale lock file needs no manual cleanup.
+
+On first run, the app copies state from the older PowerShell version's
+`%LOCALAPPDATA%\WingetUpdater` folder if it exists, so muted packages, tracking history and
+registered tools carry over.
+
+## Privacy
+
+Winget Nudge has no telemetry and no account. Beyond what winget itself contacts, it makes these
+requests:
+
+- `api.github.com` and `raw.githubusercontent.com`, for release dates from `microsoft/winget-pkgs`
+  and release notes from each package's GitHub releases.
+- Each registered tool's latest-version URL.
+
+GitHub allows 60 unauthenticated API requests an hour. A token in **Settings**, stored encrypted to
+your account, or in the `GITHUB_TOKEN` environment variable lifts that limit. The app sends the
+token to `api.github.com` and nowhere else.

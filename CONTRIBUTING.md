@@ -3,21 +3,14 @@
 [docs/dev.md](docs/dev.md) takes a fresh clone to a running app and a green gate. This file holds
 the rules that apply to every change.
 
-## Toolchain
+## Setup
 
-- Windows 11 on x64. The app is WinUI 3 and the installer is an MSI, so neither builds anywhere
-  else.
-- The .NET SDK that `global.json` names. It also pins Cake.Sdk, which runs the gate.
-- [Bun](https://bun.sh), at the version `package.json` names in `packageManager`. It runs
-  commitlint, prettier and lefthook.
-- [mise](https://mise.jdx.dev), at the version `.github/mise-bootstrap.json` pins. It installs
-  actionlint, zizmor and ShellCheck from `mise.toml` and `mise.lock`. Run `mise trust` then
-  `mise install` once per clone. The gate names the `winget` command when mise itself is missing or
-  at another version.
-
-Run `bun install` once per clone. It installs the Node tooling and runs `lefthook install`, which
-writes the git hooks. The commit-msg hook fails with no message on a clone where `bun install` never
-ran, because `bunx --no-install` refuses to fetch commitlint.
+[docs/dev.md](docs/dev.md#prerequisites) names the toolchain and the pin file each tool's version
+lives in. Install it before the first commit: `bun install` runs `lefthook install`, which writes
+the git hooks, and `mise trust` then `mise install` put the workflow linters on disk. The hooks fail
+closed. The commit-msg hook fails with no message on a clone where `bun install` never ran, because
+`bunx --no-install` refuses to fetch commitlint, and the pre-push hook runs the whole gate, which
+stops at a linter mise has not installed.
 
 The committed `.claude/settings.json` pre-approves read-only git commands and nothing else. A branch
 supplies `cake.cs`, the project files and the tests, so approving a build or a test run for every
@@ -93,9 +86,6 @@ them by the check names below, beside the checks the `ci` workflow reports:
   unpinned action or a permission wider than a job asks for. CodeQL's Actions queries follow
   attacker-controlled data from an event payload into a `run:` block, an action input or an
   artifact. Neither reports the other's findings, so dropping one leaves a gap.
-
-A task that fails is reporting something. Never disable an analyzer, suppress a finding or delete an
-assertion to make it pass without saying why in the same change.
 
 ## Commit messages
 
@@ -187,8 +177,7 @@ directory the test owns.
   resolved to. Both legs install from those two files, so no pin is asserted against a copy of
   itself. Renovate rewrites both in one pull request by running `mise lock`. The pins sit in a data
   file rather than in `cake.cs`, because a formatter moves source and a pin that moves is a pin no
-  tool can read. Never hand-edit `mise.lock`; write it with
-  `mise lock --platform linux-x64,windows-x64`.
+  tool can read.
 - mise verifies a GitHub build attestation for actionlint and zizmor, because aqua's registry
   declares a signer workflow for each. It verifies none for ShellCheck. `koalaman/shellcheck`
   declares neither a signer workflow nor a checksums file at any version constraint, so ShellCheck's
@@ -271,3 +260,11 @@ both.
 
 Release MSIs are unsigned for now. A local build signs when `Directory.Signing.props` names a
 certificate; [docs/dev.md](docs/dev.md) shows how.
+
+## What never happens
+
+- No hand edit of `mise.lock`. Its entries are the addresses an install fetches and the checksums it
+  verifies against, so a hand-written line is an address nobody verified. Write it with
+  `mise lock --platform linux-x64,windows-x64`.
+- No analyzer disabled, finding suppressed or assertion deleted to make the gate pass without saying
+  why in the same change. A task that fails is reporting something.
