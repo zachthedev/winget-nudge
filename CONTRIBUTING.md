@@ -147,10 +147,17 @@ directory the test owns.
   advisory against the locked graph, whatever its severity, in the run's summary.
 - On a pull request, the `dependency-review` job in `.github/workflows/ci.yml` diffs GitHub's
   dependency graph between base and head. It fails on a high or critical advisory against a package
-  the pull request adds or moves, and passes a package it leaves alone. The graph reads
-  `package.json` and the workflows. For NuGet it reads each `.csproj`, where Central Package
-  Management leaves no version, so a bump in `Directory.Packages.props` is invisible to it and the
-  NuGet leg is uncovered there.
+  the pull request adds or moves, and passes a package it leaves alone. It sees the direct npm
+  packages in `package.json`, every action pin, and every NuGet package the restored graph holds,
+  direct and transitive: the graph reads each `.csproj` alone, where Central Package Management
+  leaves no version, so the `sbom` and `snapshot` jobs submit the restored graph for every pull
+  request head this repository owns and every push to `main`, recorded under
+  `Directory.Packages.props`.
+- Every NuGet package in that snapshot reads as runtime scope, test packages included, so the
+  release pull request's second check, runtime scope against the last release tag, also blocks on
+  an advisory against a test-only package. The waiver is the shared workflow's `allow-ghsas`
+  input, passed in `ci.yml` with a comment beside it naming the advisory.
+- NuGet has no cooldown file, so the three-day wait on a NuGet bump is Renovate's alone.
 - [Renovate](https://docs.renovatebot.com) proposes updates on Monday mornings, one grouped pull
   request per ecosystem, and never for a version younger than three days.
   `.github/workflows/deps.yml` calls the shared `deps` workflow, which runs it under the updater
@@ -173,8 +180,8 @@ directory the test owns.
 - mise verifies a GitHub build attestation for actionlint and zizmor, because aqua's registry
   declares a signer workflow for each. It verifies none for ShellCheck. `koalaman/shellcheck`
   declares neither a signer workflow nor a checksums file at any version constraint, so ShellCheck's
-  integrity here is the recorded hash alone. The gate asserts a checksum for all three and
-  provenance for the two that carry one.
+  integrity here is the recorded hash alone. The gate asserts a checksum for every tool and
+  provenance for each one that carries it.
 - The gate also asserts the `backend`, `url` and `url_api` of every entry against the aqua
   repository `cake.cs` names for that tool. Those three are what an install fetches, so a provenance
   line beside an address somewhere else would be a claim about bytes nobody downloads. The expected
@@ -194,8 +201,9 @@ directory the test owns.
 - mise itself is pinned on the `jdx/mise-action` line in `.github/workflows/ci.yml`. The action
   verifies its download against the release's minisign-signed `SHASUMS256.txt`, which is the check
   on the tool that verifies the linters. A local run takes whichever mise is on `PATH`.
-- `cake.cs` restores in locked mode against `cake.packages.lock.json`. After changing the Cake.Sdk
-  version in `global.json` or the Tomlyn version in `Directory.Packages.props`, regenerate it with
+- `cake.cs` restores in locked mode against `cake.packages.lock.json`, and it imports
+  `Directory.Packages.props`. After changing the Cake.Sdk version in `global.json`, the Tomlyn
+  version, or any `PackageVersion` naming a package Cake.Sdk depends on, regenerate it with
   `dotnet restore cake.cs --force-evaluate`.
 
 ## Releases
