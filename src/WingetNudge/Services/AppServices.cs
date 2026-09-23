@@ -102,8 +102,10 @@ public sealed class AppServices : IDisposable
 #endif
             if (_http is null)
             {
+                ProductInfoHeaderValue userAgent = AppUserAgent.For(typeof(AppServices).Assembly);
+
                 // The token rides only on api.github.com requests; tool URLs share the client.
-                _http = new HttpClient(
+                HttpClient http = new(
                     new GitHubAuthorizationHandler(Settings.ResolveGitHubToken())
                     {
                         InnerHandler = new SocketsHttpHandler(),
@@ -112,7 +114,11 @@ public sealed class AppServices : IDisposable
                 {
                     Timeout = TimeSpan.FromSeconds(10),
                 };
-                _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("WingetNudge", "1.0"));
+                http.DefaultRequestHeaders.UserAgent.Add(userAgent);
+
+                // Cached only once the user agent is on it, so a throw above leaves nothing cached and the next
+                // access fails the same way.
+                _http = http;
             }
 
             return _http;
