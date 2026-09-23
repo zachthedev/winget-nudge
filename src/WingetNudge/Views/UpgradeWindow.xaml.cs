@@ -138,7 +138,17 @@ public sealed partial class UpgradeWindow : Window, IUpgradeInteraction
     {
         if (sender is FrameworkElement { DataContext: UpgradeItem item })
         {
-            AppServices.Current.Preferences.Set(item.Id, PreferenceState.Muted, "muted after a failed upgrade");
+            try
+            {
+                AppServices.Current.Preferences.Set(item.Id, PreferenceState.Muted, "muted after a failed upgrade");
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // The link stays live, so the user can try again once whatever holds the file lets go.
+                item.Status = $"{item.Status}\nCould not mute: {exception.Message}";
+                return;
+            }
+
             item.Muted();
         }
     }
