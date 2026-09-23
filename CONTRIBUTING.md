@@ -73,8 +73,8 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   against the base and, on the release pull request, against the last release tag.
 - `cd.yml`, on every push to `main`: `release-pr` keeps the release pull request open and tags the
   merge that releases; `build` builds the MSI and checks its version against the tag; `publish`
-  attaches it with `SHA256SUMS` and a build provenance attestation and flips the draft public once
-  the `release` environment's reviewer approves.
+  records a build provenance attestation for the MSI and its `SHA256SUMS`, attaches both, and flips
+  the draft public once the `release` environment's reviewer approves.
 - `codeql.yml`, on the same events plus a Thursday schedule: CodeQL code scanning as advanced
   setup, a committed workflow rather than the default setup a repository setting turns on and leaves
   nothing in the tree for. The checks report as `codeql / Analyze (<language>)`, the names the
@@ -245,10 +245,12 @@ tool cuts.
 
 Merging that pull request tags the commit and creates the GitHub release as a draft, in the same
 `cd.yml` run that then builds the MSI, checks that its version matches the tag, and waits for a
-maintainer to approve the `release` environment. Only then does it attach the MSI, its `SHA256SUMS`
-and a build provenance attestation, and publish the draft, so a visitor never reaches a release
-with nothing on it. Nothing rebuilds an existing release: the publish refuses a tag that does not
-name the run's commit, so a release that failed is recovered by cutting the next version.
+maintainer to approve the `release` environment. Only then does it record a build provenance
+attestation, attach the MSI and its `SHA256SUMS`, and publish the draft, so a visitor never reaches
+a release with nothing on it. `publish.yml` in `zachthedev/.github` signs the attestation, so
+[docs/install.md](docs/install.md#check-the-download) names it as the signer workflow. Nothing
+rebuilds an existing release: the publish refuses a tag that does not name the run's commit, so a
+release that failed is recovered by cutting the next version.
 
 A release publishes through an advisory. Nothing blocks after the merge: users hold the version
 they have until the next one, and the fix ships as the next version. Renovate's `security` group

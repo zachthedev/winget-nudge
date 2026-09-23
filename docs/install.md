@@ -20,14 +20,40 @@ run: choose **More info**, then **Run anyway**. Check the download first.
 
 ## Check the download
 
-Each release carries a build provenance attestation that proves the MSI came from this repository's
-release workflow:
+Every release MSI has a build provenance attestation. The shared `publish.yml` workflow in
+[zachthedev/.github](https://github.com/zachthedev/.github) signs it, so the command names that
+workflow as the signer:
 
 ```powershell
-gh attestation verify WingetNudge-<version>-x64.msi --repo zachthedev/winget-nudge --source-ref refs/tags/v<version>
+gh attestation verify WingetNudge-<version>-x64.msi --repo zachthedev/winget-nudge --signer-workflow zachthedev/.github/.github/workflows/publish.yml
 ```
 
-Or compare `(Get-FileHash WingetNudge-<version>-x64.msi).Hash` with the release's `SHA256SUMS`.
+A pass proves the source repository and the signer workflow. This command does not prove the tag.
+The next one does. The release run starts from the push to `main`, so the attestation names
+`refs/heads/main` and no tag, and `--source-ref refs/tags/v<version>` fails on a genuine MSI.
+
+The attestation also records the commit the run built. Look up the commit the tag names, then
+require it with `--source-digest`:
+
+```powershell
+$commit = gh api repos/zachthedev/winget-nudge/commits/v<version> --jq .sha
+gh attestation verify WingetNudge-<version>-x64.msi --repo zachthedev/winget-nudge --signer-workflow zachthedev/.github/.github/workflows/publish.yml --source-digest $commit
+```
+
+A pass also proves the MSI was built from the commit the tag names. `publish.yml` refuses a tag that
+does not name the run's commit, so a genuine release attests the tagged commit.
+
+Each release also carries `SHA256SUMS`. Download it from the MSI's own tag, because an older MSI
+fails against a newer release's list:
+
+```powershell
+Invoke-WebRequest https://github.com/zachthedev/winget-nudge/releases/download/v<version>/SHA256SUMS -OutFile SHA256SUMS
+(Get-FileHash WingetNudge-<version>-x64.msi).Hash -eq (Get-Content SHA256SUMS).Split(' ')[0]
+```
+
+`True` proves integrity: the MSI matches the list its release carries. The list proves nothing about
+origin, because whoever can replace the MSI on a release can replace the list beside it. The
+attestation proves origin.
 
 ## Upgrade
 
