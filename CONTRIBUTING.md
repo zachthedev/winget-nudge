@@ -207,9 +207,9 @@ directory the test owns.
   each version resolved to. Both legs install from those two files, so no pin is asserted against a
   copy of itself. Renovate rewrites both in one pull request by running `mise lock`. The pins sit in
   a data file rather than in `cake.cs`, because a formatter moves source and a pin that moves is a
-  pin no tool can read. A pin holds ASCII letters, digits, `.`, `+` and `-` alone, and the gate
-  refuses any other character. Each pin becomes part of the `url` the gate asserts and the path it
-  runs.
+  pin no tool can read. A pin, and the version `mise.lock` records for it, is digit groups joined by
+  single dots, such as `0.10.0`, and the gate refuses anything else before it builds a `url`. Each
+  pin becomes part of the `url` the gate asserts and the path it runs.
 - mise verifies a GitHub build attestation for actionlint and zizmor, because aqua's registry
   declares a signer workflow for each. It verifies none for ShellCheck. `koalaman/shellcheck`
   declares neither a signer workflow nor a checksums file at any version constraint, so ShellCheck's

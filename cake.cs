@@ -340,22 +340,11 @@ MiseConfig ReadMiseConfig(string path)
                 );
 
             // The pin goes into the url the lockfile task builds and the path segment Installed compares.
-            // It is held to characters that add no separator, escape or space to either.
-            if (version.Length == 0)
+            if (!IsReleaseVersion(version))
             {
                 throw new CakeException(
-                    $"{path} pins {pin.Key} as an empty string, and the gate takes ASCII letters, digits, '.', '+' and '-' alone."
+                    $"{path} pins {pin.Key} as \"{version}\", and the gate takes digit groups joined by single dots alone, such as 0.10.0."
                 );
-            }
-
-            for (int index = 0; index < version.Length; index++)
-            {
-                if (!char.IsAsciiLetterOrDigit(version[index]) && version[index] is not ('.' or '+' or '-'))
-                {
-                    throw new CakeException(
-                        $"{path} pins {pin.Key} as \"{version}\" with U+{(int)version[index]:X4} at index {index}, and the gate takes ASCII letters, digits, '.', '+' and '-' alone."
-                    );
-                }
             }
 
             versions[pin.Key] = version;
@@ -474,6 +463,13 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms)
         }
 
         string version = Text(entry, "version");
+        if (!IsReleaseVersion(version))
+        {
+            throw new CakeException(
+                $"{path} records {tool.Key} version \"{version}\", and the gate takes digit groups joined by single dots alone, such as 0.10.0. Write it again with: {relock}"
+            );
+        }
+
         string backend = Text(entry, "backend");
         string[] specifiers =
             entry.TryGetValue("specifiers", out object? requested) && requested is TomlArray listed
@@ -524,6 +520,12 @@ static TomlTable ReadToml(string path)
         throw new CakeException($"{path}: {error.Message}");
     }
 }
+
+// A version as the gate takes one: ASCII digit groups joined by single dots, with no empty group. A
+// pin and the version mise.lock records both pass here before any url is built from them, so neither
+// carries a separator, an escape, a dot segment or a prerelease tag into the url or the install path.
+static bool IsReleaseVersion(string version) =>
+    version.Length > 0 && version.Split('.').All(group => group.Length > 0 && group.All(char.IsAsciiDigit));
 
 // One string field of a TOML table, or empty when the table lacks it or holds another type.
 static string Text(TomlTable table, string key) =>
