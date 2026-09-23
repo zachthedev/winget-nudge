@@ -49,22 +49,24 @@ jobs:
       - run: dotnet tool restore
       # install: false, because the tools target asserts mise.lock before it installs from it, and
       # an install here would put the bytes on disk before the assertions read the file. cache:
-      # false for the same reason: nothing restored ahead of the assertions.
+      # false for the same reason: nothing restored ahead of the assertions. github_token: '',
+      # because the action otherwise exports the job token as MISE_GITHUB_TOKEN to every later
+      # step. version: pins mise, so the action looks up no release, and a locked install asks the
+      # GitHub API for nothing.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: 2026.9.11
           install: false
           cache: false
+          github_token: ''
       # tools is the install, held behind the lockfile assertions in cake.cs: it asserts mise.lock
       # against mise.toml and cake.cs's pins, then runs mise install with the attestations
       # re-verified, so an entry whose address is not the repository cake.cs names is refused
       # before the install fetches from it. The second line is the whole gate a contributor runs.
-      # GH_TOKEN, so the gate's zizmor runs online here as it does for a contributor whose
-      # gh auth token answers. The job token is read-only.
+      # Neither step holds a token: the gate sees CI and runs zizmor --offline, and the shared
+      # workflows job runs the online audits.
       - run: dotnet cake.cs --target=tools
       - run: dotnet cake.cs
-        env:
-          GH_TOKEN: ${{ github.token }}
 
   commits:
     permissions:

@@ -48,10 +48,13 @@ machine, and it is the first task the whole gate runs. `--target=tools` runs `lo
 only ShellCheck reports. actionlint leaves its shell checks off when that binary cannot start, and
 still exits 0. A clean actionlint run counts for nothing until that finding comes back.
 
-The pre-push hook runs the whole gate. zizmor runs its online audits wherever `gh auth token`
-answers, so a logged-in local run and continuous integration audit alike, and a run with no token
-stays offline and green. gh reads `GH_TOKEN` before its keyring, so a fine-grained read-only token
-there is the least a local run can hand zizmor.
+The pre-push hook runs the whole gate. A local run asks `gh auth token` for a token and hands the
+answer to zizmor alone, which then runs its online audits. With no answer, zizmor runs with
+`--offline`. On continuous integration, where GitHub Actions sets `CI`, the gate never starts gh and
+runs zizmor with `--offline`, and the shared `workflows` job runs the online audits. gh reads
+`GH_TOKEN` before its keyring, so a fine-grained read-only token there is the least a local run can
+hand zizmor. A token the shell exports reaches every process the gate starts, because the gate
+clears nothing from the environment it inherits.
 
 `tools` depends on `lockfile` and then runs `mise install`, so the lockfile is asserted before
 anything installs from it. An address in `mise.lock` is what an install fetches, and an entry naming

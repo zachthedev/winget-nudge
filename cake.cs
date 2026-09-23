@@ -282,13 +282,20 @@ Task("workflows")
 
         // --strict-collection fails on a file zizmor cannot parse. Without it the file is dropped
         // with a warning and the run reports no findings for a workflow it never read. --config
-        // names the committed file so ZIZMOR_CONFIG in the environment cannot swap it. The online
-        // audits read the GitHub API, so they run whenever gh holds a token, and a run without one
-        // passes --offline. The input is .github with --collect=all: zizmor collects every workflow,
-        // .github/dependabot.yml and any composite action there, and reads no ignore file, so no
-        // .gitignore, .git/info/exclude or global excludes line can hide one. The walk stops at
-        // .github, so node_modules and .claude/worktrees are never read.
-        string? token = GitHubToken();
+        // names the committed file so ZIZMOR_CONFIG in the environment cannot swap it. The input is
+        // .github with --collect=all: zizmor collects every workflow, .github/dependabot.yml and any
+        // composite action there, and reads no ignore file, so no .gitignore, .git/info/exclude or
+        // global excludes line can hide one. The walk stops at .github, so node_modules and
+        // .claude/worktrees are never read.
+        //
+        // The online audits read the GitHub API. zizmor given neither a token nor --offline skips
+        // them and says so at debug level alone, so every run without a token names --offline. On
+        // continuous integration the gate starts no gh and runs offline, and the shared workflows
+        // job runs the online audits. Locally, the token gh holds goes into zizmor's process
+        // settings alone, so no other process the gate starts receives it from the gate. A token
+        // the shell exports reaches every process through the inherited environment, and the gate
+        // clears nothing.
+        string? token = OnContinuousIntegration() ? null : GitHubToken();
         Command(
             ["zizmor", "zizmor.exe"],
             $"--no-progress {(token is null ? "--offline " : "")}--strict-collection --collect=all --config .github/zizmor.yml .github",
@@ -744,9 +751,17 @@ FilePath Verified(Dictionary<string, FilePath> resolved, string tool) =>
         ? executable
         : throw new CakeException($"The workflows task runs {tool}, and mise.toml declares no such tool.");
 
-// The token gh holds for api.github.com, or null when gh is absent or logged out. gh answers from
-// GH_TOKEN first, so an exported token reaches zizmor through the same path a login does. The output
-// is redirected and the process runs silent, so the token reaches the tool's environment and no log.
+// GitHub Actions sets CI to true in every step. Any value but empty, false or 0 counts, so a runner
+// that spells it another way still keeps the gate from starting gh.
+bool OnContinuousIntegration() =>
+    EnvironmentVariable("CI") is { Length: > 0 } value
+    && !value.Equals("false", StringComparison.OrdinalIgnoreCase)
+    && value != "0";
+
+// The token gh holds for api.github.com, or null when gh is absent or holds none. Only a local run
+// asks. gh answers from GH_TOKEN before its keyring, so a token the shell exports comes back here as
+// well. The output is redirected and the process runs silent, so the token reaches zizmor's
+// environment and no log.
 string? GitHubToken()
 {
     FilePath? gh = Context.Tools.Resolve(["gh", "gh.exe"]);
