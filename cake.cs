@@ -84,11 +84,25 @@ Dictionary<string, MisePin> misePins = new(StringComparer.Ordinal)
 
 Task("format")
     .Description("C# formatting, through CSharpier")
-    .Does(() => DotNetTool("WingetNudge.slnx", "csharpier", "check ."));
+    .Does(() =>
+        DotNetTool(
+            "WingetNudge.slnx",
+            "csharpier",
+            new ProcessArgumentBuilder().Append("check").Append("."),
+            new DotNetToolSettings { ToolPath = Dotnet() }
+        )
+    );
 
 Task("prettier")
     .Description("Markdown, YAML and JSON formatting")
-    .Does(() => Command(["bunx", "bunx.exe"], "--no-install prettier --check ."));
+    .Does(() =>
+        Command(
+            ["bunx", "bunx.exe"],
+            "--no-install prettier --check .",
+            settingsCustomization: settings =>
+                settings.WithToolPath(RequireOnPath("bunx", "Install Bun at the version package.json names."))
+        )
+    );
 
 // taplo comes from mise like the workflow linters, so it runs from the path mise which resolves
 // once the lockfile task has passed its entry. --config names the committed file so TAPLO_CONFIG
@@ -117,7 +131,12 @@ Task("build")
         {
             DotNetBuild(
                 "WingetNudge.slnx",
-                new DotNetBuildSettings { Configuration = configuration, MSBuildSettings = locked }
+                new DotNetBuildSettings
+                {
+                    Configuration = configuration,
+                    MSBuildSettings = locked,
+                    ToolPath = Dotnet(),
+                }
             );
         }
     });
@@ -130,6 +149,7 @@ Task("tests")
             "WingetNudge.slnx",
             new DotNetTestSettings
             {
+                ToolPath = Dotnet(),
                 PathType = DotNetTestPathType.Solution,
                 Configuration = "Release",
                 NoBuild = true,
@@ -149,6 +169,7 @@ Task("installer")
             "installer/WingetNudge.Installer.wixproj",
             new DotNetBuildSettings
             {
+                ToolPath = Dotnet(),
                 Configuration = "Release",
                 MSBuildSettings = new DotNetMSBuildSettings()
                     .WithProperty("RestoreLockedMode", "true")
@@ -591,9 +612,82 @@ static string Text(TomlTable table, string key) =>
 // The mise that reads those two files. Continuous integration pins its version on the action line
 // and verifies the download against the release's signed checksums; a local run takes whichever
 // mise is on PATH, and mise itself refuses a lockfile entry it cannot verify.
-FilePath RequireMise() =>
-    Context.Tools.Resolve(["mise", "mise.exe"])
-    ?? throw new CakeException("mise is not installed. Install it with: winget install --id jdx.mise --exact");
+FilePath RequireMise() => RequireOnPath("mise", "Install it with: winget install --id jdx.mise --exact");
+
+// A program the gate starts by name, as the absolute path PATH names for it. Cake's own locator
+// searches tools/** under the working directory before PATH, and this repository tracks a tools
+// directory, so its answer could be a committed file. Empty and relative PATH entries, and every
+// entry inside the checkout, are skipped. The name takes .exe, the one extension CreateProcess
+// starts directly, and each of the four programs the gate starts this way ships as one.
+FilePath? OnPath(string name)
+{
+    RequireNoToolNamedFiles();
+    string root =
+        System.IO.Path.TrimEndingDirectorySeparator(
+            System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath)
+        ) + System.IO.Path.DirectorySeparatorChar;
+    foreach (
+        string entry in (System.Environment.GetEnvironmentVariable("PATH") ?? "").Split(System.IO.Path.PathSeparator)
+    )
+    {
+        string directory = entry.Trim().Trim('"');
+        if (directory.Length == 0 || !System.IO.Path.IsPathFullyQualified(directory))
+        {
+            continue;
+        }
+
+        string full =
+            System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(directory))
+            + System.IO.Path.DirectorySeparatorChar;
+        string candidate = System.IO.Path.Combine(full, $"{name}.exe");
+        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && System.IO.File.Exists(candidate))
+        {
+            return new FilePath(candidate);
+        }
+    }
+
+    return null;
+}
+
+FilePath RequireOnPath(string name, string install) =>
+    OnPath(name) ?? throw new CakeException($"{name} is not on PATH. {install}");
+
+FilePath Dotnet() => RequireOnPath("dotnet", "Install the .NET SDK global.json names.");
+
+// Files named like a program some step starts by name, at the root or anywhere under tools. Cake's
+// locator reads tools/** before PATH, and Windows searches the current directory for a bare name,
+// so a committed file with one of these names could run in place of the real program. The gate
+// finds its own programs through OnPath, and refuses these files for every other caller.
+void RequireNoToolNamedFiles()
+{
+    string[] programs = ["mise", "gh", "bunx", "bun", "dotnet", "node", "git", "csharpier", "sbom-tool"];
+    string[] extensions = ["", ".exe", ".bat", ".cmd", ".com"];
+    IEnumerable<string> root = System.IO.Directory.EnumerateFiles(".").Select(file => System.IO.Path.GetFileName(file));
+    IEnumerable<string> tools = System.IO.Directory.Exists("tools")
+        ? System
+            .IO.Directory.EnumerateFiles("tools", "*", System.IO.SearchOption.AllDirectories)
+            .Select(file => file.Replace('\\', '/'))
+        : [];
+    string[] found =
+    [
+        .. root.Concat(tools)
+            .Where(file =>
+                programs.Any(program =>
+                    extensions.Any(extension =>
+                        System.IO.Path.GetFileName(file).Equals(program + extension, StringComparison.OrdinalIgnoreCase)
+                    )
+                )
+            )
+            .Order(StringComparer.Ordinal),
+    ];
+    if (found.Length > 0)
+    {
+        throw new CakeException(
+            $"The repository holds {string.Join(", ", found.Select(Quoted))}, named like a program the gate or a tool it starts runs by name. "
+                + "Cake looks in tools before PATH, and Windows looks in the current directory, so the file could run in place of that program."
+        );
+    }
+}
 
 // Runs mise with an environment built here from nothing, never the inherited one, and returns its
 // exit code with stdout collected when asked. No variable from a shell, an env file or a parent
@@ -989,7 +1083,7 @@ bool OnContinuousIntegration() =>
 // environment and no log.
 string? GitHubToken()
 {
-    FilePath? gh = Context.Tools.Resolve(["gh", "gh.exe"]);
+    FilePath? gh = OnPath("gh");
     if (gh is null)
     {
         return null;

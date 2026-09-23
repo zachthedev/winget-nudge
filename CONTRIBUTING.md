@@ -258,6 +258,11 @@ directory the test owns.
   `TEMP`, `TMP`, the proxy variables when set, and its own mise settings. No other variable, from
   the shell or anywhere else, reaches mise, so the gate's mise uses mise's default directories
   whatever `MISE_DATA_DIR` or `MISE_GLOBAL_CONFIG_FILE` says, and trusts the checkout itself.
+- The gate starts mise, gh, bunx and dotnet from the absolute path `PATH` names for each, skipping
+  empty and relative entries and any entry inside the checkout. Cake's own lookup reads `tools`
+  before `PATH`, and Windows reads the current directory for a bare name. So the gate also refuses
+  a file at the root or under `tools` named `mise`, `gh`, `bunx`, `bun`, `dotnet`, `node`, `git`,
+  `csharpier` or `sbom-tool`, bare or with `.exe`, `.bat`, `.cmd` or `.com`.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
