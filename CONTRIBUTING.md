@@ -12,7 +12,8 @@ closed. The commit-msg hook fails with no message on a clone where `bun install`
 `bunx --no-install` refuses to fetch commitlint, and the pre-push hook runs the whole gate, which
 stops at a linter mise has not installed.
 
-The committed `.claude/settings.json` pre-approves read-only git commands and nothing else. A branch
+The committed `.claude/settings.json` pre-approves read-only git commands and nothing else, and
+denies the `--output` form of `git diff`, `git log` and `git show`, which writes a file. A branch
 supplies `cake.cs`, the project files and the tests, so approving a build or a test run for every
 clone would run a stranger's code without a prompt. Approve those for yourself in
 `.claude/settings.local.json`, which `.gitignore` covers:
