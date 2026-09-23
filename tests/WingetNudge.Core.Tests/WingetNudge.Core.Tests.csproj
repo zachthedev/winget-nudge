@@ -15,6 +15,18 @@
         <Using Include="Xunit" />
     </ItemGroup>
     <ItemGroup>
+        <!--
+            RequirementsTests reads from the nearest directory above this file that holds Directory.Packages.props.
+            MSBuildThisFileDirectory is reserved, so no environment variable or global property moves that root.
+        -->
+        <AssemblyMetadata
+            Include="RepositoryRoot"
+            Value="$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), Directory.Packages.props))"
+        />
+        <!-- The props file this build imported, which RequirementsTests holds to the one at the root. -->
+        <AssemblyMetadata Include="DirectoryPackagesPropsPath" Value="$(DirectoryPackagesPropsPath)" />
+    </ItemGroup>
+    <ItemGroup>
         <ProjectReference Include="..\..\src\WingetNudge.Core\WingetNudge.Core.csproj" />
     </ItemGroup>
 </Project>

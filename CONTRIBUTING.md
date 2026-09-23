@@ -115,7 +115,8 @@ on a review. Wait for green checks before running it, because a bypass enforces 
 - `src/WingetNudge.Core`: everything that is not UI. Winget access, tracking and the cooldown gate,
   preferences, manual tools, release notes, the upgrade engine, registration.
 - `src/WingetNudge`: the WinUI 3 app, its windows, the notification and the command-line verbs.
-- `tests/WingetNudge.Core.Tests`: the xUnit v3 suite over Core.
+- `tests/WingetNudge.Core.Tests`: the xUnit v3 suite over Core, and `RequirementsTests`, which binds
+  `docs/install.md` to `Directory.Packages.props`.
 - `installer`: the WiX project for the per-user MSI.
 - `tools`: build-time scripts. `Update-WingetErrorCodes.ps1` regenerates
   `src/WingetNudge.Core/Packages/WingetErrorCodes.g.cs` from `winget error --output`.
@@ -174,6 +175,11 @@ directory the test owns.
   first is the winget release the COM projection comes from. The second is the SHA-256 of the
   `Microsoft.WinGet.Client` package of the same version on the PowerShell Gallery, the only source
   of `winrtact.dll`. Renovate holds the projection for that reason.
+- `docs/install.md` restates the winget and Windows App Runtime versions a user needs, because a user
+  has no clone to read `Directory.Packages.props` from. `RequirementsTests` binds each to its pin:
+  `WinGetVersion` at major.minor, and the `Microsoft.WindowsAppSDK` version whole, because the app's
+  bootstrapper refuses an older runtime. A pull request that moves either stays red until the
+  Requirements section names the new version.
 - The workflow linters and taplo are pinned in `mise.toml`, and `mise.lock` records the artifact
   each version resolved to. Both legs install from those two files, so no pin is asserted against a
   copy of itself. Renovate rewrites both in one pull request by running `mise lock`. The pins sit in

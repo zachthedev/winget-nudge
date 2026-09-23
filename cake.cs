@@ -65,7 +65,7 @@ Task("build")
     });
 
 Task("tests")
-    .Description("The Core suite")
+    .Description("The Core suite, and the versions docs/install.md restates from Directory.Packages.props")
     .IsDependentOn("build")
     .Does(() =>
         DotNetTest(

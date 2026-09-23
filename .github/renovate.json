@@ -23,6 +23,13 @@
       "prBodyNotes": [
         "`cake.packages.lock.json` does not regenerate itself. Run `dotnet restore cake.cs --force-evaluate` and commit the result into this pull request, or the gate stays red."
       ]
+    },
+    {
+      "description": "docs/install.md names the Windows App Runtime this version needs, and RequirementsTests fails until it names the new one.",
+      "matchDepNames": ["Microsoft.WindowsAppSDK"],
+      "prBodyNotes": [
+        "`docs/install.md` names the Windows App Runtime version this pull request moves. Change its Requirements line to the new version and commit it into this pull request, or the gate stays red."
+      ]
     }
   ]
 }

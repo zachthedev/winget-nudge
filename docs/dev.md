@@ -5,9 +5,9 @@ the rules every change follows.
 
 ## Prerequisites
 
-Windows 11 on x64, with winget 1.29 or newer. The app is WinUI 3 and the installer is an MSI, so
-neither builds anywhere else. Everything below installs with winget; open a new terminal afterwards,
-so `PATH` includes what it added.
+Windows 11 on x64, with the winget release [install.md](install.md#requirements) names. The app is
+WinUI 3 and the installer is an MSI, so neither builds anywhere else. Everything below installs with
+winget; open a new terminal afterwards, so `PATH` includes what it added.
 
 ```powershell
 winget install --id Microsoft.DotNet.SDK.10 --exact
