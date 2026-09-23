@@ -72,4 +72,19 @@
             Visible="false"
         />
     </ItemGroup>
+
+    <!--
+        The Windows App Runtime supplies the Windows ML natives, and the app calls none of them.
+        Microsoft.WindowsAppSDK.ML removes them from the build output of a framework-dependent app. Its
+        target runs after the SDK lists them for publish, so it misses the publish output the MSI
+        carries. This target removes the same natives from publish.
+    -->
+    <Target Name="DropWindowsMLNativesFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+        <ItemGroup>
+            <ResolvedFileToPublish
+                Remove="@(ResolvedFileToPublish)"
+                Condition="'%(ResolvedFileToPublish.NuGetPackageId)' == 'Microsoft.Windows.AI.MachineLearning' and '%(ResolvedFileToPublish.AssetType)' == 'native'"
+            />
+        </ItemGroup>
+    </Target>
 </Project>

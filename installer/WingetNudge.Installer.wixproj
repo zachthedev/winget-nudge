@@ -24,6 +24,24 @@
   </Target>
 
   <!--
+    The Windows App Runtime supplies the Windows ML natives, and DropWindowsMLNativesFromPublish in the app
+    project keeps them out of publish. Nothing else fails when that target stops matching, so the package
+    refuses them anywhere under the folder it harvests. The managed projection stays: deps.json lists it.
+  -->
+  <Target Name="RefuseWindowsMLNatives" AfterTargets="PublishApp">
+    <ItemGroup>
+      <WindowsMLNative
+        Include="$(PublishDir)**\DirectML*.dll;$(PublishDir)**\onnxruntime*.dll;$(PublishDir)**\Microsoft.Windows.AI.MachineLearning*.dll"
+        Exclude="$(PublishDir)**\*.Projection.dll"
+      />
+    </ItemGroup>
+    <Error
+      Condition="'@(WindowsMLNative)' != ''"
+      Text="$(PublishDir) carries @(WindowsMLNative->'%(RecursiveDir)%(Filename)%(Extension)', ', '). The Windows App Runtime supplies the Windows ML natives, and DropWindowsMLNativesFromPublish in src\WingetNudge\WingetNudge.csproj did not remove them."
+    />
+  </Target>
+
+  <!--
     Authenticode signing. The app's own binaries are signed before they are harvested, and the
     package after it is linked, so the UAC prompt names a publisher and any later change to the
     executable breaks the signature. Set SigningCertificateThumbprint in Directory.Signing.props.
