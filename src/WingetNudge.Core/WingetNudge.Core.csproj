@@ -16,4 +16,8 @@
         <PackageReference Include="YamlDotNet" />
         <PackageReference Include="Humanizer.Core" />
     </ItemGroup>
+    <ItemGroup>
+        <!-- The suite drives single steps of a public operation, such as the replace inside JsonFile.Write. -->
+        <InternalsVisibleTo Include="WingetNudge.Core.Tests" />
+    </ItemGroup>
 </Project>

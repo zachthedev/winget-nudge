@@ -9,6 +9,16 @@ public static class JsonFile
 {
     private const int ReadRetries = 3;
 
+    // ERROR_SHARING_VIOLATION, as .NET carries it on an IOException.
+    private const int SharingViolation = unchecked((int)0x80070020);
+
+    // Waits between replace attempts: 511 ms in all, about 0.6 s once each sleep rounds up to the
+    // ~15 ms timer tick. A replace fails with access denied while any other handle is open on the
+    // target, whatever its share mode. It fails with a sharing violation while a handle without delete
+    // sharing is open on the temporary. A real-time scanner holds a freshly written file open for a few
+    // milliseconds.
+    private static readonly int[] ReplaceBackoffMilliseconds = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+
     /// <summary>Serializer options shared by every state file.</summary>
     public static JsonSerializerOptions Options { get; } =
         new(JsonSerializerDefaults.General)
@@ -63,12 +73,21 @@ public static class JsonFile
     /// <summary>
     /// Serializes a value to a file, creating the parent directory when missing. The content
     /// goes to a temporary file first and replaces the target in one move, so a reader never
-    /// sees a half-written file.
+    /// sees a half-written file. A move that another handle refuses is retried for about 0.6 s, except
+    /// over a read-only target or a directory, which fail at once. A failed write leaves the target's
+    /// previous content in place.
     /// </summary>
     /// <typeparam name="T">Serialized shape.</typeparam>
     /// <param name="path">File to write.</param>
     /// <param name="value">Value to serialize.</param>
-    /// <exception cref="IOException">The parent directory is a reparse point.</exception>
+    /// <exception cref="IOException">
+    /// The parent directory is a reparse point, or a handle without delete sharing still holds the
+    /// temporary file once the retries run out.
+    /// </exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Another handle still holds the target once the retries run out, the target is read-only or a
+    /// directory, or the file system denies the write.
+    /// </exception>
     public static void Write<T>(string path, T value)
     {
         string? directory = Path.GetDirectoryName(path);
@@ -86,7 +105,7 @@ public static class JsonFile
                 JsonSerializer.Serialize(stream, value, Options);
             }
 
-            File.Move(temporary, path, overwrite: true);
+            Replace(temporary, path);
         }
         finally
         {
@@ -165,6 +184,58 @@ public static class JsonFile
         }
 
         return removed;
+    }
+
+    /// <summary>
+    /// Moves a finished temporary file over the target, retrying while another handle holds either one.
+    /// </summary>
+    /// <param name="temporary">The temporary file.</param>
+    /// <param name="path">The target it replaces.</param>
+    /// <exception cref="IOException">
+    /// A handle without delete sharing still holds the temporary file once the retries run out.
+    /// </exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Another handle still holds the target once the retries run out, the target is read-only or a
+    /// directory, or the file system denies the move.
+    /// </exception>
+    internal static void Replace(string temporary, string path)
+    {
+        foreach (int delay in ReplaceBackoffMilliseconds)
+        {
+            try
+            {
+                File.Move(temporary, path, overwrite: true);
+                return;
+            }
+            catch (Exception exception)
+                when (exception is UnauthorizedAccessException || exception.HResult == SharingViolation)
+            {
+                if (exception is UnauthorizedAccessException && RefusesEveryReplace(path))
+                {
+                    throw;
+                }
+
+                Thread.Sleep(delay);
+            }
+        }
+
+        File.Move(temporary, path, overwrite: true);
+    }
+
+    // A read-only target or a directory in its place refuses every attempt, so waiting only delays the
+    // error. An ACL denial reads the same as a held target from here, so it keeps the full wait.
+    private static bool RefusesEveryReplace(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & (FileAttributes.ReadOnly | FileAttributes.Directory)) != 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A target that vanished since the move, or whose attributes cannot be read, proves nothing
+            // permanent.
+            return false;
+        }
     }
 
     private static void SetAside(string path, bool delete)
