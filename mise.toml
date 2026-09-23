@@ -44,7 +44,7 @@ github_attestations = true
 # pin. This entry sends it to a host that cannot resolve, and the install fails with a DNS error for
 # url-api-fallback-refused.invalid. The gate refuses any other entry here, because one would move a
 # download away from the url mise.lock records, and its install carries the same entry in
-# MISE_URL_REPLACEMENTS, because another config file in the checkout can lift this one.
+# MISE_URL_REPLACEMENTS, because that variable in the environment outranks this file.
 [settings.url_replacements]
 'regex:^https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/.*$' = "https://url-api-fallback-refused.invalid/"
 

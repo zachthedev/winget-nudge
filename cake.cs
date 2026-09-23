@@ -206,9 +206,12 @@ const string fallbackRefused = "https://url-api-fallback-refused.invalid/";
 // resolves mise, so the task needs none on the machine, and check runs it ahead of every other
 // task.
 Task("lockfile")
-    .Description("Every mise.toml pin recorded in mise.lock at the address cake.cs names")
+    .Description(
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them"
+    )
     .Does(() =>
     {
+        RequireOnlyPinnedMiseFiles();
         MiseConfig config = ReadMiseConfig("mise.toml");
         RequireFallbackRefused(config.Replacements);
         Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms);
@@ -221,33 +224,14 @@ Task("lockfile")
 // The tool install, behind the lockfile task. Continuous integration's gate job runs this target
 // ahead of the whole gate. The order is a dependency in this file, so this task installs nothing
 // before the assertions pass. Outside check, because a local gate runs the tools an earlier install
-// put on disk. The four settings in the environment are the ones the install leans on: locked
-// mode, the lockfile read, re-verifying each attestation against the artifact mise.lock records
-// rather than trusting the run that wrote it, and the url_api fallback refused. mise.toml sets all
-// four, and this repeats them so the install does not depend on the file being read or on the
-// environment leaving them alone.
+// put on disk. MiseSettings carries the environment the install leans on.
 Task("tools")
     .Description("The tools mise.lock records, installed once the lockfile task has passed them")
     .IsDependentOn("lockfile")
     .Does(() =>
     {
         FilePath mise = RequireMise();
-        int exit = StartProcess(
-            mise,
-            new ProcessSettings
-            {
-                Arguments = "install",
-                EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["MISE_LOCKED"] = "1",
-                    ["MISE_LOCKFILE"] = "1",
-                    ["MISE_LOCKED_VERIFY_PROVENANCE"] = "1",
-                    ["MISE_URL_REPLACEMENTS"] = JsonSerializer.Serialize(
-                        new Dictionary<string, string>(StringComparer.Ordinal) { [fallbackPattern] = fallbackRefused }
-                    ),
-                },
-            }
-        );
+        int exit = StartProcess(mise, MiseSettings("install"));
         if (exit != 0)
         {
             throw new CakeException($"mise install exited {exit}.");
@@ -336,14 +320,14 @@ MiseConfig ReadMiseConfig(string path)
             string version =
                 pin.Value as string
                 ?? throw new CakeException(
-                    $"{path} pins {pin.Key} as something other than a version string, and the gate asserts a string pin alone."
+                    $"{path} pins {Quoted(pin.Key)} as something other than a version string, and the gate asserts a string pin alone."
                 );
 
             // The pin goes into the url the lockfile task builds and the path segment Installed compares.
             if (!IsReleaseVersion(version))
             {
                 throw new CakeException(
-                    $"{path} pins {pin.Key} as \"{version}\", and the gate takes digit groups joined by single dots alone, such as 0.10.0."
+                    $"{path} pins {Quoted(pin.Key)} as {Quoted(version)}, and the gate takes digit groups joined by single dots alone, such as 0.10.0."
                 );
             }
 
@@ -387,7 +371,7 @@ MiseConfig ReadMiseConfig(string path)
             replacements[rule.Key] =
                 rule.Value as string
                 ?? throw new CakeException(
-                    $"{path} maps url_replacements key {rule.Key} to something other than a string."
+                    $"{path} maps url_replacements key {Quoted(rule.Key)} to something other than a string."
                 );
         }
     }
@@ -407,8 +391,8 @@ void RequireFallbackRefused(Dictionary<string, string> replacements)
     )
     {
         throw new CakeException(
-            $"mise.toml's [settings.url_replacements] has to hold one entry, '{fallbackPattern}' = \"{fallbackRefused}\", "
-                + $"and it holds [{string.Join(", ", replacements.Select(rule => $"'{rule.Key}' = \"{rule.Value}\""))}]."
+            $"mise.toml's [settings.url_replacements] has to hold one entry, {Quoted(fallbackPattern)} = {Quoted(fallbackRefused)}, "
+                + $"and it holds [{string.Join(", ", replacements.Select(rule => $"{Quoted(rule.Key)} = {Quoted(rule.Value)}"))}]."
         );
     }
 }
@@ -450,7 +434,7 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms)
         if (entries.Count != 1)
         {
             throw new CakeException(
-                $"{path} records {entries.Count} entries for {tool.Key}, and mise.toml pins one version, so {relock} writes one. Write it again with: {relock}"
+                $"{path} records {entries.Count} entries for {Quoted(tool.Key)}, and mise.toml pins one version, so {relock} writes one. Write it again with: {relock}"
             );
         }
 
@@ -458,7 +442,7 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms)
         if (entry.ContainsKey("platforms"))
         {
             throw new CakeException(
-                $"{path} records a nested platforms table for {tool.Key}, and {relock} writes the quoted \"platforms.<name>\" form alone. Write it again with: {relock}"
+                $"{path} records a nested platforms table for {Quoted(tool.Key)}, and {relock} writes the quoted \"platforms.<name>\" form alone. Write it again with: {relock}"
             );
         }
 
@@ -466,7 +450,7 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms)
         if (!IsReleaseVersion(version))
         {
             throw new CakeException(
-                $"{path} records {tool.Key} version \"{version}\", and the gate takes digit groups joined by single dots alone, such as 0.10.0. Write it again with: {relock}"
+                $"{path} records {Quoted(tool.Key)} version {Quoted(version)}, and the gate takes digit groups joined by single dots alone, such as 0.10.0. Write it again with: {relock}"
             );
         }
 
@@ -486,7 +470,7 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms)
             if (!platforms.Contains(name, StringComparer.Ordinal))
             {
                 throw new CakeException(
-                    $"{path} records {tool.Key} for {name}, and mise.toml's lockfile_platforms names [{string.Join(", ", platforms)}]. Write it again with: {relock}"
+                    $"{path} records {Quoted(tool.Key)} for {Quoted(name)}, and mise.toml's lockfile_platforms names [{string.Join(", ", platforms.Select(Quoted))}]. Write it again with: {relock}"
                 );
             }
 
@@ -517,7 +501,7 @@ static TomlTable ReadToml(string path)
     }
     catch (TomlException error)
     {
-        throw new CakeException($"{path}: {error.Message}");
+        throw new CakeException($"{path}: {Quoted(error.Message)}");
     }
 }
 
@@ -538,6 +522,109 @@ FilePath RequireMise() =>
     Context.Tools.Resolve(["mise", "mise.exe"])
     ?? throw new CakeException("mise is not installed. Install it with: winget install --id jdx.mise --exact");
 
+// The settings every mise call the gate makes runs under. mise.toml sets the first four as well,
+// and the environment repeats them so no config file and no inherited value can lift them: locked
+// mode, the lockfile read, re-verifying each attestation against the artifact mise.lock records,
+// and the url_api fallback refused. The other four leave mise reading mise.toml alone. Each one
+// shuts a file the other three leave read:
+// - MISE_OVERRIDE_CONFIG_FILENAMES: every other config file.
+// - MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: .tool-versions.
+// - MISE_ENV set empty: the env file a .miserc.toml names.
+// - MISE_AUTO_ENV: the platform file a .miserc.toml turns auto_env on for.
+// mise reads its settings case-insensitively on Windows, and a parent process can hand this one two
+// spellings of a name. Every spelling of a pinned name therefore leaves this process before the
+// child starts, and the child receives the gate's value under one name.
+ProcessSettings MiseSettings(string arguments)
+{
+    Dictionary<string, string> pinned = new(StringComparer.Ordinal)
+    {
+        ["MISE_LOCKED"] = "1",
+        ["MISE_LOCKFILE"] = "1",
+        ["MISE_LOCKED_VERIFY_PROVENANCE"] = "1",
+        ["MISE_URL_REPLACEMENTS"] = JsonSerializer.Serialize(
+            new Dictionary<string, string>(StringComparer.Ordinal) { [fallbackPattern] = fallbackRefused }
+        ),
+        ["MISE_OVERRIDE_CONFIG_FILENAMES"] = "mise.toml",
+        ["MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES"] = "none",
+        ["MISE_ENV"] = "",
+        ["MISE_AUTO_ENV"] = "false",
+    };
+
+    string[] inherited = [.. System.Environment.GetEnvironmentVariables().Keys.OfType<string>()];
+    foreach (string name in inherited.Where(name => pinned.Keys.Contains(name, StringComparer.OrdinalIgnoreCase)))
+    {
+        System.Environment.SetEnvironmentVariable(name, null);
+    }
+
+    return new ProcessSettings { Arguments = arguments, EnvironmentVariables = pinned };
+}
+
+// Every mise config or lock file at the root besides mise.toml and mise.lock. mise run here loads
+// config from this directory, from its .config, mise and .mise subdirectories and from the
+// directories above it, and merges each config file's sibling lockfile ahead of mise.lock. A
+// mise.local.toml beside a mise.local.lock would then install from a url the lockfile task never
+// read. The match is on the mise and .mise prefixes every such name carries, at the root and
+// under .config, so a name a later mise adds is refused as well. .tool-versions carries neither
+// prefix, so it is refused by name. The walk is the file system, not git, because mise reads a
+// file whether git tracks it or not. No other subdirectory is read by a mise run here, so none is
+// walked, and the directories above the checkout are outside what a pull request can write.
+void RequireOnlyPinnedMiseFiles()
+{
+    static bool MiseNamed(string name) =>
+        name.StartsWith("mise", StringComparison.OrdinalIgnoreCase)
+        || name.StartsWith(".mise", StringComparison.OrdinalIgnoreCase);
+
+    string[] root =
+    [
+        .. System
+            .IO.Directory.EnumerateFileSystemEntries(".")
+            .Select(entry => System.IO.Path.GetFileName(entry))
+            .Where(name =>
+                (
+                    MiseNamed(name)
+                    && !name.Equals("mise.toml", StringComparison.OrdinalIgnoreCase)
+                    && !name.Equals("mise.lock", StringComparison.OrdinalIgnoreCase)
+                ) || name.Equals(".tool-versions", StringComparison.OrdinalIgnoreCase)
+            ),
+    ];
+    string[] config = System.IO.Directory.Exists(".config")
+        ?
+        [
+            .. System
+                .IO.Directory.EnumerateFileSystemEntries(".config")
+                .Select(entry => $".config/{System.IO.Path.GetFileName(entry)}")
+                .Where(name => MiseNamed(name[".config/".Length..])),
+        ]
+        : [];
+    string[] found = [.. root.Concat(config).Order(StringComparer.Ordinal)];
+    if (found.Length > 0)
+    {
+        throw new CakeException(
+            $"The repository root holds {string.Join(", ", found.Select(Quoted))} beside mise.toml and mise.lock. "
+                + "mise reads each one, and merges a lockfile beside it ahead of mise.lock, so an install could fetch a url the gate never read. "
+                + "Remove them, and keep local mise settings in mise's global config."
+        );
+    }
+}
+
+// A value read from mise.toml, mise.lock or mise's own output, as every message echoes one: in double
+// quotes, with a quote or backslash escaped and every character outside printable ASCII written as
+// \uXXXX, cut to 200 characters. A crafted value then reaches the terminal as text and cannot pass
+// as part of the message or move the cursor.
+static string Quoted(string value) =>
+    "\""
+    + string.Concat(
+        (value.Length > 200 ? value[..200] : value).Select(character =>
+            character switch
+            {
+                '"' or '\\' => $"\\{character}",
+                >= ' ' and <= '~' => character.ToString(),
+                _ => $"\\u{(int)character:X4}",
+            }
+        )
+    )
+    + (value.Length > 200 ? "\"..." : "\"");
+
 // What mise.lock has to say about one pinned tool before anything installs from it. Every branch
 // here reads the two data files alone, so a bump that left the lockfile behind is reported by
 // name on a machine with no mise at all.
@@ -546,7 +633,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
     if (!misePins.TryGetValue(tool, out MisePin? pin))
     {
         throw new CakeException(
-            $"mise.toml declares {tool}, and cake.cs records no pin for it. Add its aqua repository, tag prefix and assets to misePins."
+            $"mise.toml declares {Quoted(tool)}, and cake.cs records no pin for it. Add its aqua repository, tag prefix and assets to misePins."
         );
     }
 
@@ -557,7 +644,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         if (!pin.Assets.ContainsKey(platform))
         {
             throw new CakeException(
-                $"mise.toml's lockfile_platforms names {platform}, and cake.cs names no {platform} asset for {tool}. Add it to misePins."
+                $"mise.toml's lockfile_platforms names {Quoted(platform)}, and cake.cs names no {Quoted(platform)} asset for {tool}. Add it to misePins."
             );
         }
     }
@@ -593,7 +680,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         if (artifact.Version != version || !artifact.Specifiers.SequenceEqual([version], StringComparer.Ordinal))
         {
             throw new CakeException(
-                $"mise.toml pins {tool} {version}, and mise.lock records version \"{artifact.Version}\" with specifiers [{string.Join(", ", artifact.Specifiers)}]. Write it again with: {relock}"
+                $"mise.toml pins {tool} {version}, and mise.lock records version {Quoted(artifact.Version)} with specifiers [{string.Join(", ", artifact.Specifiers.Select(Quoted))}]. Write it again with: {relock}"
             );
         }
 
@@ -604,7 +691,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         if (artifact.Backend != backend)
         {
             throw new CakeException(
-                $"cake.cs resolves {tool} through {backend}, and mise.lock records backend \"{artifact.Backend}\". Write it again with: {relock}"
+                $"cake.cs resolves {tool} through {backend}, and mise.lock records backend {Quoted(artifact.Backend)}. Write it again with: {relock}"
             );
         }
 
@@ -616,7 +703,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         if (!string.Equals(artifact.Url, url, StringComparison.Ordinal))
         {
             throw new CakeException(
-                $"mise.lock records {tool} {platform} url as \"{artifact.Url}\", and cake.cs builds {url} from the pin. "
+                $"mise.lock records {tool} {platform} url as {Quoted(artifact.Url)}, and cake.cs builds {url} from the pin. "
                     + $"An install fetches the url, so the gate takes that address alone. Write it again with: {relock}"
             );
         }
@@ -633,7 +720,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         )
         {
             throw new CakeException(
-                $"mise.lock records {tool} {platform} url_api as \"{artifact.UrlApi}\", and the gate takes {assets} followed by an asset id alone. "
+                $"mise.lock records {tool} {platform} url_api as {Quoted(artifact.UrlApi)}, and the gate takes {assets} followed by an asset id alone. "
                     + $"mise fetches it when a HEAD on the url fails. Write it again with: {relock}"
             );
         }
@@ -652,7 +739,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         if (artifact.Provenance != "github-attestations")
         {
             throw new CakeException(
-                $"aqua declares a signer workflow for {tool}, and mise.lock records {platform} provenance \"{artifact.Provenance}\". Write it again with: {relock}"
+                $"aqua declares a signer workflow for {tool}, and mise.lock records {platform} provenance {Quoted(artifact.Provenance)}. Write it again with: {relock}"
             );
         }
     }
@@ -686,21 +773,21 @@ void RequireAddressText(string tool, string platform, string field, string addre
     if (address.Contains('%', StringComparison.Ordinal))
     {
         throw new CakeException(
-            $"mise.lock records {tool} {platform} {field} as \"{address}\", and an address mise writes carries no percent escape. Write it again with: {relock}"
+            $"mise.lock records {tool} {platform} {field} as {Quoted(address)}, and an address mise writes carries no percent escape. Write it again with: {relock}"
         );
     }
 
     if (address.Contains('\\', StringComparison.Ordinal))
     {
         throw new CakeException(
-            $"mise.lock records {tool} {platform} {field} as \"{address}\", and an address mise writes carries no backslash. Write it again with: {relock}"
+            $"mise.lock records {tool} {platform} {field} as {Quoted(address)}, and an address mise writes carries no backslash. Write it again with: {relock}"
         );
     }
 
     if (address.Split('/').Any(segment => segment is "." or ".."))
     {
         throw new CakeException(
-            $"mise.lock records {tool} {platform} {field} as \"{address}\", and an address mise writes carries no . or .. segment. Write it again with: {relock}"
+            $"mise.lock records {tool} {platform} {field} as {Quoted(address)}, and an address mise writes carries no . or .. segment. Write it again with: {relock}"
         );
     }
 }
@@ -719,16 +806,10 @@ string Pinned(MiseConfig config, string tool) =>
 // read at the end because the data directory above it is whatever the environment names.
 FilePath Installed(FilePath mise, string tool, string version)
 {
-    int lookup = StartProcess(
-        mise,
-        new ProcessSettings
-        {
-            Arguments = $"which {tool}",
-            RedirectStandardOutput = true,
-            Silent = true,
-        },
-        out IEnumerable<string> located
-    );
+    ProcessSettings which = MiseSettings($"which {tool}");
+    which.RedirectStandardOutput = true;
+    which.Silent = true;
+    int lookup = StartProcess(mise, which, out IEnumerable<string> located);
     string resolved = string.Join('\n', located).Trim();
     if (lookup != 0 || resolved.Length == 0)
     {
@@ -739,7 +820,7 @@ FilePath Installed(FilePath mise, string tool, string version)
     if (segments.Length < 3 || segments[^3] != tool || segments[^2] != version)
     {
         throw new CakeException(
-            $"mise which {tool} resolved {resolved}, and mise.toml pins {tool} {version}, so the gate refuses to run it. "
+            $"mise which {tool} resolved {Quoted(resolved)}, and mise.toml pins {tool} {version}, so the gate refuses to run it. "
                 + $"The gate runs a path ending in {tool}, {version} and the file alone. "
                 + $"Something in the environment, such as MISE_{tool.ToUpperInvariant()}_VERSION, chose another install."
         );

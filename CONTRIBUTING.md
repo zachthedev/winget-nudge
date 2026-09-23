@@ -234,9 +234,21 @@ directory the test owns.
   a DNS error rather than installing whatever the id names. `lockfile` refuses a `mise.toml`
   without that entry or with any other, because another entry would move a download away from the
   url `mise.lock` records. `tools` hands `mise install` the same entry through
-  `MISE_URL_REPLACEMENTS`, which replaces the map every config file builds: a `mise.local.toml`,
-  `.mise.toml` or `.config/mise` file in the checkout can lift the `mise.toml` entry, and cannot
-  lift the environment's. A `mise install` run by hand reads the files alone.
+  `MISE_URL_REPLACEMENTS`, which outranks every config file. A `mise install` run by hand reads the
+  files alone.
+- mise reads more config files than `mise.toml`, and merges the lockfile beside each one ahead of
+  `mise.lock`, so a `mise.local.toml` with a `mise.local.lock` would install from a url the gate
+  never read. `lockfile` refuses, by name, any file or directory at the root whose name starts with
+  `mise` or `.mise` other than `mise.toml` and `mise.lock`, any entry under `.config` whose name
+  starts with `mise`, and `.tool-versions`. That covers `.miserc.toml` and `.config/miserc.toml`,
+  the `mise.<env>.toml` and `.mise.<env>.toml` env files, the `mise.windows.toml` platform files,
+  the `.local` variants, and the `mise`, `.mise` and `.config/mise` directories. It reads the file
+  system rather than git, because mise reads an untracked file too, so keep local mise settings in
+  mise's global config. Every mise call the gate makes also runs with
+  `MISE_OVERRIDE_CONFIG_FILENAMES=mise.toml`, `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none`,
+  `MISE_ENV` empty and `MISE_AUTO_ENV=false`, which leave mise reading `mise.toml` alone even when a
+  refused file is present. The gate strips every case spelling of each `MISE_` variable it sets
+  before it sets it.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
