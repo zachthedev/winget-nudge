@@ -104,6 +104,21 @@ A pull request merges by squash alone, and the branch is deleted after. A one-co
 lands under that commit's subject and a longer one under the pull request's title, each with the
 pull request number appended, which is why the title is held to the same rules.
 
+A pull request's title takes the type of its most user-facing commit, and `!` when any commit
+breaks something users see. A squash of several commits lands the title's type alone. A `feat`
+under a `chore` title never reaches the changelog. A `!` on one of those commits is lost too, with
+its major bump.
+
+A revert is written `revert(<scope>): <what it undoes, in fresh words>`, in a commit subject and a
+pull request title alike. A `Refs: <sha>` footer names each commit it reverts. A reverted header
+copied whole can overrun the header limit `commitlint.config.js` sets. commitlint skips the
+`Revert "..."` subject that git and GitHub write. release-please cannot parse it, so that revert
+never reaches the changelog.
+
+Each version heading in `CHANGELOG.md` after the first links GitHub's compare view from the previous
+tag. That view lists every commit in the release, hidden types included.
+`git log --oneline <previous tag>..<tag>` lists the same commits locally.
+
 The ruleset on `main` requires one approving review from a code owner, and `CODEOWNERS` names the
 owner alone. GitHub does not count an author's approval of their own pull request, so `gh pr merge`
 on the owner's pull request is refused with `the base branch policy prohibits the merge`.
