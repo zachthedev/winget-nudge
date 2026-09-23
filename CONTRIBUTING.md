@@ -232,8 +232,10 @@ directory the test owns.
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
   entry carries, so a bare `mise lock` writes both legs and the gate refuses an entry for a
-  platform the list does not name. One gap no setting reports: `MISE_BACKENDS_<TOOL>` overrides a
-  tool's backend from the environment.
+  platform the list does not name. mise also reads a nested `[tools.<tool>.platforms.<name>]`
+  table for any platform, and `mise lock` writes the quoted `platforms.<name>` form alone, so the
+  gate refuses an entry carrying the nested one. One gap no setting reports:
+  `MISE_BACKENDS_<TOOL>` overrides a tool's backend from the environment.
 - ShellCheck is a pinned dependency of this repository on both legs. The `rhysd/actionlint` image
   bundles a ShellCheck copied out of `koalaman/shellcheck-alpine:stable` when that image is built,
   so a run through the image has no pin on the ShellCheck it executes. One `mise.toml` entry drives

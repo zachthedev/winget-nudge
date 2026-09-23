@@ -368,7 +368,10 @@ MiseConfig ReadMiseConfig(string path)
 // gate would otherwise assert one element while mise installs from another. A field the entry lacks
 // reads as empty, and every assertion below reads an empty field as a refusal, so an unfamiliar
 // shape stops the gate rather than passing it. A platform table lockfile_platforms does not name is
-// refused the same way: an install never reads it, so nothing verifies what it records.
+// refused the same way: an install never reads it, so nothing verifies what it records. mise also
+// reads a nested [tools.<name>.platforms.<platform>] table, for any platform, and that form reaches
+// this reader as a single platforms key the quoted loop never sees. mise lock writes the quoted form
+// alone, so an entry carrying the nested one is refused whole.
 Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms)
 {
     if (!System.IO.File.Exists(path))
@@ -400,6 +403,13 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms)
         }
 
         TomlTable entry = entries[0];
+        if (entry.ContainsKey("platforms"))
+        {
+            throw new CakeException(
+                $"{path} records a nested platforms table for {tool.Key}, and {relock} writes the quoted \"platforms.<name>\" form alone. Write it again with: {relock}"
+            );
+        }
+
         string version = Text(entry, "version");
         string backend = Text(entry, "backend");
         string[] specifiers =
