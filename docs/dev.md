@@ -20,11 +20,12 @@ winget install --id jdx.mise --exact
 - [Bun](https://bun.sh), at the version `package.json` names in `packageManager`. It runs
   commitlint, prettier and lefthook.
 - PowerShell 7, for the scripts under `tools` and the commands in this document.
-- [mise](https://mise.jdx.dev), at any current version; continuous integration pins the one it runs
-  on the `jdx/mise-action` line in `.github/workflows/ci.yml`. It installs actionlint, zizmor,
-  ShellCheck and taplo: `mise.toml` pins the version of each one, `mise.lock` records the artifact
-  that version resolved to, and continuous integration installs from the same two files. The gate
-  names the `winget install` command when mise is missing.
+- [mise](https://mise.jdx.dev), at any current version. The `gate` job pins the one it runs on its
+  `jdx/mise-action` line in `.github/workflows/ci.yml`, and the shared `workflows` job pins its own
+  in the reusable workflow it calls. mise installs actionlint, zizmor, ShellCheck and taplo:
+  `mise.toml` pins the version of each one, `mise.lock` records the artifact that version resolved
+  to, and continuous integration installs from the same two files. The gate names the
+  `winget install` command when mise is missing.
 
 The app needs the Windows App Runtime at run time. [install.md](install.md#requirements) names the
 version and where it comes from.

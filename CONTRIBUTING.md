@@ -212,9 +212,11 @@ directory the test owns.
   bundles a ShellCheck copied out of `koalaman/shellcheck-alpine:stable` when that image is built,
   so a run through the image has no pin on the ShellCheck it executes. One `mise.toml` entry drives
   the binary both legs run.
-- mise itself is pinned on the `jdx/mise-action` line in `.github/workflows/ci.yml`. The action
-  verifies its download against the release's minisign-signed `SHASUMS256.txt`, which is the check
-  on the tool that verifies the linters. A local run takes whichever mise is on `PATH`.
+- The `gate` job pins mise itself on its `jdx/mise-action` line in `.github/workflows/ci.yml`. The
+  shared `workflows` job pins its own on the same action's line in the reusable workflow `ci.yml`
+  calls. The action verifies its download against the release's minisign-signed `SHASUMS256.txt`,
+  which is the check on the tool that verifies the linters. A local run takes whichever mise is on
+  `PATH`.
 - `cake.cs` restores in locked mode against `cake.packages.lock.json`, and it imports
   `Directory.Packages.props`. After changing the Cake.Sdk version in `global.json`, the Tomlyn
   version, or any `PackageVersion` naming a package Cake.Sdk depends on, regenerate it with
