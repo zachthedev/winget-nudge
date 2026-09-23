@@ -40,6 +40,24 @@ jobs:
     permissions:
       contents: read
     steps:
+      # install: false, because the tools target asserts mise.lock before it installs from it, and
+      # an install here would put the bytes on disk before the assertions read the file. cache:
+      # false for the same reason: nothing restored ahead of the assertions. github_token: '',
+      # because the action otherwise exports the job token as MISE_GITHUB_TOKEN to every later
+      # step. version: pins mise, so the action looks up no release, and a locked install asks the
+      # GitHub API for nothing. env: false and export_path: false, because either one runs mise env
+      # over the checkout's mise.toml and hands later steps what it produces. The action still puts
+      # its own bin directory on PATH, outside the workspace. It runs ahead of checkout: its mise
+      # --version and mise ls read the workspace's mise.toml and evaluate its [env] and [vars]
+      # templates, and before checkout there is none.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.9.11
+          install: false
+          cache: false
+          github_token: ''
+          env: false
+          export_path: false
       # This job pushes nothing, so the job token does not stay in the checkout for the steps
       # that follow it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,22 +74,6 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: dotnet tool restore
-      # install: false, because the tools target asserts mise.lock before it installs from it, and
-      # an install here would put the bytes on disk before the assertions read the file. cache:
-      # false for the same reason: nothing restored ahead of the assertions. github_token: '',
-      # because the action otherwise exports the job token as MISE_GITHUB_TOKEN to every later
-      # step. version: pins mise, so the action looks up no release, and a locked install asks the
-      # GitHub API for nothing. env: false and export_path: false, because either one runs mise env
-      # over the checkout's mise.toml and hands later steps what it produces. The action still puts
-      # its own bin directory on PATH.
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          version: 2026.9.11
-          install: false
-          cache: false
-          github_token: ''
-          env: false
-          export_path: false
       # tools is the install, held behind the lockfile assertions in cake.cs: it asserts mise.lock
       # against mise.toml and cake.cs's pins, then runs mise install with the attestations
       # re-verified, so an entry whose address is not the repository cake.cs names is refused
