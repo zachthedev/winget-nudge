@@ -66,6 +66,13 @@ jobs:
               throw "WingetNudge.exe says $fileVersion and the tag says $version."
           }
 
+          # The informational version is what the app sends in its User-Agent. The SDK appends the
+          # source commit to it after a '+'.
+          $informationalVersion = (Get-Item $exe).VersionInfo.ProductVersion
+          if ($informationalVersion -ne $version -and $informationalVersion -notlike "$version+*") {
+              throw "WingetNudge.exe carries informational version $informationalVersion and the tag says $version."
+          }
+
           New-Item -Path dist -ItemType Directory | Out-Null
           $asset = "WingetNudge-$version-x64.msi"
           Copy-Item -Path $msi -Destination "dist/$asset"
