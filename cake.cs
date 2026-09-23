@@ -338,7 +338,7 @@ void RequireLockfile()
 {
     RequireOnlyPinnedMiseFiles();
     MiseConfig config = ReadMiseConfig("mise.toml");
-    Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms, config.Versions.Keys);
+    Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms, config.Versions);
     foreach (string tool in config.Versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
     {
         RequireRecorded(tool, config.Versions[tool], config.Platforms, artifacts);
@@ -465,7 +465,7 @@ static string Rendered(object? value) =>
 // alone, so an entry carrying the nested one is refused whole. Every key is held to the set mise
 // lock writes, so a field only a later mise would read, or a tool mise.toml does not pin, stops the
 // gate rather than reaching an install unread.
-Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms, IReadOnlyCollection<string> pinned)
+Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms, Dictionary<string, string> pinned)
 {
     if (!System.IO.File.Exists(path))
     {
@@ -486,7 +486,7 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms, 
         return artifacts;
     }
 
-    RequireOnlyKeys(path, "[tools]", locked.Keys, pinned);
+    RequireOnlyKeys(path, "[tools]", locked.Keys, pinned.Keys);
     foreach (KeyValuePair<string, object> tool in locked)
     {
         if (tool.Value is not TomlTableArray entries || entries.Count == 0)
@@ -523,6 +523,25 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms, 
                 options is TomlTable optionTable ? optionTable.Keys : entryKeys.Where(key => key == "options"),
                 optionKeys
             );
+
+            // mise selects an entry on its options, so a value other than the pin, or a prefix other
+            // than the tag prefix misePins names, leaves the install with no entry to take. The
+            // version is required, and the prefix is held to the tag prefix when present.
+            if (options is TomlTable optionValues)
+            {
+                RequireOption(path, tool.Key, optionValues, "version", pinned[tool.Key], "the mise.toml pin");
+                if (optionValues.ContainsKey("version_prefix") && misePins.TryGetValue(tool.Key, out MisePin? tagged))
+                {
+                    RequireOption(
+                        path,
+                        tool.Key,
+                        optionValues,
+                        "version_prefix",
+                        tagged.TagPrefix,
+                        "the tag prefix cake.cs names"
+                    );
+                }
+            }
         }
 
         string version = Text(entry, "version");
@@ -568,6 +587,19 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms, 
     }
 
     return artifacts;
+}
+
+// One value of a mise.lock entry's options, held to what the gate expects there.
+static void RequireOption(string path, string tool, TomlTable options, string key, string expected, string source)
+{
+    string actual = options.TryGetValue(key, out object? value) ? Rendered(value) : "nothing";
+    if (actual != Quoted(expected))
+    {
+        throw new CakeException(
+            $"{path} records {Quoted(tool)} options {Quoted(key)} as {actual}, and {source} is {Quoted(expected)}. "
+                + $"mise selects the entry on its options, so an install would find none. Write it again with: {relock}"
+        );
+    }
 }
 
 // A set of keys held to the ones the gate reads. A key outside them is refused by name, so nothing
