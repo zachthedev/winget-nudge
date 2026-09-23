@@ -143,10 +143,12 @@ DigiCert timestamp. A self-signed certificate verifies only on a machine that tr
 ## Moving to a new winget release
 
 `WinGetVersion` names the winget release the COM projection comes from, and `WinGetModuleSha256`
-pins the matching PowerShell module. Change both in `Directory.Packages.props`, in one commit:
+pins the matching PowerShell module. Change both in `Directory.Packages.props`, in one commit. Set
+`WinGetVersion` first. The commands below read it back from that file and print the hash
+`WinGetModuleSha256` takes:
 
 ```powershell
-$version = '1.29.380'
+$version = (Select-Xml -Path Directory.Packages.props -XPath '//WinGetVersion').Node.InnerText
 Invoke-WebRequest -Uri "https://www.powershellgallery.com/api/v2/package/Microsoft.WinGet.Client/$version" -OutFile "$env:TEMP\winget-client.nupkg"
 (Get-FileHash -Path "$env:TEMP\winget-client.nupkg" -Algorithm SHA256).Hash
 ```
