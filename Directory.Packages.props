@@ -10,7 +10,7 @@
         <PackageVersion Include="Microsoft.WindowsPackageManager.ComInterop" Version="$(WinGetVersion)" />
         <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.333" />
         <!-- Reads winget's pinning.db. -->
-        <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+        <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
         <PackageVersion Include="System.CommandLine" Version="2.0.11" />
         <PackageVersion Include="Spectre.Console" Version="0.57.2" />
         <PackageVersion Include="Markdig" Version="1.3.2" />
