@@ -13,5 +13,11 @@
     <ItemGroup>
         <PackageReference Include="WixToolset.Dtf.CustomAction" />
         <PackageReference Include="WixToolset.Dtf.WindowsInstaller" />
+        <!--
+            The SDK references this package itself only on a machine without the 4.7.2 targeting pack,
+            so the locked graph would depend on the machine. Referencing it always gives every machine
+            the graph packages.lock.json records.
+        -->
+        <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
     </ItemGroup>
 </Project>
