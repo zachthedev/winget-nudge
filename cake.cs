@@ -96,13 +96,14 @@ Task("format")
 Task("prettier")
     .Description("Markdown, YAML and JSON formatting")
     .Does(() =>
+    {
+        FilePath bunx = Bunx();
         Command(
             ["bunx", "bunx.exe"],
             "--no-install prettier --check .",
-            settingsCustomization: settings =>
-                settings.WithToolPath(RequireOnPath("bunx", "Install Bun at the version package.json names."))
-        )
-    );
+            settingsCustomization: settings => settings.WithToolPath(bunx)
+        );
+    });
 
 // taplo comes from mise like the workflow linters, so it runs from the path mise which resolves
 // once the lockfile task has passed its entry. --config names the committed file so TAPLO_CONFIG
@@ -239,14 +240,14 @@ static TomlTable ExpectedSettings() =>
 
 static TomlTable ExpectedToolConfig() => new() { ["locked"] = true };
 
-// The two data files alone, before any process starts and before anything installs from them. A
-// lockfile that disagrees with its pin is the likeliest fault after a bump, and an address in it
-// is what an install fetches, so both are read before the install rather than after. Nothing here
-// resolves mise, so the task needs none on the machine, and check runs it ahead of every other
-// task.
+// The two data files, before anything installs from them. A lockfile that disagrees with its pin
+// is the likeliest fault after a bump, and an address in it is what an install fetches, so both are
+// read before the install rather than after. The one process it starts is git, to list the tracked
+// paths. Nothing here resolves mise, so the task needs none on the machine, and check runs it ahead
+// of every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, and no tracked node_modules path"
     )
     .Does(() => RequireLockfile());
 
@@ -337,6 +338,7 @@ RunTarget(target);
 void RequireLockfile()
 {
     RequireOnlyPinnedMiseFiles();
+    RequireNoTrackedNodeModules();
     MiseConfig config = ReadMiseConfig("mise.toml");
     Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms, config.Versions);
     foreach (string tool in config.Versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
@@ -650,7 +652,7 @@ FilePath RequireMise() => RequireOnPath("mise", "Install it with: winget install
 // searches tools/** under the working directory before PATH, and this repository tracks a tools
 // directory, so its answer could be a committed file. Empty and relative PATH entries, and every
 // entry inside the checkout, are skipped. The name takes .exe, the one extension CreateProcess
-// starts directly, and each of the four programs the gate starts this way ships as one.
+// starts directly, and each program the gate starts this way ships as one.
 FilePath? OnPath(string name)
 {
     RequireNoToolNamedFiles();
@@ -685,6 +687,15 @@ FilePath RequireOnPath(string name, string install) =>
     OnPath(name) ?? throw new CakeException($"{name} is not on PATH. {install}");
 
 FilePath Dotnet() => RequireOnPath("dotnet", "Install the .NET SDK global.json names.");
+
+// bunx for the prettier row, the one bun process the gate starts. The node_modules refusal runs
+// here as well as in the lockfile task, so --target=prettier and --exclusive runs reach bunx past it
+// too.
+FilePath Bunx()
+{
+    RequireNoTrackedNodeModules();
+    return RequireOnPath("bunx", "Install Bun at the version package.json names.");
+}
 
 // Files named like a program some step starts by name, at the root or anywhere under tools. Cake's
 // locator reads tools/** before PATH, and Windows searches the current directory for a bare name,
@@ -873,6 +884,72 @@ void RequireOnlyPinnedMiseFiles()
             $"The repository root holds {string.Join(", ", found.Select(Quoted))} beside mise.toml and mise.lock. "
                 + "mise reads each one, and merges a lockfile beside it ahead of mise.lock, so an install could fetch a url the gate never read. "
                 + "Remove them, and keep local mise settings in mise's global config."
+        );
+    }
+}
+
+// Every tracked path with a node_modules segment, in any case, since NTFS reads NODE_MODULES as the
+// same directory. bunx --no-install starts node_modules/.bin/<name> ahead of anything else, and bun
+// install keeps a package it finds already at the version bun.lock records, so a committed
+// node_modules/prettier still runs as prettier after the install. git answers what is tracked, so
+// the node_modules an install writes passes. An extraction from git archive has no .git at the root
+// and tracks nothing, so the check starts no git there and passes. No GIT_ variable reaches git, so
+// the repository and index it reads are the checkout's own, never ones a shell or hook exported.
+void RequireNoTrackedNodeModules()
+{
+    string root = Context.Environment.WorkingDirectory.FullPath;
+    string dotGit = System.IO.Path.Combine(root, ".git");
+    if (!System.IO.Directory.Exists(dotGit) && !System.IO.File.Exists(dotGit))
+    {
+        Information("No .git at the root, so nothing is tracked and no node_modules path is refused.");
+        return;
+    }
+
+    FilePath git = RequireOnPath("git", "Install it with: winget install --id Git.Git --exact");
+    System.Diagnostics.ProcessStartInfo start = new(git.FullPath)
+    {
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+        StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+        WorkingDirectory = root,
+    };
+    start.ArgumentList.Add("ls-files");
+    start.ArgumentList.Add("-z");
+    foreach (
+        string name in start
+            .Environment.Keys.Where(name => name.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase))
+            .ToArray()
+    )
+    {
+        start.Environment.Remove(name);
+    }
+
+    using System.Diagnostics.Process process =
+        System.Diagnostics.Process.Start(start)
+        ?? throw new CakeException($"git did not start from {Quoted(git.FullPath)}.");
+    string listed = process.StandardOutput.ReadToEnd();
+    process.WaitForExit();
+    if (process.ExitCode != 0)
+    {
+        throw new CakeException(
+            $"git ls-files exited {process.ExitCode} beside a .git at the root, so the gate cannot tell which node_modules paths are tracked."
+        );
+    }
+
+    string[] found =
+    [
+        .. listed
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .Where(path =>
+                path.Split('/').Any(segment => segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase))
+            )
+            .Order(StringComparer.Ordinal),
+    ];
+    if (found.Length > 0)
+    {
+        throw new CakeException(
+            $"The repository tracks {string.Join(", ", found.Take(5).Select(Quoted))}{(found.Length > 5 ? $" and {found.Length - 5} more" : "")} under node_modules, and the gate takes no tracked node_modules path. "
+                + "bunx starts node_modules/.bin before anything else, and bun install keeps a package already at the version bun.lock records, so a committed file there runs in place of prettier."
         );
     }
 }

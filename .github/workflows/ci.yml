@@ -72,7 +72,10 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      - run: bun install --frozen-lockfile
+      # --ignore-scripts, because bun install runs package.json's own lifecycle scripts under a
+      # frozen lockfile too, and this job needs none. The root prepare writes git hooks, and
+      # lefthook's postinstall does nothing when CI is set.
+      - run: bun install --frozen-lockfile --ignore-scripts
       - run: dotnet tool restore
       # tools is the install, held behind the lockfile assertions in cake.cs: it asserts mise.lock
       # against mise.toml and cake.cs's pins, then runs mise install with the attestations

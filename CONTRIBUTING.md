@@ -40,8 +40,8 @@ stops at the first failure and prints a summary table. `dotnet cake.cs --descrip
 task and what it checks, and `dotnet cake.cs --tree` prints the order they run in.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
-`workflows`. `lockfile` reads two data files and starts no process, so it needs no mise on the
-machine, and it is the first task the whole gate runs. `--target=tools` runs `lockfile` and then
+`workflows`. `lockfile` reads two data files and asks git which paths are tracked. git is the one
+process it starts, so it needs no mise on the machine, and it is the first task the whole gate runs. `--target=tools` runs `lockfile` and then
 `mise install`; it is the install continuous integration runs, and `check` does not reach it.
 
 `workflows` hands actionlint the ShellCheck binary it resolved, then asks actionlint for a finding
@@ -258,11 +258,19 @@ directory the test owns.
   `TEMP`, `TMP`, the proxy variables when set, and its own mise settings. No other variable, from
   the shell or anywhere else, reaches mise, so the gate's mise uses mise's default directories
   whatever `MISE_DATA_DIR` or `MISE_GLOBAL_CONFIG_FILE` says, and trusts the checkout itself.
-- The gate starts mise, gh, bunx and dotnet from the absolute path `PATH` names for each, skipping
-  empty and relative entries and any entry inside the checkout. Cake's own lookup reads `tools`
-  before `PATH`, and Windows reads the current directory for a bare name. So the gate also refuses
-  a file at the root or under `tools` named `mise`, `gh`, `bunx`, `bun`, `dotnet`, `node`, `git`,
-  `csharpier` or `sbom-tool`, bare or with `.exe`, `.bat`, `.cmd` or `.com`.
+- The gate starts mise, gh, bunx, dotnet and git from the absolute path `PATH` names for each,
+  skipping empty and relative entries and any entry inside the checkout. Cake's own lookup reads
+  `tools` before `PATH`, and Windows reads the current directory for a bare name. So the gate also
+  refuses a file at the root or under `tools` named `mise`, `gh`, `bunx`, `bun`, `dotnet`, `node`,
+  `git`, `csharpier` or `sbom-tool`, bare or with `.exe`, `.bat`, `.cmd` or `.com`.
+- The prettier row runs `bunx --no-install`, which starts `node_modules/.bin/prettier` ahead of
+  anything else. `bun install` keeps a package it finds already at the version `bun.lock` records,
+  so a committed `node_modules/prettier` still runs after an install. `lockfile` refuses every
+  tracked path with a `node_modules` segment, in any case, and the prettier row refuses them again
+  before it starts bunx. `git ls-files` answers what is tracked, so the `node_modules` an install
+  writes passes. An extraction from `git archive` has no `.git` at the root and tracks nothing, so
+  the check starts no git there and passes. The `gate` job's `bun install` takes `--ignore-scripts`,
+  because a frozen lockfile still runs the lifecycle scripts `package.json` names.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
