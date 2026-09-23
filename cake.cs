@@ -1,9 +1,9 @@
 #:sdk Cake.Sdk
 #:property NuGetLockFilePath=cake.packages.lock.json
 #:property RestoreLockedMode=true
-// Directory.Build.props gives this script the app's win-x64 identifier, and the apphost built for
-// that identifier is a Windows executable on every host. Without one, dotnet run starts the
-// assembly through the host it has, which is what lets the ubuntu job run a target.
+// With an apphost, the build writes an unsigned Cake.Sdk.exe beside the assembly under the temp
+// directory, and dotnet run starts that. Without one, dotnet run starts the assembly through
+// dotnet exec, so the gate's own code runs in the signed dotnet host.
 #:property UseAppHost=false
 #:package Tomlyn
 
@@ -12,9 +12,9 @@ using Tomlyn.Model;
 
 // The gate: every check a change must pass before it leaves the machine. Each Description says
 // what its task covers, and --description lists them. The pre-push hook runs the check target.
-// Continuous integration runs the tools target on both of its jobs, which asserts the lockfile and
-// then installs from it, then the code target in one job and the same mise-installed workflow
-// linters in the other.
+// Continuous integration's gate job runs the tools target, which asserts the lockfile and then
+// installs from it, and then the check target. The release build in cd.yml runs the installer
+// target.
 
 string target = Argument("target", "check");
 
@@ -63,7 +63,9 @@ Task("tests")
     );
 
 // An empty global property outranks the thumbprint Directory.Signing.props imports, so the package
-// builds unsigned on every machine. Signing belongs to a release, and this task checks it links.
+// builds unsigned on every machine. cd.yml builds the release MSI through this task, so a release
+// ships unsigned too. A signed local build runs the installer project directly, as docs/dev.md
+// shows.
 Task("installer")
     .Description("The MSI links, built unsigned whatever Directory.Signing.props says")
     .IsDependentOn("build")
@@ -81,7 +83,7 @@ Task("installer")
     );
 
 Task("code")
-    .Description("Everything continuous integration runs in its gate job")
+    .Description("Everything in the gate but the workflow linters")
     .IsDependentOn("lockfile")
     .IsDependentOn("format")
     .IsDependentOn("prettier")
@@ -145,13 +147,13 @@ Task("lockfile")
         }
     });
 
-// The install continuous integration runs on both jobs, behind the lockfile task. The order is a
-// dependency in this file, so no step in a workflow can install before the assertions run. Outside
-// check, because a local gate resolves linters an install already put on disk and makes no network
-// request. The three settings in the environment are the ones the install leans on: locked mode,
-// the lockfile read, and re-verifying each attestation against the artifact mise.lock records rather
-// than trusting the run that wrote it. mise.toml sets all three, and this repeats them so the install
-// does not depend on the file being read or on the environment leaving them alone.
+// The tool install, behind the lockfile task. Continuous integration's gate job runs this target
+// ahead of the whole gate. The order is a dependency in this file, so this task installs nothing
+// before the assertions pass. Outside check, because a local gate runs the tools an earlier install
+// put on disk. The three settings in the environment are the ones the install leans on: locked
+// mode, the lockfile read, and re-verifying each attestation against the artifact mise.lock records
+// rather than trusting the run that wrote it. mise.toml sets all three, and this repeats them so
+// the install does not depend on the file being read or on the environment leaving them alone.
 Task("tools")
     .Description("The linters mise.lock records, installed once the lockfile task has passed them")
     .IsDependentOn("lockfile")
