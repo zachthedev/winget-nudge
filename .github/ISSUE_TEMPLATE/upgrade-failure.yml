@@ -1,6 +1,8 @@
 name: Upgrade failure
 description: A package failed to upgrade, or an app it closed did not come back.
 title: 'upgrade: '
+# upgrade is a label beside the handbook's set, so triage can find every report of an upgrade the
+# engine could not finish.
 labels: ['bug', 'upgrade']
 body:
   - type: markdown

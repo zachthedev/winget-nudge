@@ -1,6 +1,8 @@
-# Line endings are LF on every machine, whatever a contributor's core.autocrlf says. The git hooks
-# run under sh, which rejects a carriage return at the end of a line.
+# Line endings are the same on every machine, whatever a contributor's core.autocrlf says. The gate's
+# format check requires LF, so a CRLF checkout fails it on every file.
 * text=auto eol=lf
 
+# The handbook base above, plus the binary formats this repository commits: the app icon and the
+# README screenshots.
 *.ico binary
 *.png binary

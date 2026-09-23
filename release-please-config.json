@@ -7,6 +7,7 @@
   "pull-request-header": "Automated release PR",
   "pull-request-footer": "Managed by [zachthedev-releaser](https://github.com/apps/zachthedev-releaser).",
   "draft": true,
+  "bump-minor-pre-major": true,
   "force-tag-creation": true,
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
