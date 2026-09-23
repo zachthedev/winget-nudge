@@ -10,6 +10,7 @@
         <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
         <PackageReference Include="AwesomeAssertions" />
         <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+        <PackageReference Include="Newtonsoft.Json" />
     </ItemGroup>
     <ItemGroup>
         <Using Include="Xunit" />
