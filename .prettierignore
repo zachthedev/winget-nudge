@@ -14,3 +14,11 @@ CHANGELOG.md
 
 # Prettier reads .wxs as WeChat's script language and fails on WiX's XML.
 *.wxs
+
+# The gate's prettier row passes --ignore-path .prettierignore and reads no .gitignore, and holds
+# this file to the text cake.cs names. These are the local paths .gitignore keeps out that prettier
+# would read: the copies the Claude Code CLI checks out, a contributor's own Claude Code settings,
+# and Visual Studio's folder.
+.claude/worktrees/
+.claude/settings.local.json
+.vs/

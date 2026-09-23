@@ -40,15 +40,21 @@ stops at the first failure and prints a summary table. `dotnet cake.cs --descrip
 task and what it checks, and `dotnet cake.cs --tree` prints the order they run in.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
-`workflows`. `lockfile` reads `mise.toml`, `mise.lock`, `bunfig.toml` and `.prettierrc`, walks the
-tree for any other Prettier or npm config, and asks git which paths are tracked. git is the one
-process it starts, so it needs no mise on the machine, and it is the first task the whole gate runs.
-`--target=tools` runs `lockfile` and then `mise install`; it is the install continuous integration
-runs, and `check` does not reach it.
+`workflows`. `lockfile` reads `mise.toml`, `mise.lock`, `bunfig.toml` and every config file another
+row reads, walks the tree for any other Prettier or npm config, and asks git which paths are
+tracked. git is the one process it starts, so it needs no mise on the machine, and it is the first
+task the whole gate runs. `--target=tools` runs `lockfile` and then `mise install`; it is the
+install continuous integration runs, and `check` does not reach it.
 
 `workflows` hands actionlint the ShellCheck binary it resolved, then asks actionlint for a finding
 only ShellCheck reports. actionlint leaves its shell checks off when that binary cannot start, and
 still exits 0. A clean actionlint run counts for nothing until that finding comes back.
+
+Every row that checks files from the tree prints the files it checked and fails when there are
+none, because taplo and prettier both exit 0 having checked nothing. The `toml` row names each
+`.toml` file to taplo and fails unless taplo's own log lists the same files. The `prettier` row
+lists its files with a `--debug-check` pass before `--check`. `workflows` names each workflow file
+to actionlint, and zizmor logs each file it completes and fails when it collects none.
 
 The pre-push hook runs the whole gate. A local run asks `gh auth token` for a token and hands the
 answer to zizmor alone, which then runs its online audits. With no answer, zizmor runs with
@@ -281,11 +287,13 @@ directory the test owns.
   names, and lefthook's commit-msg hook passes it to commitlint too. `bun install` keeps a package
   it finds already at the version `bun.lock` records, so a committed `node_modules/prettier` still
   runs after an install. `lockfile` refuses every tracked path with a `node_modules` segment, in any
-  case, and the prettier row refuses them again before it starts bunx. `git ls-files` answers what
-  is tracked, so the `node_modules` an install writes passes. An extraction from `git archive` has
-  no `.git` at the root and tracks nothing, so the check starts no git there and passes. The `gate`
-  job's `bun install` takes `--ignore-scripts`, because a frozen lockfile still runs the lifecycle
-  scripts `package.json` names.
+  case, and the prettier row refuses them again before it starts bunx. They also refuse a tracked
+  `.env` or `.env.<name>` at the root, which Bun loads into prettier and commitlint, and no bunx
+  flag stops it. `git ls-files` answers what is tracked, so the `node_modules` an install writes,
+  and a contributor's own `.env`, pass. An extraction from `git archive` has no `.git` at the root
+  and tracks nothing, so the check starts no git there and passes. The `gate` job's `bun install`
+  takes `--ignore-scripts`, because a frozen lockfile still runs the lifecycle scripts
+  `package.json` names.
 - `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone, at the value `cake.cs` names.
   Bun reads the file on every start, and no flag stops it. A top-level `preload` there runs a
   module before the first line of whatever Bun starts, prettier and commitlint included. Every other
@@ -302,11 +310,22 @@ directory the test owns.
   prettier reads, `package.yaml`, and a `package.json` with a `prettier` key. The same walk refuses
   any `.npmrc`, which moves where `bun install` downloads from, and any directory link. It reads the
   file system, because an editor reads an untracked file too, and skips `node_modules`, `bin`,
-  `obj`, `.git` and `.claude/worktrees`.
+  `obj` and `.git`, and `.claude/worktrees` and `.vs` at the root. A directory it cannot list is
+  refused by name.
+- Every other file a row reads that could narrow what the row checks equals, byte for byte, the
+  text `cake.cs` holds for it: `.prettierignore`, `.taplo.toml` and `.github/zizmor.yml`. The
+  prettier row passes `--ignore-path .prettierignore`, which replaces prettier's default pair, so
+  `.gitignore` takes nothing out of it, and `.prettierignore` lists the local paths `.gitignore`
+  covers that prettier would read. A `.github/actionlint.yaml` is refused, because its `paths`
+  block ignores actionlint's errors by pattern.
 - No row stops the first Bun process on a branch nobody has read. lefthook's commit-msg hook runs
   `bunx --bun commitlint` before any gate does, and `bun install` runs lefthook's postinstall, which
   starts under Bun when node is not on `PATH`. Read a pull request's `bunfig.toml` before running
   anything on its branch.
+- A contributor's own untracked `.env` passes the tracked-path check, and Bun loads it into prettier
+  and commitlint, because `bunfig.toml` holds the cooldown alone. No variable either tool reads from
+  it loads code. `PRETTIER_EXPERIMENTAL_CLI` set there turns the prettier row red, since that CLI
+  refuses `--config`.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`

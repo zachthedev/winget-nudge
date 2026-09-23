@@ -93,33 +93,132 @@ Task("format")
         )
     );
 
+// --ignore-path names .prettierignore alone, which replaces prettier's default pair, so .gitignore
+// takes nothing out of the row. prettier --check names no file it checked and passes on none, so a
+// --debug-check pass first lists them, with the same options, and the row refuses an empty list.
 Task("prettier")
-    .Description("Markdown, YAML and JSON formatting")
+    .Description("Markdown, YAML and JSON formatting, over the files the row lists first")
     .Does(() =>
     {
+        const string options = "--bun --no-install prettier --config .prettierrc --ignore-path .prettierignore";
         FilePath bunx = Bunx();
+        int exit = StartProcess(
+            bunx,
+            new ProcessSettings
+            {
+                Arguments = $"{options} --debug-check .",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            },
+            out IEnumerable<string> listed,
+            out IEnumerable<string> errors
+        );
+        foreach (string line in errors)
+        {
+            Information("{0}", line);
+        }
+
+        if (exit != 0)
+        {
+            throw new CakeException($"prettier --debug-check exited {exit} listing the files the row checks.");
+        }
+
+        RequireChecked("prettier", [.. listed.Select(line => line.Trim()).Where(line => line.Length > 0)]);
         Command(
             ["bunx", "bunx.exe"],
-            "--bun --no-install prettier --config .prettierrc --check .",
+            $"{options} --check .",
             settingsCustomization: settings => settings.WithToolPath(bunx)
         );
     });
 
 // taplo comes from mise like the workflow linters, so it runs from the path mise which resolves
 // once the lockfile task has passed its entry. --config names the committed file so TAPLO_CONFIG
-// in the environment cannot swap it.
+// in the environment cannot swap it. The row names every .toml file TreeFiles finds, so taplo walks
+// nothing. taplo exits 0 having checked nothing when its walk finds no file, when a named file is
+// missing, and when .taplo.toml excludes every named file. So the row reads the list taplo logs,
+// with RUST_LOG set so no inherited filter hides it, and refuses any list but the one it named.
 Task("toml")
-    .Description("TOML formatting, through taplo, over the files .taplo.toml names")
+    .Description("TOML formatting, through taplo, over every .toml file in the tree, each named to taplo")
     .IsDependentOn("lockfile")
     .Does(() =>
     {
         MiseConfig config = ReadMiseConfig("mise.toml");
         FilePath taplo = Installed(RequireMise(), "taplo", Pinned(config, "taplo"));
-        Command(
-            ["taplo", "taplo.exe"],
-            "fmt --check --config .taplo.toml",
-            settingsCustomization: settings => settings.WithToolPath(taplo)
+        string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+        string[] files =
+        [
+            .. TreeFiles()
+                .Where(file => file.EndsWith(".toml", StringComparison.OrdinalIgnoreCase))
+                .Order(StringComparer.Ordinal),
+        ];
+        RequireChecked("toml", files);
+
+        ProcessArgumentBuilder arguments = new ProcessArgumentBuilder()
+            .Append("--colors")
+            .Append("never")
+            .Append("fmt")
+            .Append("--check")
+            .Append("--config")
+            .Append(".taplo.toml");
+        foreach (string file in files)
+        {
+            arguments.AppendQuoted(file);
+        }
+
+        int exit = StartProcess(
+            taplo,
+            new ProcessSettings
+            {
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal) { ["RUST_LOG"] = "info" },
+            },
+            out IEnumerable<string> output,
+            out IEnumerable<string> errors
         );
+        string[] logged = [.. errors.Concat(output)];
+        foreach (string line in logged)
+        {
+            Information("{0}", line);
+        }
+
+        if (exit != 0)
+        {
+            throw new CakeException($"taplo fmt --check exited {exit}.");
+        }
+
+        System.Text.RegularExpressions.Match found = System.Text.RegularExpressions.Regex.Match(
+            string.Join("\n", logged),
+            @"found files total=\d+ excluded=\d+ files=\[([^\]]*)\]"
+        );
+        if (!found.Success)
+        {
+            throw new CakeException(
+                "taplo exited 0 without logging the files it found, so the row cannot tell it checked any. taplo exits 0 when its file collection fails."
+            );
+        }
+
+        string[] reported =
+        [
+            .. System
+                .Text.RegularExpressions.Regex.Matches(found.Groups[1].Value, "\"([^\"]*)\"")
+                .Select(match => match.Groups[1].Value)
+                .Order(StringComparer.OrdinalIgnoreCase),
+        ];
+        string[] named =
+        [
+            .. files
+                .Select(file => System.IO.Path.GetFullPath(System.IO.Path.Combine(root, file)).Replace('\\', '/'))
+                .Order(StringComparer.OrdinalIgnoreCase),
+        ];
+        if (!reported.SequenceEqual(named, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new CakeException(
+                $"taplo checked {(reported.Length == 0 ? "no file" : string.Join(", ", reported.Select(Quoted)))}, and the row named {string.Join(", ", named.Select(Quoted))}. "
+                    + "taplo drops a named file its config excludes, and one it cannot find, and still exits 0."
+            );
+        }
     });
 
 // Both configurations: everything ships from Release, and the demo inventory behind #if DEBUG
@@ -250,16 +349,80 @@ static TomlTable ExpectedBunInstall() => new() { ["minimumReleaseAge"] = bunMini
 // --config, and the gate refuses every other file prettier would read as config.
 const string prettierConfig = "{\n  \"singleQuote\": true,\n  \"printWidth\": 120\n}\n";
 
+// .prettierignore, byte for byte. The prettier row names it with --ignore-path, which replaces
+// prettier's default pair, so .gitignore takes nothing out of the row.
+const string prettierIgnore = """
+    # C# is formatted by CSharpier, and prettier never sees it.
+
+    # Build output and repository tooling.
+    bin/
+    obj/
+    node_modules/
+    TestResults/
+
+    # Written by tools that own their format. NuGet regenerates the lock files, and release-please
+    # rewrites the changelog and its manifest on every release.
+    *packages.lock.json
+    CHANGELOG.md
+    .release-please-manifest.json
+
+    # Prettier reads .wxs as WeChat's script language and fails on WiX's XML.
+    *.wxs
+
+    # The gate's prettier row passes --ignore-path .prettierignore and reads no .gitignore, and holds
+    # this file to the text cake.cs names. These are the local paths .gitignore keeps out that prettier
+    # would read: the copies the Claude Code CLI checks out, a contributor's own Claude Code settings,
+    # and Visual Studio's folder.
+    .claude/worktrees/
+    .claude/settings.local.json
+    .vs/
+
+    """;
+
+// .taplo.toml, byte for byte. The toml row names every file itself, and taplo still drops a named
+// file this file's exclude matches.
+const string taploConfig = """
+    # Every TOML file this repository authors, formatted by `taplo fmt`. The gate's toml row names each
+    # .toml file in the tree to `taplo fmt --check` with this file, and holds this file to the text
+    # cake.cs names. mise.lock is written by `mise lock` and carries no .toml extension, so the pattern
+    # leaves it alone. A run that names no file walks every directory whatever .gitignore says, so the
+    # two that hold TOML files this repository does not author are excluded by name: node_modules, and
+    # the worktrees the Claude Code CLI checks out under .claude/worktrees.
+    include = ["**/*.toml"]
+    exclude = [".claude/worktrees/**", "node_modules/**"]
+
+    """;
+
+// .github/zizmor.yml, byte for byte. A rule there can disable an audit or ignore a finding.
+const string zizmorConfig = """
+    # zizmor's settings for this repository. Every audit not named here runs at zizmor's defaults. The
+    # gate holds this file to the text cake.cs names, since a rule here can disable an audit.
+    rules:
+      # Every action is pinned to a commit, including the ones GitHub publishes. A tag can be
+      # retargeted by its owner with no pull request and no cooldown, and this is what refuses one.
+      unpinned-uses:
+        config:
+          policies:
+            '*': hash-pin
+      # zizmor asks for seven days by default. The project standard is three, which is the window that
+      # catches almost every package published and then pulled while still letting a legitimate release
+      # land in the same week. A shorter cooldown still fails. A cooldown block removed entirely passes
+      # this audit.
+      dependabot-cooldown:
+        config:
+          days: 3
+
+    """;
+
 // The two mise data files, before anything installs from them. A lockfile that disagrees with its
 // pin is the likeliest fault after a bump, and an address in it is what an install fetches, so both
-// are read before the install rather than after. bunfig.toml, .prettierrc and the tree's other
-// config files are read here as well, so a pull request that changes one fails the first row. The
-// one process it starts is git, to list the tracked paths.
-// Nothing here resolves mise, so the task needs none on the machine, and check runs it ahead of
-// every other task.
+// are read before the install rather than after. bunfig.toml, the config files the other rows read
+// and the tree's other config files are read here as well, so a pull request that changes one fails
+// the first row. The one process it starts is git, to list the tracked paths. Nothing here resolves
+// mise, so the task needs none on the machine, and check runs it ahead of every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no tracked node_modules path, bunfig.toml and .prettierrc as cake.cs holds them, and no other Prettier or npm config"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no tracked node_modules path or .env file, bunfig.toml and every config file a row reads as cake.cs holds them, and no other Prettier or npm config"
     )
     .Does(() => RequireLockfile());
 
@@ -300,9 +463,26 @@ Task("workflows")
 
         FilePath actionlint = Verified(resolved, "actionlint");
 
+        // actionlint prints no file it checked, and with no file named it finds the workflows
+        // through a .git alone, so a git archive extraction fails it. The row names every workflow
+        // file under .github/workflows itself, prints them, and refuses an empty list.
+        string[] workflows =
+        [
+            .. TreeFiles()
+                .Where(file =>
+                    file.StartsWith(".github/workflows/", StringComparison.Ordinal)
+                    && !file[".github/workflows/".Length..].Contains('/')
+                    && (
+                        file.EndsWith(".yml", StringComparison.OrdinalIgnoreCase)
+                        || file.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase)
+                    )
+                )
+                .Order(StringComparer.Ordinal),
+        ];
+        RequireChecked("actionlint", workflows);
         Command(
             ["actionlint", "actionlint.exe"],
-            ProvenAnalyzers(actionlint, Verified(resolved, "shellcheck")),
+            $"{ProvenAnalyzers(actionlint, Verified(resolved, "shellcheck"))} {string.Join(" ", workflows.Select(file => $"\"{file}\""))}",
             settingsCustomization: settings => settings.WithToolPath(actionlint)
         );
 
@@ -312,7 +492,8 @@ Task("workflows")
         // .github with --collect=all: zizmor collects every workflow, .github/dependabot.yml and any
         // composite action there, and reads no ignore file, so no .gitignore, .git/info/exclude or
         // global excludes line can hide one. The walk stops at .github, so node_modules and
-        // .claude/worktrees are never read.
+        // .claude/worktrees are never read. zizmor logs each file it completes and exits non-zero
+        // when it collects none, so this row needs no list of its own.
         //
         // The online audits read the GitHub API. zizmor given neither a token nor --offline skips
         // them and says so at debug level alone, so every run without a token names --offline. On
@@ -353,9 +534,9 @@ RunTarget(target);
 void RequireLockfile()
 {
     RequireOnlyPinnedMiseFiles();
-    RequireNoTrackedNodeModules();
+    RequireNoRefusedTrackedPaths();
     RequireBunfig();
-    RequirePrettierConfig();
+    RequireHeldFiles();
     RequireNoConfigElsewhere();
     MiseConfig config = ReadMiseConfig("mise.toml");
     Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms, config.Versions);
@@ -707,14 +888,14 @@ FilePath RequireOnPath(string name, string install) =>
 FilePath Dotnet() => RequireOnPath("dotnet", "Install the .NET SDK global.json names.");
 
 // bunx for the prettier row, the one bun process the gate starts. The row passes --bun, so prettier
-// runs under this Bun rather than whichever node PATH names. The node_modules refusal and the Bun
-// and Prettier config checks run here as well as in the lockfile task, so no --target=prettier or
-// --exclusive run reaches bunx past them.
+// runs under this Bun rather than whichever node PATH names. The tracked-path refusals and the
+// config checks run here as well as in the lockfile task, so no --target=prettier or --exclusive
+// run reaches bunx past them.
 FilePath Bunx()
 {
-    RequireNoTrackedNodeModules();
+    RequireNoRefusedTrackedPaths();
     RequireBunfig();
-    RequirePrettierConfig();
+    RequireHeldFiles();
     RequireNoConfigElsewhere();
     return RequireOnPath("bunx", "Install Bun at the version package.json names.");
 }
@@ -913,17 +1094,20 @@ void RequireOnlyPinnedMiseFiles()
 // Every tracked path with a node_modules segment, in any case, since NTFS reads NODE_MODULES as the
 // same directory. bunx --no-install starts node_modules/.bin/<name> ahead of anything else, and bun
 // install keeps a package it finds already at the version bun.lock records, so a committed
-// node_modules/prettier still runs as prettier after the install. git answers what is tracked, so
-// the node_modules an install writes passes. An extraction from git archive has no .git at the root
-// and tracks nothing, so the check starts no git there and passes. No GIT_ variable reaches git, so
-// the repository and index it reads are the checkout's own, never ones a shell or hook exported.
-void RequireNoTrackedNodeModules()
+// node_modules/prettier still runs as prettier after the install. A tracked .env or .env.<name> at
+// the root is refused as well: Bun loads one into every process it starts, prettier and commitlint
+// included, and no bunx flag stops it. git answers what is tracked, so the node_modules an install
+// writes, and a contributor's own untracked .env, pass. An extraction from git archive has no .git at
+// the root and tracks nothing, so the check starts no git there and passes. No GIT_ variable reaches
+// git, so the repository and index it reads are the checkout's own, never ones a shell or hook
+// exported.
+void RequireNoRefusedTrackedPaths()
 {
     string root = Context.Environment.WorkingDirectory.FullPath;
     string dotGit = System.IO.Path.Combine(root, ".git");
     if (!System.IO.Directory.Exists(dotGit) && !System.IO.File.Exists(dotGit))
     {
-        Information("No .git at the root, so nothing is tracked and no node_modules path is refused.");
+        Information("No .git at the root, so nothing is tracked and no node_modules path or .env file is refused.");
         return;
     }
 
@@ -954,14 +1138,14 @@ void RequireNoTrackedNodeModules()
     if (process.ExitCode != 0)
     {
         throw new CakeException(
-            $"git ls-files exited {process.ExitCode} beside a .git at the root, so the gate cannot tell which node_modules paths are tracked."
+            $"git ls-files exited {process.ExitCode} beside a .git at the root, so the gate cannot tell which paths are tracked."
         );
     }
 
+    string[] tracked = listed.Split('\0', StringSplitOptions.RemoveEmptyEntries);
     string[] found =
     [
-        .. listed
-            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+        .. tracked
             .Where(path =>
                 path.Split('/').Any(segment => segment.Equals("node_modules", StringComparison.OrdinalIgnoreCase))
             )
@@ -972,6 +1156,26 @@ void RequireNoTrackedNodeModules()
         throw new CakeException(
             $"The repository tracks {string.Join(", ", found.Take(5).Select(Quoted))}{(found.Length > 5 ? $" and {found.Length - 5} more" : "")} under node_modules, and the gate takes no tracked node_modules path. "
                 + "bunx starts node_modules/.bin before anything else, and bun install keeps a package already at the version bun.lock records, so a committed file there runs in place of prettier."
+        );
+    }
+
+    string[] envFiles =
+    [
+        .. tracked
+            .Where(path =>
+                !path.Contains('/')
+                && (
+                    path.Equals(".env", StringComparison.OrdinalIgnoreCase)
+                    || path.StartsWith(".env.", StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            .Order(StringComparer.Ordinal),
+    ];
+    if (envFiles.Length > 0)
+    {
+        throw new CakeException(
+            $"The repository tracks {string.Join(", ", envFiles.Select(Quoted))} at the root, and the gate takes no tracked .env file. "
+                + "Bun loads one into every process it starts, prettier and commitlint included, and no bunx flag stops it."
         );
     }
 }
@@ -1048,19 +1252,44 @@ void RequireBunfig()
     }
 }
 
-// .prettierrc, byte for byte, against prettierConfig. prettier runs the modules a config names
-// under plugins, and loads the module a config written as a string names, so any change to the text
-// is refused rather than read.
-void RequirePrettierConfig()
+// Every config file a row reads that could load code or narrow what the row checks, each byte for
+// byte against the text cake.cs holds for it. prettier runs the modules .prettierrc names, and a
+// line in .prettierignore takes files out of the prettier row. .taplo.toml's exclude takes files out
+// of the toml row, and a rule in .github/zizmor.yml can disable an audit or ignore a finding. So any
+// change to one of these texts is refused rather than read. .github/actionlint.yaml, in either
+// extension, is refused outright: its paths block ignores actionlint's errors by pattern, and the
+// repository carries none.
+void RequireHeldFiles()
 {
-    const string path = ".prettierrc";
-    byte[] expected = System.Text.Encoding.UTF8.GetBytes(prettierConfig);
-    byte[] actual = System.IO.File.Exists(path) ? System.IO.File.ReadAllBytes(path) : [];
-    if (!actual.AsSpan().SequenceEqual(expected))
+    (string Path, string Text, string Why)[] held =
+    [
+        (".prettierrc", prettierConfig, "prettier runs the modules a config names"),
+        (".prettierignore", prettierIgnore, "a line there takes files out of the prettier row"),
+        (".taplo.toml", taploConfig, "its exclude takes files out of the toml row"),
+        (".github/zizmor.yml", zizmorConfig, "a rule there can disable an audit or ignore a finding"),
+    ];
+    foreach ((string path, string text, string why) in held)
+    {
+        byte[] expected = System.Text.Encoding.UTF8.GetBytes(text);
+        byte[] actual = System.IO.File.Exists(path) ? System.IO.File.ReadAllBytes(path) : [];
+        if (!actual.AsSpan().SequenceEqual(expected))
+        {
+            throw new CakeException(
+                $"{path} is {(actual.Length == 0 ? "missing or empty" : Quoted(System.Text.Encoding.UTF8.GetString(actual)))}, and the gate takes the text cake.cs holds for it alone, {Quoted(text)}. "
+                    + $"{why[..1].ToUpperInvariant()}{why[1..]}, so the file has to match cake.cs byte for byte."
+            );
+        }
+    }
+
+    string[] actionlintConfig =
+    [
+        .. ((string[])[".github/actionlint.yaml", ".github/actionlint.yml"]).Where(System.IO.File.Exists),
+    ];
+    if (actionlintConfig.Length > 0)
     {
         throw new CakeException(
-            $"{path} is {(actual.Length == 0 ? "missing or empty" : Quoted(System.Text.Encoding.UTF8.GetString(actual)))}, and the gate takes {Quoted(prettierConfig)} alone, the text every repository shares. "
-                + "prettier runs the modules a config names, so the file has to match cake.cs byte for byte."
+            $"The repository holds {string.Join(", ", actionlintConfig.Select(Quoted))}, and the gate takes no actionlint config. "
+                + "Its paths block ignores actionlint's errors by pattern, so a workflow it names is never checked."
         );
     }
 }
@@ -1072,12 +1301,9 @@ void RequirePrettierConfig()
 // reads no YAML. A package.json is refused when it names prettier, or when it does not read as a
 // JSON object, since Bun's reader takes more than JSON does. A .npmrc moves where bun install
 // downloads from. The prettier row passes --config, so the gate's own prettier searches for none of
-// these, and the refusal is for an editor's prettier and a contributor's own bun install.
-//
-// The walk is the file system, because an editor reads an untracked file too. It skips node_modules,
-// bin, obj and .git wherever they sit, and .claude/worktrees at the root, and matches every name
-// without regard to case, as NTFS does. A directory link is refused, since the files behind it are
-// ones the walk would never name.
+// these, and the refusal is for an editor's prettier and a contributor's own bun install. The walk
+// is TreeFiles, because an editor reads an untracked file too, and every name matches without regard
+// to case, as NTFS does.
 void RequireNoConfigElsewhere()
 {
     string[] prettierFiles =
@@ -1101,61 +1327,113 @@ void RequireNoConfigElsewhere()
         "prettier.config.cjs",
         "prettier.config.cts",
     ];
-    string[] skipped = ["node_modules", "bin", "obj", ".git"];
     string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
-    System.IO.EnumerationOptions options = new() { AttributesToSkip = 0, IgnoreInaccessible = false };
-    List<string> found = [];
-    Stack<string> pending = new([root]);
-    while (pending.TryPop(out string? directory))
-    {
-        foreach (
-            System.IO.FileSystemInfo entry in new System.IO.DirectoryInfo(directory).EnumerateFileSystemInfos(
-                "*",
-                options
-            )
-        )
-        {
-            string relative = System.IO.Path.GetRelativePath(root, entry.FullName).Replace('\\', '/');
-            string name = entry.Name;
-            if (entry is System.IO.DirectoryInfo)
+    string[] found =
+    [
+        .. TreeFiles()
+            .Where(relative =>
             {
-                if (skipped.Contains(name, StringComparer.Ordinal) || relative == ".claude/worktrees")
-                {
-                    continue;
-                }
-
-                if (entry.LinkTarget is not null)
-                {
-                    found.Add($"{Quoted(relative)} (a directory link)");
-                    continue;
-                }
-
-                pending.Push(entry.FullName);
-                continue;
-            }
-
-            bool config =
-                name.Equals(".npmrc", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("package.yaml", StringComparison.OrdinalIgnoreCase)
-                || (
-                    prettierFiles.Contains(name, StringComparer.OrdinalIgnoreCase)
-                    && !(relative == ".prettierrc" && name == ".prettierrc")
-                )
-                || (name.Equals("package.json", StringComparison.OrdinalIgnoreCase) && NamesPrettier(entry.FullName));
-            if (config)
-            {
-                found.Add(Quoted(relative));
-            }
-        }
-    }
-
-    if (found.Count > 0)
+                string name = System.IO.Path.GetFileName(relative);
+                return name.Equals(".npmrc", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("package.yaml", StringComparison.OrdinalIgnoreCase)
+                    || (
+                        prettierFiles.Contains(name, StringComparer.OrdinalIgnoreCase)
+                        && !(relative == ".prettierrc" && name == ".prettierrc")
+                    )
+                    || (
+                        name.Equals("package.json", StringComparison.OrdinalIgnoreCase)
+                        && NamesPrettier(System.IO.Path.Combine(root, relative))
+                    );
+            })
+            .Select(Quoted)
+            .Order(StringComparer.Ordinal),
+    ];
+    if (found.Length > 0)
     {
         throw new CakeException(
-            $"The tree holds {string.Join(", ", found.Order(StringComparer.Ordinal))}, and the gate takes no config for prettier but the root .prettierrc, no .npmrc and no directory link. "
+            $"The tree holds {string.Join(", ", found)}, and the gate takes no config for prettier but the root .prettierrc, and no .npmrc. "
                 + "prettier runs the modules a config file names, and a .npmrc moves where bun install downloads from."
         );
     }
+}
+
+// Every file in the tree, relative to the root with forward slashes, for the refusals and rows that
+// read the tree rather than handing a tool a directory. It skips node_modules, bin, obj and .git
+// wherever they sit, and .claude/worktrees and .vs at the root, where agents and IDEs write. A
+// directory link is refused, since the files behind it are ones no check here would name. A
+// directory the gate cannot list, or one deleted while the walk reads it, is refused by name as
+// well, so a row fails rather than checking a shorter list than the tree holds.
+List<string> TreeFiles()
+{
+    string[] skipped = ["node_modules", "bin", "obj", ".git"];
+    string[] skippedAtRoot = [".claude/worktrees", ".vs"];
+    string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+    System.IO.EnumerationOptions options = new() { AttributesToSkip = 0, IgnoreInaccessible = false };
+    List<string> files = [];
+    List<string> refused = [];
+    Stack<string> pending = new([root]);
+    while (pending.TryPop(out string? directory))
+    {
+        string here = System.IO.Path.GetRelativePath(root, directory).Replace('\\', '/');
+        System.IO.FileSystemInfo[] entries;
+        try
+        {
+            entries = [.. new System.IO.DirectoryInfo(directory).EnumerateFileSystemInfos("*", options)];
+        }
+        catch (Exception error) when (error is UnauthorizedAccessException or System.IO.IOException)
+        {
+            refused.Add($"{Quoted(here)} (unreadable: {error.GetType().Name})");
+            continue;
+        }
+
+        foreach (System.IO.FileSystemInfo entry in entries)
+        {
+            string relative = System.IO.Path.GetRelativePath(root, entry.FullName).Replace('\\', '/');
+            if (entry is not System.IO.DirectoryInfo)
+            {
+                files.Add(relative);
+                continue;
+            }
+
+            if (
+                skipped.Contains(entry.Name, StringComparer.Ordinal)
+                || skippedAtRoot.Contains(relative, StringComparer.Ordinal)
+            )
+            {
+                continue;
+            }
+
+            if (entry.LinkTarget is not null)
+            {
+                refused.Add($"{Quoted(relative)} (a directory link)");
+                continue;
+            }
+
+            pending.Push(entry.FullName);
+        }
+    }
+
+    if (refused.Count > 0)
+    {
+        throw new CakeException(
+            $"The tree holds {string.Join(", ", refused.Order(StringComparer.Ordinal))}, and the gate reads every directory it does not skip. "
+                + "The files behind a link or an unreadable directory are ones no check here would name."
+        );
+    }
+
+    return files;
+}
+
+// The files a row hands its tool, printed, and refused when there are none. A tool given nothing to
+// check can exit 0, and a row that checked nothing proves nothing.
+void RequireChecked(string row, IReadOnlyCollection<string> files)
+{
+    if (files.Count == 0)
+    {
+        throw new CakeException($"The {row} row found no file to check, and a row that checks nothing proves nothing.");
+    }
+
+    Information("{0} checks {1} files: {2}", row, files.Count, string.Join(", ", files));
 }
 
 // Whether a package.json names a prettier config for prettier to load, as far as the gate can tell:
