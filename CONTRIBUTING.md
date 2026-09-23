@@ -99,8 +99,9 @@ change that adds the area.
 The commit message is where the history of a change goes: what was wrong, what the change does, and
 why an approach was rejected. Code comments describe the code as it is now.
 
-A pull request merges by squash, merge or rebase. A squash of several commits takes the pull
-request's title as its subject, which is why the title is held to the same rules.
+A pull request merges by squash alone, and the branch is deleted after. A one-commit pull request
+lands under that commit's subject and a longer one under the pull request's title, each with the
+pull request number appended, which is why the title is held to the same rules.
 
 The ruleset on `main` requires one approving review from a code owner, and `CODEOWNERS` names the
 owner alone. GitHub does not count an author's approval of their own pull request, so `gh pr merge`
