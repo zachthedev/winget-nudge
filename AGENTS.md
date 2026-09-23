@@ -22,11 +22,11 @@ bind an agent as they bind a person.
   the user asks. They change this machine's scheduled tasks, notification registration and installed
   packages, and the real scheduled tasks here run the installed app.
 - Never edit the version in `Directory.Build.props` or `CHANGELOG.md` by hand
-  ([releases](CONTRIBUTING.md#releases)).
+  ([what never happens](CONTRIBUTING.md#what-never-happens)).
 - Never hand-edit `mise.lock` ([what never happens](CONTRIBUTING.md#what-never-happens)).
 - Never disable an analyzer, suppress a finding or delete an assertion to make the gate pass
   ([what never happens](CONTRIBUTING.md#what-never-happens)).
-- Never invent a commit scope ([commit messages](CONTRIBUTING.md#commit-messages)).
+- Never invent a commit scope ([what never happens](CONTRIBUTING.md#what-never-happens)).
 
 ## Deviations
 

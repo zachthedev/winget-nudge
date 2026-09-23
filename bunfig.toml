@@ -1,16 +1,9 @@
-# Bun's install gate for this repository.
-#
-# A version published minutes ago is the shape a compromised package arrives in, and most are
-# pulled within hours. Three days is the window this project refuses to install inside.
-#
-# Renovate's lock file maintenance and continuous integration run `bun install` in containers that
-# carry no other configuration, so this file is the three-day cooldown for Bun's own resolution
-# there, and the one place a transitive dependency's publish age is checked.
-#
-# A security fix is the case this holds back wrongly. Renovate raises the range to the fixed
-# version, `bun install` refuses it as too young, and the pull request goes red rather than quietly
-# keeping the vulnerable version. Audit the version, then run
-# `bun install --minimum-release-age 0` once to write the lock file.
-
+# Bun waits three days before resolving a newly published version, the window
+# in which a malicious release is usually pulled. The maintainer's own
+# ~/.bunfig.toml carries the same value and stays outside the repository. This
+# copy exists because Renovate's weekly lock file maintenance runs `bun install`
+# inside a container that has no user-level config, and Renovate applies no
+# cooldown to that update type. Without this file a transitive dependency
+# published minutes ago lands in bun.lock there.
 [install]
-minimumReleaseAge = 259200
+minimumReleaseAge = 259200 # 3 days

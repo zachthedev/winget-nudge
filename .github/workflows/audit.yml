@@ -10,15 +10,19 @@ name: audit
 # a stale action ref, a known-vulnerable action. Those answers change with no pull request, so a
 # schedule is what asks again.
 on:
-  # Weekly. The hour is clear of the deps and CodeQL crons.
   schedule:
+    # Weekly, Monday, clear of the deps and CodeQL crons. The audit job's if: names this string.
     - cron: '23 7 * * 1'
+    # Weekly, an hour later. The workflows job's if: names this string.
+    - cron: '23 8 * * 1'
   workflow_dispatch:
 
 permissions: {}
 
 jobs:
+  # The first weekly clock, and every dispatch. The schedule context carries the cron that fired.
   audit:
+    if: github.event_name != 'schedule' || github.event.schedule == '23 7 * * 1'
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
@@ -42,9 +46,11 @@ jobs:
             --no-restore | tee advisories.txt
           printf '~~~\n%s\n~~~\n' "$(cat advisories.txt)" >> "$GITHUB_STEP_SUMMARY"
 
-  # The calling job grants what the called job declares. The called workflow installs from
-  # mise.lock, so no install step of this repository's own runs here.
+  # The second weekly clock, and every dispatch. The calling job grants what the called job
+  # declares. The called workflow installs from mise.lock, so no install step of this repository's
+  # own runs here.
   workflows:
+    if: github.event_name != 'schedule' || github.event.schedule == '23 8 * * 1'
     permissions:
       contents: read
     uses: zachthedev/.github/.github/workflows/workflows.yml@c53d09e393028ceddee0d761f2a7963394289a72 # v0.1.0

@@ -1,6 +1,8 @@
 name: Wrong update
 description: An update is missing, listed when it should not be, or shown with the wrong age or notes.
 title: 'update: '
+# detection is a label beside the handbook's set, so triage can find every report of an update the
+# checker listed wrongly or missed.
 labels: ['bug', 'detection']
 body:
   - type: input

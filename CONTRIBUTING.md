@@ -61,7 +61,7 @@ one network request it makes is zizmor's online audit when `gh` holds a token. `
 with the attestations re-verified on a cold cache, so every pull request checks the artifacts
 `mise.lock` records rather than trusting the run that wrote them.
 
-Continuous integration is five workflow files under `.github/workflows`. The shared jobs call the
+Continuous integration is the workflow files under `.github/workflows`. The shared jobs call the
 reusable workflows in `zachthedev/.github`, pinned by commit with the version beside it:
 
 - `ci.yml`, on every pull request and push to `main`: `gate` runs `dotnet cake.cs --target=tools`
@@ -223,14 +223,18 @@ A release publishes through an advisory. Nothing blocks after the merge: users h
 they have until the next one, and the fix ships as the next version. Renovate's `security` group
 opens that bump without waiting for the schedule, and merging it cuts the release.
 
-Never edit the version in `Directory.Build.props` or `CHANGELOG.md` by hand. release-please owns
-both.
+release-please owns the version in `Directory.Build.props` and the whole of `CHANGELOG.md`.
 
 Release MSIs are unsigned for now. A local build signs when `Directory.Signing.props` names a
 certificate; [docs/dev.md](docs/dev.md) shows how.
 
 ## What never happens
 
+- No hand edit of the version in `Directory.Build.props` or of `CHANGELOG.md`. release-please
+  writes both from the commits in each release pull request, and a hand edit is overwritten by the
+  next one or disagrees with the tag it cuts.
+- No invented commit scope. commitlint accepts only the scopes `.github/commit-scopes.json` lists,
+  so an invented one fails the hook and the `commits` job; omit the scope instead.
 - No hand edit of `mise.lock`. Its entries are the addresses an install fetches and the checksums it
   verifies against, so a hand-written line is an address nobody verified. Write it with `mise lock`.
 - No analyzer disabled, finding suppressed or assertion deleted to make the gate pass without saying

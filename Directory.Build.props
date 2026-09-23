@@ -18,7 +18,7 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <!--
             Restore audits every package, transitive ones included, against nuget.org's advisory
-            database. The six audit codes warn rather than fail, so no build blocks on what the world
+            database. Every audit code warns rather than fails, so no build blocks on what the world
             discovers after a merge: NU1900 and NU1905 are a database restore could not reach, NU1901
             to NU1904 are advisories from low to critical. The weekly audit workflow in .github
             reports every finding. TreatWarningsAsErrors stays for every other warning.

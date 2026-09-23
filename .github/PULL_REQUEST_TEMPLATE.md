@@ -18,9 +18,11 @@ Paste the summary table `dotnet cake.cs` prints.
 
 ## Every change
 
+- [ ] Each commit follows Conventional Commits, with a scope from `.github/commit-scopes.json` or none.
+- [ ] The documentation says what a user sees, where this changes it.
+- [ ] A deviation from the handbook is recorded at its drift site.
 - [ ] Each new test states what the code should do, and none of them reaches winget, the Restart
       Manager, Task Scheduler or a notification.
-- [ ] The README says what a user sees, where this changes it.
 
 ## If this changes the UI
 

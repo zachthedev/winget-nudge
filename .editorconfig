@@ -1,14 +1,17 @@
+# http://editorconfig.org
 root = true
 
 [*]
-charset = utf-8
-end_of_line = lf
-insert_final_newline = true
 indent_style = space
 indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
 
-# CSharpier writes C# and the project XML at .csharpierrc's indentSize. PowerShell and nuget.config
-# are indented by hand at the same width. Prettier reads the 2 above for everything it formats.
+# The handbook base above, plus what this repository adds. CSharpier writes C# and the project XML
+# at .csharpierrc's indentSize. PowerShell and nuget.config are indented by hand at the same width.
+# Prettier reads the 2 above for everything it formats.
 [*.{cs,csproj,props,targets,xaml,slnx,ps1,config}]
 indent_size = 4
 
