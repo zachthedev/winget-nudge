@@ -7,10 +7,10 @@ the rules that apply to every change.
 
 [docs/dev.md](docs/dev.md#prerequisites) names the toolchain and the pin file each tool's version
 lives in. Install it before the first commit: `bun install` runs `lefthook install`, which writes
-the git hooks, and `mise trust` then `mise install` put the workflow linters on disk. The hooks fail
-closed. The commit-msg hook fails with no message on a clone where `bun install` never ran, because
-`bunx --no-install` refuses to fetch commitlint, and the pre-push hook runs the whole gate, which
-stops at a linter mise has not installed.
+the git hooks, and `mise trust` then `mise install` put the workflow linters on disk. A clone where
+`bun install` never ran has no hooks, so git commits and pushes with no local check. A hook that
+cannot find lefthook prints `Can't find lefthook in PATH` and exits 0. The control is continuous
+integration: the `commits` job lints every commit message, and the `gate` job runs the whole gate.
 
 The committed `.claude/settings.json` pre-approves read-only git commands and nothing else, and
 denies the `--output` form of `git diff`, `git log` and `git show`, which writes a file. A branch
