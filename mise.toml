@@ -4,8 +4,13 @@
 #
 # taplo's release predates GitHub's asset digests and its registry entry names no checksum file, so
 # `mise lock` records no checksum for it. Its two checksum lines are the sha256 of the artifact at
-# each recorded url, computed once from a download, and a relock keeps them. A bump to a release
-# that carries a digest removes the exception.
+# each recorded url, and a relock at the same version keeps them. On 2026-09-22 separate reads of
+# each url hashed to its line. For linux-x64 they were a download through Invoke-WebRequest and one
+# through curl. For windows-x64 they were a download through Invoke-WebRequest and a cold locked
+# `mise install`, which accepted the line, and the taplo.exe in that zip matched the one mise
+# installed on the maintainer's machine at 2026-09-20 04:25 UTC. Every read fetched GitHub's
+# release asset, and no second publisher records a hash for it, so the lines rest on that asset
+# alone. A bump to a release that carries a digest removes the exception.
 
 [tools]
 actionlint = "1.7.12"

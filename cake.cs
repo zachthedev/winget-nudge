@@ -40,7 +40,8 @@ Task("toml")
     .IsDependentOn("lockfile")
     .Does(() =>
     {
-        FilePath taplo = Installed(RequireMise(), "taplo");
+        MiseConfig config = ReadMiseConfig("mise.toml");
+        FilePath taplo = Installed(RequireMise(), "taplo", Pinned(config, "taplo"));
         Command(
             ["taplo", "taplo.exe"],
             "fmt --check --config .taplo.toml",
@@ -125,7 +126,11 @@ const string shellCheckFinding = "SC2086";
 
 // What the gate knows about each tool beside the version mise.toml pins. The aqua repository is
 // here because mise.lock's backend and url are the address an install fetches from, and the file a
-// bump rewrites wholesale is not where the expected owner can live.
+// bump rewrites wholesale is not where the expected owner can live. The tag prefix and the asset
+// for each lockfile platform finish that address, with {version} standing for the pin, so the url
+// in mise.lock has to be one exact string. mise fetches the url_api asset id in its place when the
+// url answers 404, and nothing offline ties that id to a release, so the url is what keeps an
+// install on the pinned asset.
 //
 // Attested names the two aqua declares a signer workflow for, so mise verifies a GitHub attestation
 // and records it. koalaman/shellcheck declares neither a signer workflow nor a checksums file at
@@ -134,10 +139,46 @@ const string shellCheckFinding = "SC2086";
 // entry carries the checksum mise.toml says how to compute.
 Dictionary<string, MisePin> misePins = new(StringComparer.Ordinal)
 {
-    ["actionlint"] = new("rhysd/actionlint", Attested: true),
-    ["shellcheck"] = new("koalaman/shellcheck", Attested: false),
-    ["taplo"] = new("tamasfe/taplo", Attested: false),
-    ["zizmor"] = new("zizmorcore/zizmor", Attested: true),
+    ["actionlint"] = new(
+        "rhysd/actionlint",
+        "v",
+        new(StringComparer.Ordinal)
+        {
+            ["linux-x64"] = "actionlint_{version}_linux_amd64.tar.gz",
+            ["windows-x64"] = "actionlint_{version}_windows_amd64.zip",
+        },
+        Attested: true
+    ),
+    ["shellcheck"] = new(
+        "koalaman/shellcheck",
+        "v",
+        new(StringComparer.Ordinal)
+        {
+            ["linux-x64"] = "shellcheck-v{version}.linux.x86_64.tar.xz",
+            ["windows-x64"] = "shellcheck-v{version}.zip",
+        },
+        Attested: false
+    ),
+    ["taplo"] = new(
+        "tamasfe/taplo",
+        "",
+        new(StringComparer.Ordinal)
+        {
+            ["linux-x64"] = "taplo-linux-x86_64.gz",
+            ["windows-x64"] = "taplo-windows-x86_64.zip",
+        },
+        Attested: false
+    ),
+    ["zizmor"] = new(
+        "zizmorcore/zizmor",
+        "v",
+        new(StringComparer.Ordinal)
+        {
+            ["linux-x64"] = "zizmor-x86_64-unknown-linux-gnu.tar.gz",
+            ["windows-x64"] = "zizmor-x86_64-pc-windows-msvc.zip",
+        },
+        Attested: true
+    ),
 };
 
 // The host each address in mise.lock has to name, and the path under it. A url elsewhere is an
@@ -213,7 +254,7 @@ Task("workflows")
         Dictionary<string, FilePath> resolved = new(StringComparer.Ordinal);
         foreach (string tool in tools)
         {
-            resolved[tool] = Installed(mise, tool);
+            resolved[tool] = Installed(mise, tool, config.Versions[tool]);
         }
 
         FilePath actionlint = Verified(resolved, "actionlint");
@@ -269,11 +310,32 @@ MiseConfig ReadMiseConfig(string path)
         foreach (KeyValuePair<string, object> pin in declared)
         {
             // mise takes a table form too, which pins a version the gate would then never assert.
-            versions[pin.Key] =
+            string version =
                 pin.Value as string
                 ?? throw new CakeException(
                     $"{path} pins {pin.Key} as something other than a version string, and the gate asserts a string pin alone."
                 );
+
+            // The pin goes into the url the lockfile task builds and the path segment Installed compares.
+            // It is held to characters that add no separator, escape or space to either.
+            if (version.Length == 0)
+            {
+                throw new CakeException(
+                    $"{path} pins {pin.Key} as an empty string, and the gate takes ASCII letters, digits, '.', '+' and '-' alone."
+                );
+            }
+
+            for (int index = 0; index < version.Length; index++)
+            {
+                if (!char.IsAsciiLetterOrDigit(version[index]) && version[index] is not ('.' or '+' or '-'))
+                {
+                    throw new CakeException(
+                        $"{path} pins {pin.Key} as \"{version}\" with U+{(int)version[index]:X4} at index {index}, and the gate takes ASCII letters, digits, '.', '+' and '-' alone."
+                    );
+                }
+            }
+
+            versions[pin.Key] = version;
         }
     }
 
@@ -409,8 +471,30 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
     if (!misePins.TryGetValue(tool, out MisePin? pin))
     {
         throw new CakeException(
-            $"mise.toml declares {tool}, and cake.cs records no pin for it. Add its aqua repository to misePins."
+            $"mise.toml declares {tool}, and cake.cs records no pin for it. Add its aqua repository, tag prefix and assets to misePins."
         );
+    }
+
+    // Every lockfile platform needs the asset this file expects there. An asset for a platform the
+    // list does not name is an expectation nothing reads, so it is refused too.
+    foreach (string platform in platforms)
+    {
+        if (!pin.Assets.ContainsKey(platform))
+        {
+            throw new CakeException(
+                $"mise.toml's lockfile_platforms names {platform}, and cake.cs names no {platform} asset for {tool}. Add it to misePins."
+            );
+        }
+    }
+
+    foreach (string named in pin.Assets.Keys)
+    {
+        if (!platforms.Contains(named, StringComparer.Ordinal))
+        {
+            throw new CakeException(
+                $"cake.cs names a {named} asset for {tool}, and mise.toml's lockfile_platforms does not name {named}. Remove it from misePins."
+            );
+        }
     }
 
     string backend = $"aqua:{pin.Repository}";
@@ -430,8 +514,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         }
 
         // specifiers is the field mise selects an entry on, and version is what it installs, so
-        // both have to be the one pin exactly. A prefix such as 1.7 would pass the url check below
-        // and fail only at install time, on the leg that has mise.
+        // both have to be the one pin exactly.
         if (artifact.Version != version || !artifact.Specifiers.SequenceEqual([version], StringComparer.Ordinal))
         {
             throw new CakeException(
@@ -450,29 +533,34 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
             );
         }
 
-        RequireArtifactAddress(
-            tool,
-            platform,
-            "url",
-            artifact.Url,
-            releaseHost,
-            $"/{pin.Repository}/releases/download/",
-            version,
-            relock
-        );
+        // The url is compared whole against the address this file builds, so no URL parser stands
+        // between the check and the text mise reads.
+        string asset = pin.Assets[platform].Replace("{version}", version, StringComparison.Ordinal);
+        string url = $"https://{releaseHost}/{pin.Repository}/releases/download/{pin.TagPrefix}{version}/{asset}";
+        RequireAddressText(tool, platform, "url", artifact.Url);
+        if (!string.Equals(artifact.Url, url, StringComparison.Ordinal))
+        {
+            throw new CakeException(
+                $"mise.lock records {tool} {platform} url as \"{artifact.Url}\", and cake.cs builds {url} from the pin. "
+                    + $"An install fetches the url, so the gate takes that address alone. Write it again with: {relock}"
+            );
+        }
 
-        // mise writes both addresses into every entry, so one with a single address is not one mise
-        // wrote, and the gate refuses it rather than passing an address it cannot assert.
-        RequireArtifactAddress(
-            tool,
-            platform,
-            "url_api",
-            artifact.UrlApi,
-            releaseApiHost,
-            $"/repos/{pin.Repository}/releases/",
-            "",
-            relock
-        );
+        // An asset id names no release offline, so url_api is held to its shape alone: one asset of
+        // the tool's own repository. mise reaches it only when the url above answers 404.
+        string assets = $"https://{releaseApiHost}/repos/{pin.Repository}/releases/assets/";
+        RequireAddressText(tool, platform, "url_api", artifact.UrlApi);
+        if (
+            !artifact.UrlApi.StartsWith(assets, StringComparison.Ordinal)
+            || artifact.UrlApi.Length == assets.Length
+            || !artifact.UrlApi[assets.Length..].All(char.IsAsciiDigit)
+        )
+        {
+            throw new CakeException(
+                $"mise.lock records {tool} {platform} url_api as \"{artifact.UrlApi}\", and the gate takes {assets} followed by an asset id alone. "
+                    + $"mise fetches it when the url answers 404. Write it again with: {relock}"
+            );
+        }
 
         // The aqua entries for ShellCheck and taplo declare no signer workflow, so mise has no
         // attestation to verify for either and each entry carries a checksum alone.
@@ -494,22 +582,13 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
     }
 }
 
-// One address mise.lock hands an install, read as a URI rather than as text. A host is where the
-// bytes come from, and a substring match over the text passes an address whose host is somewhere
-// else entirely. https, the default port, that exact host, and the path the tool's own releases sit
-// under; the pinned version has to appear in the path of the address the artifact downloads from,
-// so an entry cannot point at another release of the same repository either. An entry with no
-// address at all is refused by name, since mise writes one into every entry.
-void RequireArtifactAddress(
-    string tool,
-    string platform,
-    string field,
-    string address,
-    string host,
-    string prefix,
-    string version,
-    string relock
-)
+// The raw text of one address mise.lock hands an install, checked before anything compares it. A
+// control or whitespace character, a percent escape, a backslash and a dot segment are each text one
+// parser rewrites and another reads as written. A check and an install could then disagree on where
+// the bytes come from. An https URL parser reads a backslash as a path separator, and the dot segment
+// check splits on '/' alone. mise writes none of them, and it writes both addresses into every entry
+// it locks, so an empty one is refused as well.
+void RequireAddressText(string tool, string platform, string field, string address)
 {
     if (address.Length == 0)
     {
@@ -518,29 +597,51 @@ void RequireArtifactAddress(
         );
     }
 
-    bool sound =
-        Uri.TryCreate(address, UriKind.Absolute, out Uri? uri)
-        && uri.Scheme == Uri.UriSchemeHttps
-        && uri.IsDefaultPort
-        && uri.Host.Equals(host, StringComparison.OrdinalIgnoreCase)
-        && uri.AbsolutePath.StartsWith(prefix, StringComparison.Ordinal)
-        && (version.Length == 0 || uri.AbsolutePath.Contains(version, StringComparison.Ordinal));
+    for (int index = 0; index < address.Length; index++)
+    {
+        if (char.IsControl(address[index]) || char.IsWhiteSpace(address[index]))
+        {
+            throw new CakeException(
+                $"mise.lock records {tool} {platform} {field} with U+{(int)address[index]:X4} at index {index}, and an address mise writes carries no control or whitespace character. Write it again with: {relock}"
+            );
+        }
+    }
 
-    if (!sound)
+    if (address.Contains('%', StringComparison.Ordinal))
     {
         throw new CakeException(
-            $"mise.lock records {tool} {platform} {field} as \"{address}\", and an install from this lockfile fetches that address. "
-                + $"The gate takes https://{host}{prefix}"
-                + (version.Length == 0 ? "" : $" carrying {version}")
-                + $" alone. Write it again with: {relock}"
+            $"mise.lock records {tool} {platform} {field} as \"{address}\", and an address mise writes carries no percent escape. Write it again with: {relock}"
+        );
+    }
+
+    if (address.Contains('\\', StringComparison.Ordinal))
+    {
+        throw new CakeException(
+            $"mise.lock records {tool} {platform} {field} as \"{address}\", and an address mise writes carries no backslash. Write it again with: {relock}"
+        );
+    }
+
+    if (address.Split('/').Any(segment => segment is "." or ".."))
+    {
+        throw new CakeException(
+            $"mise.lock records {tool} {platform} {field} as \"{address}\", and an address mise writes carries no . or .. segment. Write it again with: {relock}"
         );
     }
 }
 
+// The version mise.toml pins for a tool the gate runs by name.
+string Pinned(MiseConfig config, string tool) =>
+    config.Versions.TryGetValue(tool, out string? version)
+        ? version
+        : throw new CakeException($"The gate runs {tool}, and mise.toml declares no such tool.");
+
 // Hands back the file mise resolved for the tool, so a caller runs that path rather than resolving
-// the name a second time and trusting the two answers to match. mise which answers from the
-// install the lockfile task passed, in locked mode, so the path is the pinned version's.
-FilePath Installed(FilePath mise, string tool)
+// the name a second time and trusting the two answers to match. mise which honors
+// MISE_<TOOL>_VERSION from the environment in locked mode too, and answers with any install of that
+// version already on disk. On Windows, mise puts each tool the gate runs directly in
+// <tool>/<version>. The path has to end in the tool, the pinned version and the file. The pair is
+// read at the end because the data directory above it is whatever the environment names.
+FilePath Installed(FilePath mise, string tool, string version)
 {
     int lookup = StartProcess(
         mise,
@@ -556,6 +657,16 @@ FilePath Installed(FilePath mise, string tool)
     if (lookup != 0 || resolved.Length == 0)
     {
         throw new CakeException($"mise which {tool} found nothing. Install it with: mise install");
+    }
+
+    string[] segments = resolved.Split(['/', '\\']);
+    if (segments.Length < 3 || segments[^3] != tool || segments[^2] != version)
+    {
+        throw new CakeException(
+            $"mise which {tool} resolved {resolved}, and mise.toml pins {tool} {version}, so the gate refuses to run it. "
+                + $"The gate runs a path ending in {tool}, {version} and the file alone. "
+                + $"Something in the environment, such as MISE_{tool.ToUpperInvariant()}_VERSION, chose another install."
+        );
     }
 
     return new FilePath(resolved);
@@ -658,8 +769,10 @@ sealed record MiseArtifact(
 
 /// <summary>What cake.cs knows about one pinned tool, beside the version mise.toml carries.</summary>
 /// <param name="Repository">The GitHub repository aqua resolves the artifact from, as owner/name.</param>
+/// <param name="TagPrefix">What the release tag carries ahead of the version.</param>
+/// <param name="Assets">The release asset mise.lock fetches on each platform, with {version} for the pin.</param>
 /// <param name="Attested">Whether aqua declares a signer workflow, so mise records provenance.</param>
-sealed record MisePin(string Repository, bool Attested);
+sealed record MisePin(string Repository, string TagPrefix, Dictionary<string, string> Assets, bool Attested);
 
 /// <summary>What mise.toml declares: the pinned version of each tool, and the platforms the lockfile carries.</summary>
 /// <param name="Versions">Tool name to the version mise.toml pins.</param>

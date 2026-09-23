@@ -178,7 +178,9 @@ directory the test owns.
   each version resolved to. Both legs install from those two files, so no pin is asserted against a
   copy of itself. Renovate rewrites both in one pull request by running `mise lock`. The pins sit in
   a data file rather than in `cake.cs`, because a formatter moves source and a pin that moves is a
-  pin no tool can read.
+  pin no tool can read. A pin holds ASCII letters, digits, `.`, `+` and `-` alone, and the gate
+  refuses any other character. Each pin becomes part of the `url` the gate asserts and the path it
+  runs.
 - mise verifies a GitHub build attestation for actionlint and zizmor, because aqua's registry
   declares a signer workflow for each. It verifies none for ShellCheck. `koalaman/shellcheck`
   declares neither a signer workflow nor a checksums file at any version constraint, so ShellCheck's
@@ -189,12 +191,17 @@ directory the test owns.
   lines are the sha256 of the artifact at each recorded url, computed as `mise.toml` says, and a
   relock at the same version keeps them. A taplo bump drops them, so its pull request stays red at
   `lockfile` until the new hashes are computed and committed in the same change.
-- The gate also asserts the `backend`, `url` and `url_api` of every entry against the aqua
-  repository `cake.cs` names for that tool. Those three are what an install fetches, so a provenance
-  line beside an address somewhere else would be a claim about bytes nobody downloads. The expected
-  owner lives in `cake.cs` rather than in `mise.lock`, so moving an install takes an edit to both.
-  `url` also has to carry the pinned version, which keeps an entry from naming an older release of
-  the right repository.
+- The gate also asserts the `backend`, `url` and `url_api` of every entry against what `cake.cs`
+  names for that tool. Those three are what an install fetches, so a provenance line beside an
+  address somewhere else would be a claim about bytes nobody downloads. `url` has to equal, byte
+  for byte, the address `cake.cs` builds from the tool's repository, its tag prefix, the pinned
+  version and the asset it names for that platform. `url_api` has to be an asset id under the same
+  repository. An address carrying a control or whitespace character, a percent escape, a backslash,
+  or a `.` or `..` segment is refused before any comparison. The expected owner and assets live in
+  `cake.cs` rather than in `mise.lock`, so moving an install takes an edit to both.
+- mise fetches `url_api` in place of `url` when `url` answers 404, and nothing offline ties the
+  asset id in it to a release. An id naming another asset of the right repository passes the gate.
+  The whole-`url` comparison is what keeps an install off that path.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
