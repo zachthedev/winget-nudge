@@ -136,8 +136,13 @@ on a review. Wait for green checks before running it, because a bypass enforces 
   preferences, manual tools, release notes, the upgrade engine, registration.
 - `src/WingetNudge`: the WinUI 3 app, its windows, the notification and the command-line verbs.
 - `tests/WingetNudge.Core.Tests`: the xUnit v3 suite over Core, and `RequirementsTests`, which binds
-  `docs/install.md` to `Directory.Packages.props`.
+  `docs/install.md` to `Directory.Packages.props`. `RuntimeRequirementTests` covers the installer's
+  runtime check, whose decision logic the suite compiles in from `installer/CustomActions`.
 - `installer`: the WiX project for the per-user MSI.
+- `installer/CustomActions`: the custom action setup runs before it changes anything. It finds the
+  Windows App Runtime the app needs among the packages registered for the installing user. It
+  targets .NET Framework 4.7.2, because WiX's DTF host runs a managed custom action in the .NET
+  Framework.
 - `tools`: build-time scripts. `Update-WingetErrorCodes.ps1` regenerates
   `src/WingetNudge.Core/Packages/WingetErrorCodes.g.cs` from `winget error --output`.
 
@@ -204,7 +209,12 @@ directory the test owns.
   has no clone to read `Directory.Packages.props` from. `RequirementsTests` binds each to its pin:
   `WinGetVersion` at major.minor, and the `Microsoft.WindowsAppSDK` version whole, because the app's
   bootstrapper refuses an older runtime. A pull request that moves either stays red until the
-  Requirements section names the new version.
+  Requirements section names the new version. The installer's runtime check follows the same bump
+  with no edit, because the build reads the runtime package the app resolved.
+- `WixToolset.Sdk` in `installer/WingetNudge.Installer.wixproj` and the two `WixToolset.Dtf` packages
+  in `Directory.Packages.props` are one WiX release. `.github/renovate.json` groups them into one
+  pull request. WiX 7 builds neither project until its Open Source Maintenance Fee EULA is
+  accepted, which `AcceptEula` in `Directory.Build.props` does for both.
 - The workflow linters and taplo are pinned in `mise.toml`, and `mise.lock` records the artifact
   each version resolved to. Both legs install from those two files, so no pin is asserted against a
   copy of itself. Renovate rewrites both in one pull request by running `mise lock`. The pins sit in

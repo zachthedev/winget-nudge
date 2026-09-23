@@ -4,6 +4,7 @@
     <OutputType>Package</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
     <AppProject>..\src\WingetNudge\WingetNudge.csproj</AppProject>
+    <CustomActionsProject>CustomActions\WingetNudge.CustomActions.csproj</CustomActionsProject>
     <PublishDir>$(MSBuildThisFileDirectory)..\src\WingetNudge\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\</PublishDir>
     <!-- Version and manufacturer come from Directory.Build.props so the MSI and the exe never disagree. -->
     <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(Version);Manufacturer=$(Authors)</DefineConstants>
@@ -38,6 +39,114 @@
     <Error
       Condition="'@(WindowsMLNative)' != ''"
       Text="$(PublishDir) carries @(WindowsMLNative->'%(RecursiveDir)%(Filename)%(Extension)', ', '). The Windows App Runtime supplies the Windows ML natives, and DropWindowsMLNativesFromPublish in src\WingetNudge\WingetNudge.csproj did not remove them."
+    />
+  </Target>
+
+  <!--
+    Setup refuses without the Windows App Runtime the app's bootstrapper requires, so the package and
+    minimum version come from the runtime package the app resolved, and a Microsoft.WindowsAppSDK bump
+    moves them.
+  -->
+  <Target Name="DefineWindowsAppRuntime" BeforeTargets="BeforeBuild">
+    <MSBuild Projects="$(AppProject)" Targets="GetWindowsAppRuntime" Properties="Configuration=Release">
+      <Output TaskParameter="TargetOutputs" ItemName="WindowsAppRuntime" />
+    </MSBuild>
+    <PropertyGroup>
+      <WindowsAppRuntimePackage>@(WindowsAppRuntime)</WindowsAppRuntimePackage>
+      <WindowsAppRuntimeVersion>@(WindowsAppRuntime->'%(Version)')</WindowsAppRuntimeVersion>
+    </PropertyGroup>
+    <Error
+      Condition="'$(WindowsAppRuntimePackage)' == '' or '$(WindowsAppRuntimeVersion)' == ''"
+      Text="$(AppProject) resolved no Windows App Runtime package and version."
+    />
+    <PropertyGroup>
+      <DefineConstants>$(DefineConstants);WindowsAppRuntimePackage=$(WindowsAppRuntimePackage);WindowsAppRuntimeVersion=$(WindowsAppRuntimeVersion)</DefineConstants>
+      <DefineConstants>$(DefineConstants);WindowsAppRuntimeDisplayVersion=$([System.Version]::Parse('$(WindowsAppRuntimeVersion)').ToString(3))</DefineConstants>
+      <DefineConstants>$(DefineConstants);WindowsAppRuntimeMajor=$([System.Version]::Parse('$(WindowsAppRuntimeVersion)').Major)</DefineConstants>
+    </PropertyGroup>
+  </Target>
+
+  <!-- The custom action runs in the installer's own process architecture, so its native host matches the package. -->
+  <Target Name="BuildCustomActions" BeforeTargets="BeforeBuild">
+    <MSBuild Projects="$(CustomActionsProject)" Targets="Build" Properties="Configuration=Release;Platform=$(InstallerPlatform)">
+      <Output TaskParameter="TargetOutputs" ItemName="CustomActionsAssembly" />
+    </MSBuild>
+    <PropertyGroup>
+      <CustomActionsDll>@(CustomActionsAssembly->'%(RootDir)%(Directory)%(Filename).CA%(Extension)')</CustomActionsDll>
+      <DefineConstants>$(DefineConstants);CustomActionsDll=$(CustomActionsDll)</DefineConstants>
+    </PropertyGroup>
+  </Target>
+
+  <!--
+    Lists the files in the cabinet MakeSfxCA appends to a custom action DLL, read from the cabinet's own
+    header. The cabinet ends the file, so it starts at the MSCF signature whose cbCabinet field reaches the
+    end, and its CFFILE entries follow at coffFiles.
+  -->
+  <UsingTask
+    TaskName="ReadAppendedCabinet"
+    TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll"
+  >
+    <ParameterGroup>
+      <CabinetHost ParameterType="System.String" Required="true" />
+      <FileNames ParameterType="System.String[]" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+        byte[] data = System.IO.File.ReadAllBytes(CabinetHost);
+        int cabinet = -1;
+        for (int offset = 0; offset + 36 <= data.Length; offset++)
+        {
+            if (data[offset] == 0x4D && data[offset + 1] == 0x53 && data[offset + 2] == 0x43 && data[offset + 3] == 0x46
+                && System.BitConverter.ToUInt32(data, offset + 8) == (uint)(data.Length - offset))
+            {
+                cabinet = offset;
+                break;
+            }
+        }
+
+        if (cabinet < 0)
+        {
+            Log.LogError("{0} ends in no cabinet.", CabinetHost);
+            return false;
+        }
+
+        int count = System.BitConverter.ToUInt16(data, cabinet + 28);
+        int entry = cabinet + (int)System.BitConverter.ToUInt32(data, cabinet + 16);
+        System.Collections.Generic.List<string> names = new System.Collections.Generic.List<string>();
+        for (int index = 0; index < count; index++)
+        {
+            // cbFile, uoffFolderStart, iFolder, date, time and attribs precede the null-terminated name.
+            ushort attributes = System.BitConverter.ToUInt16(data, entry + 14);
+            int nameStart = entry + 16;
+            int nameEnd = System.Array.IndexOf(data, (byte)0, nameStart);
+            System.Text.Encoding encoding = (attributes & 0x80) != 0 ? System.Text.Encoding.UTF8 : System.Text.Encoding.ASCII;
+            names.Add(encoding.GetString(data, nameStart, nameEnd - nameStart));
+            entry = nameEnd + 1;
+        }
+
+        FileNames = names.ToArray();
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <!--
+    SfxCA chooses the CLR from the CustomAction.config packed beside the custom action. Without it the
+    custom action never loads, and every install ends in 1603 before the runtime check runs.
+  -->
+  <Target Name="RequireCustomActionConfig" AfterTargets="BuildCustomActions">
+    <ReadAppendedCabinet CabinetHost="$(CustomActionsDll)">
+      <Output TaskParameter="FileNames" ItemName="PackedCustomActionFile" />
+    </ReadAppendedCabinet>
+    <PropertyGroup>
+      <PackedCustomActionFiles>;@(PackedCustomActionFile);</PackedCustomActionFiles>
+    </PropertyGroup>
+    <Message Text="$(CustomActionsDll) packs @(PackedCustomActionFile, ', ')." />
+    <Error
+      Condition="!$(PackedCustomActionFiles.Contains(';CustomAction.config;'))"
+      Text="$(CustomActionsDll) packs @(PackedCustomActionFile, ', ') and no CustomAction.config. SfxCA reads that file to choose the CLR, and without it the custom action cannot load."
     />
   </Target>
 

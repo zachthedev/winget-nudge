@@ -6,13 +6,20 @@ Windows 11 on x64, winget 1.29 or newer, and the Windows App Runtime 2.4.0 or a 
 Installer and WinUI app updates put the runtime on most machines; otherwise it comes from Microsoft's
 [Windows App SDK downloads](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads).
 
+Setup checks for the runtime registered for your account before it changes anything. Without it,
+setup stops with a message naming the version and the downloads page. A silent install, such as
+`msiexec /quiet` or winget, shows no message and ends with exit code 1603. Its log carries the
+message when it writes one (`msiexec /l*v <file>`). If setup refuses while the runtime is present,
+`msiexec /i WingetNudge-<version>-x64.msi WINDOWSAPPRUNTIMEFOUND=1` skips the check.
+
 ## Install
 
 Download `WingetNudge-<version>-x64.msi` from the
 [latest release](https://github.com/zachthedev/winget-nudge/releases/latest) and run it. It installs
 for your account only, with no administrator prompt, into `%LOCALAPPDATA%\Programs\Winget Nudge`. It
 adds a Start menu shortcut and an entry in Apps & features, and registers the scheduled checks and
-the notification before setup finishes.
+the notification before setup finishes. If either registration fails, setup undoes everything it
+did, the other registration included.
 
 Release MSIs are not code-signed yet
 ([issue 1](https://github.com/zachthedev/winget-nudge/issues/1)), so SmartScreen may stop the first
@@ -59,6 +66,10 @@ attestation proves origin.
 
 A newer MSI replaces the installed one. The MSI and the executable carry the numeric version alone,
 so a prerelease is no upgrade path over the release it follows.
+
+An upgrade that needs a newer Windows App Runtime stops the same way before it changes anything,
+and the installed version keeps working. An upgrade whose registration fails undoes itself and puts
+the installed version back.
 
 ## Uninstall
 

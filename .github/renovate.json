@@ -30,6 +30,11 @@
       "prBodyNotes": [
         "`docs/install.md` names the Windows App Runtime version this pull request moves. Change its Requirements line to the new version and commit it into this pull request, or the gate stays red."
       ]
+    },
+    {
+      "description": "WixToolset.Sdk builds the MSI and the WixToolset.Dtf packages build its custom action. They are one WiX release, so they move in one pull request.",
+      "matchDepNames": ["WixToolset.*"],
+      "groupName": "WiX Toolset"
     }
   ]
 }

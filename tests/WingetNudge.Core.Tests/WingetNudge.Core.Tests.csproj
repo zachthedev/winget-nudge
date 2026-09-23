@@ -29,4 +29,8 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\WingetNudge.Core\WingetNudge.Core.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <!-- The custom action targets .NET Framework, so its decision logic compiles in here to run under the suite. -->
+        <Compile Include="..\..\installer\CustomActions\RuntimeRequirement.cs" Link="Installer\RuntimeRequirement.cs" />
+    </ItemGroup>
 </Project>

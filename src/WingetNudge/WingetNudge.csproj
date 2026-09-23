@@ -87,4 +87,18 @@
             />
         </ItemGroup>
     </Target>
+
+    <!--
+        The Windows App Runtime framework package this build resolved, and the minimum version of it
+        the bootstrapper requires at startup. The installer calls this target, so setup checks for the
+        package the app will look for.
+    -->
+    <Target Name="GetWindowsAppRuntime" Returns="@(WindowsAppRuntime)">
+        <ItemGroup>
+            <WindowsAppRuntime
+                Include="$(WinAppSDKPackageName)"
+                Version="$(MicrosoftWindowsAppSDKFoundationAppXVersion)"
+            />
+        </ItemGroup>
+    </Target>
 </Project>

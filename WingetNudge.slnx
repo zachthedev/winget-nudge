@@ -3,6 +3,9 @@
         <Project Path="src/WingetNudge.Core/WingetNudge.Core.csproj" />
         <Project Path="src/WingetNudge/WingetNudge.csproj" />
     </Folder>
+    <Folder Name="/installer/">
+        <Project Path="installer/CustomActions/WingetNudge.CustomActions.csproj" />
+    </Folder>
     <Folder Name="/tests/">
         <Project Path="tests/WingetNudge.Core.Tests/WingetNudge.Core.Tests.csproj" />
     </Folder>

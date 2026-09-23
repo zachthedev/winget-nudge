@@ -9,8 +9,10 @@
     InstallerVersion="500"
   >
     <!-- Same-version upgrades let a rebuilt package replace the installed one instead of sitting beside it. -->
+    <!-- RegisterApp can fail an upgrade. Removing the installed version inside the transaction lets rollback restore it. -->
     <MajorUpgrade
       AllowSameVersionUpgrades="yes"
+      Schedule="afterInstallInitialize"
       DowngradeErrorMessage="A newer version of Winget Nudge is already installed."
     />
     <MediaTemplate EmbedCab="yes" />
@@ -18,6 +20,31 @@
     <Icon Id="AppIcon" SourceFile="..\src\WingetNudge\Assets\icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
     <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!--
+      The app's bootstrapper exits at startup without this framework package at this version, so setup
+      refuses before it changes anything. The build reads both from the runtime package the app resolved.
+      The three inputs are private, so a command line cannot change them. WINDOWSAPPRUNTIMEFOUND is
+      public, and giving it on the command line skips the check.
+    -->
+    <Property Id="WindowsAppRuntimePackage" Value="$(WindowsAppRuntimePackage)" />
+    <Property Id="WindowsAppRuntimeMinVersion" Value="$(WindowsAppRuntimeVersion)" />
+    <Property Id="WindowsAppRuntimeArchitecture" Value="$(sys.BUILDARCH)" />
+    <Property Id="WINDOWSAPPRUNTIMEFOUND" Secure="yes" />
+    <Binary Id="CustomActions" SourceFile="$(CustomActionsDll)" />
+    <CustomAction Id="FindWindowsAppRuntime" BinaryRef="CustomActions" DllEntry="FindWindowsAppRuntime" />
+    <Launch
+      Condition="Installed OR WINDOWSAPPRUNTIMEFOUND"
+      Message="Winget Nudge needs the Windows App Runtime $(WindowsAppRuntimeDisplayVersion) or a newer $(WindowsAppRuntimeMajor).x. Install it from https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads, then run setup again."
+    />
+
+    <!-- RegisterApp is the only action whose failure raises 1722, and a runtime too old for the app is its usual cause. -->
+    <UI>
+      <Error
+        Id="1722"
+        Message="Setup could not register the Winget Nudge scheduled checks and notification, and will undo its changes. The usual cause is a Windows App Runtime older than $(WindowsAppRuntimeDisplayVersion). Install $(WindowsAppRuntimeDisplayVersion) or a newer $(WindowsAppRuntimeMajor).x from https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads, then run setup again. The setup log records the exit code. Action [2], command [4]."
+      />
+    </UI>
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
@@ -42,11 +69,25 @@
     </StandardDirectory>
 
     <!-- The app owns its scheduled check and notification identity; the installer only asks for them. -->
+    <!-- A setup that ends without them leaves an app that never checks, so a failed register fails setup. -->
     <CustomAction
       Id="RegisterApp"
       Directory="INSTALLFOLDER"
       ExeCommand="&quot;[INSTALLFOLDER]WingetNudge.exe&quot; register --no-shortcut"
       Execute="deferred"
+      Impersonate="yes"
+      Return="check"
+    />
+    <!--
+      A first install that fails after register ran rolls its files back. This removes what register
+      created first, while the executable is still there to run. The rollback of an upgrade or a repair
+      restores a version whose registrations still point at a file that exists, so it runs neither.
+    -->
+    <CustomAction
+      Id="RegisterAppRollback"
+      Directory="INSTALLFOLDER"
+      ExeCommand="&quot;[INSTALLFOLDER]WingetNudge.exe&quot; unregister --keep-shortcut"
+      Execute="rollback"
       Impersonate="yes"
       Return="ignore"
     />
@@ -58,8 +99,14 @@
       Impersonate="yes"
       Return="ignore"
     />
+    <!-- The check gates a first install alone; repair, uninstall and an upgrade's removal never run it. -->
+    <InstallUISequence>
+      <Custom Action="FindWindowsAppRuntime" Before="LaunchConditions" Condition="NOT Installed" />
+    </InstallUISequence>
     <InstallExecuteSequence>
+      <Custom Action="FindWindowsAppRuntime" Before="LaunchConditions" Condition="NOT Installed" />
       <Custom Action="RegisterApp" After="InstallFiles" Condition="NOT REMOVE" />
+      <Custom Action="RegisterAppRollback" Before="RegisterApp" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
       <Custom Action="UnregisterApp" After="InstallInitialize" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
   </Package>

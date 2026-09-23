@@ -127,7 +127,21 @@ dotnet cake.cs --target=installer
 
 The package lands at `installer/bin/Release/WingetNudge.msi`: a per-user install under
 `%LOCALAPPDATA%\Programs\Winget Nudge` with no administrator prompt. It runs `register` at the end
-of setup and `unregister` at the start of an uninstall.
+of setup and `unregister` at the start of an uninstall. A failed `register` fails setup and rolls it
+back, and a failed `unregister` never stops an uninstall. When a first install rolls back, setup runs
+`unregister` before it removes the files, so no registration outlives them.
+
+Before a first install changes anything, the custom action in `installer/CustomActions` lists the
+Windows App Runtime framework packages registered for the installing user. Setup refuses when none of
+them reaches the version the app's bootstrapper requires. Repair, uninstall and an upgrade's removal
+of the previous version skip the check. The installer project asks the app project for
+that package name and version, which come from the `Microsoft.WindowsAppSDK.Runtime` package it
+resolved. A `Microsoft.WindowsAppSDK` bump therefore moves the check with no edit.
+
+Installing the MSI on this machine points its scheduled checks and notification at the build. Windows
+Sandbox starts from a clean copy of Windows, so try setup there instead: map `installer/bin/Release`
+into it read-only and run `msiexec /i <folder>\WingetNudge.msi /l*v <log>`. Installing a runtime
+there from the downloads page tries the other side of the check.
 
 The gate builds it unsigned on every machine. To sign a local build, put a code-signing
 certificate's thumbprint from the current user's store in `Directory.Signing.props` at the
