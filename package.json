@@ -1,5 +1,5 @@
 {
-  "name": "winget-nudge-tooling",
+  "name": "winget-nudge",
   "private": true,
   "type": "module",
   "description": "Commit message linting, markup formatting and git hooks for the Winget Nudge repository. The project itself is C#.",
