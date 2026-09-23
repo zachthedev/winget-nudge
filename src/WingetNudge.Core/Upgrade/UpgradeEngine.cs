@@ -1,6 +1,7 @@
 using WingetNudge.Core.Changelog;
 using WingetNudge.Core.Packages;
 using WingetNudge.Core.Preferences;
+using WingetNudge.Core.Storage;
 
 namespace WingetNudge.Core.Upgrade;
 
@@ -511,22 +512,30 @@ public sealed class UpgradeEngine(
         }
     }
 
+    // Winget already upgraded the package, so a bookkeeping write that fails is a note on the result
+    // rather than a failure of it.
     private PackageResult RecordSuccess(string id, string resultLabel, string detail)
     {
-        preferences.Clear(id);
-        log.Append(id, resultLabel, "Ok", 0);
-        ui.Report(new UpgradeEvent.Finished(id, PackageResult.Upgraded, detail));
+        List<StateWriteFailure> failures = [];
+        preferences.Clear(id, failures);
+        log.Append(id, resultLabel, "Ok", 0, failures);
+        ui.Report(new UpgradeEvent.Finished(id, PackageResult.Upgraded, WithNotes(detail, failures)));
         return PackageResult.Upgraded;
     }
 
+    // This runs inside the per-package catch, so a write that threw here would end the whole run.
     private PackageResult RecordHostFailure(string id, Exception exception)
     {
         string reason = $"upgrade error: {exception.Message}";
-        preferences.Set(id, PreferenceState.Failed, reason);
-        log.Append(id, "failed", reason, 0);
-        ui.Report(new UpgradeEvent.Finished(id, PackageResult.Failed, reason));
+        List<StateWriteFailure> failures = [];
+        preferences.Set(id, PreferenceState.Failed, reason, failures);
+        log.Append(id, "failed", reason, 0, failures);
+        ui.Report(new UpgradeEvent.Finished(id, PackageResult.Failed, WithNotes(reason, failures)));
         return PackageResult.Failed;
     }
+
+    private static string WithNotes(string detail, List<StateWriteFailure> failures) =>
+        string.Join('\n', [detail, .. failures.Select(static failure => failure.Summary)]);
 
     private PackageResult RecordFailure(
         string id,
@@ -538,10 +547,14 @@ public sealed class UpgradeEngine(
     {
         WingetDiagnostics found = (diagnostics ?? new WingetDiagnosticsReader()).Collect(startedAt);
         string detail = found.Summary is string summary ? $"{reason}\n{summary}" : reason;
-        string file = log.SaveInstallerLog(id, outcome, found);
-        preferences.Set(id, PreferenceState.Failed, detail);
-        log.Append(id, "failed", detail, errorCode);
-        ui.Report(new UpgradeEvent.Finished(id, PackageResult.Failed, detail, file));
+
+        // The installer's reason is the result. A record that fails to write only adds a note to it,
+        // since a throw here would reach the per-package catch and replace the reason with its own.
+        List<StateWriteFailure> failures = [];
+        string? file = log.SaveInstallerLog(id, outcome, found, failures);
+        preferences.Set(id, PreferenceState.Failed, detail, failures);
+        log.Append(id, "failed", detail, errorCode, failures);
+        ui.Report(new UpgradeEvent.Finished(id, PackageResult.Failed, WithNotes(detail, failures), file));
         return PackageResult.Failed;
     }
 }

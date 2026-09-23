@@ -364,6 +364,97 @@ public sealed class UpgradeEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_WhenItsRecordsCannotBeWritten_ReportsWhatHappenedAndFinishesTheRun()
+    {
+        // Git upgrades, so its failed entry needs clearing. Bun's detection throws, so its failure
+        // needs recording. Every write below then refuses at once.
+        _preferences.Set("Git.Git", PreferenceState.Failed, "old failure");
+        _log.Append("Other.App", "upgraded", "Ok", 0);
+        FakeBlockingDetector detector = new();
+        detector.Throws("Bun.Bun", new InvalidOperationException("detection exploded"));
+        _upgrader
+            .On("Git.Git", UpgradeMode.Silent, Fixture.Ok())
+            .On("Bun.Bun", UpgradeMode.Silent, Fixture.Fail(exit: UpgradeOutcome.FilesInUseExitCode));
+        string[] refusing = [_data.Paths.Preferences, _data.Paths.UpdateLog];
+        foreach (string file in refusing)
+        {
+            File.SetAttributes(file, FileAttributes.ReadOnly);
+        }
+
+        try
+        {
+            Func<Task<UpgradeSummary>> run = () => Build(detector).RunAsync([Git, Bun], CancellationToken.None);
+            UpgradeSummary summary = (
+                await run.Should().NotThrowAsync("a record that cannot be written ends no run")
+            ).Subject;
+
+            summary.Should().Be(new UpgradeSummary(1, 0, 1, false));
+            UpgradeEvent.Finished[] finished = [.. _ui.Events.OfType<UpgradeEvent.Finished>()];
+            finished
+                .Select(static result => (result.PackageId, result.Result))
+                .Should()
+                .Equal(("Git.Git", PackageResult.Upgraded), ("Bun.Bun", PackageResult.Failed));
+            finished[0].Detail.Should().StartWith("upgraded").And.Contain("could not clear the entry for Git.Git");
+            finished[1]
+                .Detail.Should()
+                .StartWith("upgrade error: detection exploded")
+                .And.Contain("could not record Bun.Bun as failed");
+        }
+        finally
+        {
+            foreach (string file in refusing)
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenAFailuresRecordCannotBeWritten_KeepsTheInstallersReason()
+    {
+        // Every record of the failure refuses at once: the preference, the log entry and the dump,
+        // whose directory name a file already holds.
+        _preferences.Set("Other.App", PreferenceState.Muted);
+        _log.Append("Other.App", "upgraded", "Ok", 0);
+        Directory.CreateDirectory(_data.Paths.Directory);
+        File.WriteAllText(_data.Paths.InstallerLogDirectory, "");
+        _upgrader
+            .On("Git.Git", UpgradeMode.Silent, Fixture.Fail("InstallError", 1603))
+            .On("Git.Git", UpgradeMode.Force, Fixture.Fail("InstallError", 1603));
+        string[] refusing = [_data.Paths.Preferences, _data.Paths.UpdateLog];
+        foreach (string file in refusing)
+        {
+            File.SetAttributes(file, FileAttributes.ReadOnly);
+        }
+
+        try
+        {
+            Func<Task<UpgradeSummary>> run = () => Build().RunAsync([Git], CancellationToken.None);
+            UpgradeSummary summary = (
+                await run.Should().NotThrowAsync("a record that cannot be written ends no run")
+            ).Subject;
+
+            summary.Should().Be(new UpgradeSummary(0, 0, 1, false));
+            UpgradeEvent.Finished finished = _ui.Events.OfType<UpgradeEvent.Finished>().Single();
+            finished.Result.Should().Be(PackageResult.Failed);
+            finished
+                .Detail.Should()
+                .StartWith("InstallError (exit code 1603)", "the installer's reason stays the result")
+                .And.Contain("could not save the installer log for Git.Git")
+                .And.Contain("could not record Git.Git as failed")
+                .And.Contain("could not log the failed outcome of Git.Git");
+            finished.LogPath.Should().BeNull("no dump was written");
+        }
+        finally
+        {
+            foreach (string file in refusing)
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_WingetGoesAway_StopsTheRunAndLeavesEveryPackageUnmarked()
     {
         _preferences.Set("Bun.Bun", PreferenceState.Muted, "muted by user");

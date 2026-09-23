@@ -51,21 +51,38 @@ public sealed class UpdateLog(
     /// <param name="result">Outcome label.</param>
     /// <param name="status">Winget status or failure reason.</param>
     /// <param name="installerErrorCode">Installer exit code.</param>
-    public void Append(string packageId, string result, string status, long installerErrorCode)
+    /// <param name="failures">
+    /// Receives a failed write, which <c>diagnostics.log</c> also records, or <c>null</c> to let it throw.
+    /// </param>
+    public void Append(
+        string packageId,
+        string result,
+        string status,
+        long installerErrorCode,
+        ICollection<StateWriteFailure>? failures = null
+    )
     {
         DateTimeOffset now = clock.GetUtcNow();
         UpdateLogEntry appended = new(now, packageId, result, status, installerErrorCode);
         DateTimeOffset cutoff = now.AddDays(-RetentionDays);
-        JsonFile.Update<List<UpdateLogEntry>>(
+        DiagnosticsLog.Attempt(
+            paths,
+            clock,
+            failures,
             paths.UpdateLog,
-            deleteIfCorrupt: true,
-            current =>
-            {
-                List<UpdateLogEntry> entries = current ?? [];
-                entries.Add(appended);
-                entries.RemoveAll(entry => entry.Timestamp <= cutoff);
-                return entries;
-            }
+            $"log the {result} outcome of {packageId}",
+            () =>
+                JsonFile.Update<List<UpdateLogEntry>>(
+                    paths.UpdateLog,
+                    deleteIfCorrupt: true,
+                    current =>
+                    {
+                        List<UpdateLogEntry> entries = current ?? [];
+                        entries.Add(appended);
+                        entries.RemoveAll(entry => entry.Timestamp <= cutoff);
+                        return entries;
+                    }
+                )
         );
     }
 
@@ -80,6 +97,40 @@ public sealed class UpdateLog(
     public string SaveInstallerLog(string packageId, UpgradeOutcome outcome, WingetDiagnostics? diagnostics = null)
     {
         PackageIdValidator.Ensure(packageId);
+        return WriteInstallerLog(packageId, outcome, diagnostics);
+    }
+
+    /// <summary>
+    /// Writes the full outcome of a failed upgrade to its own file, reporting a failed write rather
+    /// than throwing it.
+    /// </summary>
+    /// <param name="packageId">Winget package id.</param>
+    /// <param name="outcome">The failed attempt.</param>
+    /// <param name="diagnostics">Logs winget wrote during the attempt.</param>
+    /// <param name="failures">Receives a failed write, which <c>diagnostics.log</c> also records.</param>
+    /// <returns>Path of the written file, or <c>null</c> when the write failed.</returns>
+    internal string? SaveInstallerLog(
+        string packageId,
+        UpgradeOutcome outcome,
+        WingetDiagnostics? diagnostics,
+        ICollection<StateWriteFailure> failures
+    )
+    {
+        PackageIdValidator.Ensure(packageId);
+        string? file = null;
+        DiagnosticsLog.Attempt(
+            paths,
+            clock,
+            failures,
+            paths.InstallerLogDirectory,
+            $"save the installer log for {packageId}",
+            () => file = WriteInstallerLog(packageId, outcome, diagnostics)
+        );
+        return file;
+    }
+
+    private string WriteInstallerLog(string packageId, UpgradeOutcome outcome, WingetDiagnostics? diagnostics)
+    {
         Directory.CreateDirectory(paths.InstallerLogDirectory);
         SafePath.EnsureNotReparsePoint(paths.Directory);
         SafePath.EnsureNotReparsePoint(paths.InstallerLogDirectory);

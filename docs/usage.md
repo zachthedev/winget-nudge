@@ -55,10 +55,10 @@ go. Any other state file that fails to parse is deleted, and the app rebuilds it
 Deleting `version-tracking.json` by hand does not start a fresh first run. Its lock file stays, so
 versions on offer still wait out the cooldown, while installed versions are recorded as before.
 
-`diagnostics.log` gets one timestamped line for each bookkeeping write a check or the picker carried on
-without, such as a stale skip it could not clear. `check` and `list` print the same lines, and the picker
-shows them in its message bar. Each new line drops the lines older than the update log's retention window,
-then the oldest lines past 1 MiB.
+`diagnostics.log` gets one timestamped line for each bookkeeping write a check, the picker or an upgrade
+carried on without, such as a stale skip it could not clear. `check` and `list` print the same lines, the
+picker shows them in its message bar, and the upgrade window adds them to the package's row. Each new line
+drops the lines older than the update log's retention window, then the oldest lines past 1 MiB.
 
 On first run, the app copies state from the older PowerShell version's
 `%LOCALAPPDATA%\WingetUpdater` folder if it exists, so muted packages, tracking history and

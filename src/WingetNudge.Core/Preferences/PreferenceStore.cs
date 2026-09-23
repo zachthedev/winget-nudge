@@ -122,14 +122,30 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
     /// <param name="packageId">Winget package id.</param>
     /// <param name="state">New state.</param>
     /// <param name="reason">Failure description for the failed state.</param>
-    public void Set(string packageId, PreferenceState state, string? reason = null)
+    /// <param name="failures">
+    /// Receives a failed write, which <c>diagnostics.log</c> also records, or <c>null</c> to let it throw.
+    /// </param>
+    public void Set(
+        string packageId,
+        PreferenceState state,
+        string? reason = null,
+        ICollection<StateWriteFailure>? failures = null
+    )
     {
         PreferenceEntry entry = new(state, clock.GetUtcNow(), reason);
-        Update(current =>
-        {
-            current[packageId] = entry;
-            return true;
-        });
+        DiagnosticsLog.Attempt(
+            paths,
+            clock,
+            failures,
+            paths.Preferences,
+            $"record {packageId} as {state.ToString().ToLowerInvariant()}",
+            () =>
+                Update(current =>
+                {
+                    current[packageId] = entry;
+                    return true;
+                })
+        );
     }
 
     /// <summary>Skips one version of a package.</summary>
