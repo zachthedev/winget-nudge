@@ -160,6 +160,11 @@ directory the test owns.
 - NuGet versions live in `Directory.Packages.props`, and every project has a `packages.lock.json`.
   The gate restores in locked mode, so a changed package graph fails until the lock files are
   regenerated and committed with it.
+- `global.json` pins the .NET SDK with `rollForward` set to `patch`. The app publishes
+  self-contained, so the MSI carries the runtime of the SDK that builds it. Continuous integration
+  installs the pinned SDK and builds with it. A contributor on a later patch in the same feature
+  band still runs the gate. The pin is always the SDK carrying the newest runtime past the
+  cooldown. Without a matching SDK, `dotnet` prints the install command `errorMessage` names.
 - Restore audits every package, transitive ones included, against nuget.org's advisory database,
   and every finding warns. The weekly `audit` workflow in `.github/workflows/audit.yml` lists every
   advisory against the locked graph, whatever its severity, in the run's summary.

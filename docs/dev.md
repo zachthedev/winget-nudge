@@ -10,13 +10,13 @@ WinUI 3 and the installer is an MSI, so neither builds anywhere else. Everything
 winget; open a new terminal afterwards, so `PATH` includes what it added.
 
 ```powershell
-winget install --id Microsoft.DotNet.SDK.10 --exact
 winget install --id Oven-sh.Bun --exact
 winget install --id Microsoft.PowerShell --exact
 winget install --id jdx.mise --exact
 ```
 
-- The .NET SDK, at the version `global.json` names. It also pins Cake.Sdk, which runs the gate.
+- The .NET SDK, at the version `global.json` names. [First run](#first-run) installs it, because
+  that version comes from the clone. `global.json` also pins Cake.Sdk, which runs the gate.
 - [Bun](https://bun.sh), at the version `package.json` names in `packageManager`. It runs
   commitlint, prettier and lefthook.
 - PowerShell 7, for the scripts under `tools` and the commands in this document.
@@ -35,6 +35,14 @@ version and where it comes from.
 ```powershell
 git clone https://github.com/zachthedev/winget-nudge.git
 Set-Location winget-nudge
+$version = (Get-Content -Path global.json -Raw | ConvertFrom-Json).sdk.version
+winget install --id Microsoft.DotNet.SDK.10 --version $version --exact
+```
+
+The SDK install reads the exact version `global.json` pins. Open a new terminal in the clone
+afterwards, so `PATH` includes the SDK. Then run the rest:
+
+```powershell
 bun install
 dotnet tool restore
 mise trust
