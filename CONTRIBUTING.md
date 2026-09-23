@@ -53,8 +53,8 @@ answer to zizmor alone, which then runs its online audits. With no answer, zizmo
 `--offline`. On continuous integration, where GitHub Actions sets `CI`, the gate never starts gh and
 runs zizmor with `--offline`, and the shared `workflows` job runs the online audits. gh reads
 `GH_TOKEN` before its keyring, so a fine-grained read-only token there is the least a local run can
-hand zizmor. A token the shell exports reaches every process the gate starts, because the gate
-clears nothing from the environment it inherits.
+hand zizmor. A token the shell exports reaches every process the gate starts but mise, because
+the gate clears nothing else from the environment it inherits.
 
 `tools` depends on `lockfile` and then runs `mise install`, so the lockfile is asserted before
 anything installs from it. An address in `mise.lock` is what an install fetches, and an entry naming
@@ -247,8 +247,17 @@ directory the test owns.
   mise's global config. Every mise call the gate makes also runs with
   `MISE_OVERRIDE_CONFIG_FILENAMES=mise.toml`, `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none`,
   `MISE_ENV` empty and `MISE_AUTO_ENV=false`, which leave mise reading `mise.toml` alone even when a
-  refused file is present. The gate strips every case spelling of each `MISE_` variable it sets
-  before it sets it.
+  refused file is present.
+- `mise.toml` itself holds `[tools]`, `[settings]` and `[tool_config]` alone, because mise evaluates
+  `[env]` and `[vars]` templates as it loads the file and runs `[hooks]` during an install.
+  `[tools]` carries version strings, and `[settings]` and `[tool_config]` have to equal, whole, the
+  tables `cake.cs` holds in `ExpectedSettings` and `ExpectedToolConfig`. `mise.lock` holds the keys
+  `mise lock` writes and no others, for the tools `mise.toml` pins. A symbolic link or junction at
+  the root, or under `.config`, `.mise` or `mise`, is refused.
+- The gate starts mise with an environment it builds from nothing: `SYSTEMROOT`, `LOCALAPPDATA`,
+  `TEMP`, `TMP`, the proxy variables when set, and its own mise settings. No other variable, from
+  the shell or anywhere else, reaches mise, so the gate's mise uses mise's default directories
+  whatever `MISE_DATA_DIR` or `MISE_GLOBAL_CONFIG_FILE` says, and trusts the checkout itself.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
