@@ -6,3 +6,10 @@ rules:
     config:
       policies:
         '*': hash-pin
+  # zizmor asks for seven days by default. The project standard is three, which is the window that
+  # catches almost every package published and then pulled while still letting a legitimate release
+  # land in the same week. A shorter cooldown still fails. A cooldown block removed entirely passes
+  # this audit.
+  dependabot-cooldown:
+    config:
+      days: 3

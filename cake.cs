@@ -180,7 +180,9 @@ Task("tools")
     });
 
 Task("workflows")
-    .Description("actionlint with ShellCheck, then zizmor, over .github, from the paths mise resolves in locked mode")
+    .Description(
+        "actionlint with ShellCheck over .github/workflows, then zizmor over the repository, from the paths mise resolves in locked mode"
+    )
     .IsDependentOn("lockfile")
     .Does(() =>
     {
@@ -207,11 +209,13 @@ Task("workflows")
         // with a warning and the run reports no findings for a workflow it never read. --config
         // names the committed file so ZIZMOR_CONFIG in the environment cannot swap it. The online
         // audits read the GitHub API, so they run whenever gh holds a token and --offline keeps a
-        // run without one green rather than failing on the missing token.
+        // run without one green rather than failing on the missing token. The input is the
+        // repository root, so zizmor collects .github/dependabot.yml beside the workflows. It
+        // skips what .gitignore names, which keeps the workflows under node_modules out.
         string? token = GitHubToken();
         Command(
             ["zizmor", "zizmor.exe"],
-            $"--no-progress {(token is null ? "--offline " : "")}--strict-collection --config .github/zizmor.yml .github/workflows",
+            $"--no-progress {(token is null ? "--offline " : "")}--strict-collection --config .github/zizmor.yml .",
             settingsCustomization: settings =>
             {
                 settings.WithToolPath(Verified(resolved, "zizmor"));
