@@ -40,10 +40,11 @@ stops at the first failure and prints a summary table. `dotnet cake.cs --descrip
 task and what it checks, and `dotnet cake.cs --tree` prints the order they run in.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
-`workflows`. `lockfile` reads `mise.toml`, `mise.lock` and `bunfig.toml`, and asks git which paths
-are tracked. git is the one process it starts, so it needs no mise on the machine, and it is the
-first task the whole gate runs. `--target=tools` runs `lockfile` and then
-`mise install`; it is the install continuous integration runs, and `check` does not reach it.
+`workflows`. `lockfile` reads `mise.toml`, `mise.lock`, `bunfig.toml` and `.prettierrc`, walks the
+tree for any other Prettier or npm config, and asks git which paths are tracked. git is the one
+process it starts, so it needs no mise on the machine, and it is the first task the whole gate runs.
+`--target=tools` runs `lockfile` and then `mise install`; it is the install continuous integration
+runs, and `check` does not reach it.
 
 `workflows` hands actionlint the ShellCheck binary it resolved, then asks actionlint for a finding
 only ShellCheck reports. actionlint leaves its shell checks off when that binary cannot start, and
@@ -275,23 +276,35 @@ directory the test owns.
   `tools` before `PATH`, and Windows reads the current directory for a bare name. So the gate also
   refuses a file at the root or under `tools` named `mise`, `gh`, `bunx`, `bun`, `dotnet`, `node`,
   `git`, `csharpier` or `sbom-tool`, bare or with `.exe`, `.bat`, `.cmd` or `.com`.
-- The prettier row runs `bunx --no-install`, which starts `node_modules/.bin/prettier` ahead of
-  anything else. `bun install` keeps a package it finds already at the version `bun.lock` records,
-  so a committed `node_modules/prettier` still runs after an install. `lockfile` refuses every
-  tracked path with a `node_modules` segment, in any case, and the prettier row refuses them again
-  before it starts bunx. `git ls-files` answers what is tracked, so the `node_modules` an install
-  writes passes. An extraction from `git archive` has no `.git` at the root and tracks nothing, so
-  the check starts no git there and passes. The `gate` job's `bun install` takes `--ignore-scripts`,
-  because a frozen lockfile still runs the lifecycle scripts `package.json` names.
+- The prettier row runs `bunx --bun --no-install`, which starts `node_modules/.bin/prettier` ahead
+  of anything else. `--bun` runs it under the Bun the gate resolved, never whichever node `PATH`
+  names, and lefthook's commit-msg hook passes it to commitlint too. `bun install` keeps a package
+  it finds already at the version `bun.lock` records, so a committed `node_modules/prettier` still
+  runs after an install. `lockfile` refuses every tracked path with a `node_modules` segment, in any
+  case, and the prettier row refuses them again before it starts bunx. `git ls-files` answers what
+  is tracked, so the `node_modules` an install writes passes. An extraction from `git archive` has
+  no `.git` at the root and tracks nothing, so the check starts no git there and passes. The `gate`
+  job's `bun install` takes `--ignore-scripts`, because a frozen lockfile still runs the lifecycle
+  scripts `package.json` names.
 - `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone, at the value `cake.cs` names.
-  Bun reads the file on every start, and no flag stops it. A top-level `preload` there runs a module
-  before the first line of whatever Bun starts, and bunx starts prettier and commitlint under Bun
-  whenever node is not on `PATH`. Every other key reaches Bun too: an `[install]` registry moves
-  where even a frozen install downloads from. So `lockfile` and the prettier row refuse any other key
-  or table, and any other value, before the gate starts bunx. The file's lines, less comments, have
-  to read exactly those two lines in printable ASCII, so Bun and the gate cannot read it two ways.
+  Bun reads the file on every start, and no flag stops it. A top-level `preload` there runs a
+  module before the first line of whatever Bun starts, prettier and commitlint included. Every other
+  key reaches Bun too: an `[install]` registry moves where even a frozen install downloads from. So
+  `lockfile` and the prettier row refuse any other key or table, and any other value, before the
+  gate starts bunx. The file's lines, less comments, have to read exactly those two lines in
+  printable ASCII, so Bun and the gate cannot read it two ways.
+- The prettier row runs prettier with `--config .prettierrc`, so it searches for no other config
+  file, and `.prettierrc` has to equal, byte for byte, the text `cake.cs` holds, which every
+  repository shares. prettier runs the modules a config names under `plugins`, and loads a config
+  written as code, and an editor's prettier searches every directory. So `lockfile` and the
+  prettier row also refuse every other file prettier 3.9.8 reads as config, at any depth and in any
+  case: a `.prettierrc` below the root, `.prettierrc` and `prettier.config` with each extension
+  prettier reads, `package.yaml`, and a `package.json` with a `prettier` key. The same walk refuses
+  any `.npmrc`, which moves where `bun install` downloads from, and any directory link. It reads the
+  file system, because an editor reads an untracked file too, and skips `node_modules`, `bin`,
+  `obj`, `.git` and `.claude/worktrees`.
 - No row stops the first Bun process on a branch nobody has read. lefthook's commit-msg hook runs
-  `bunx commitlint` before any gate does, and `bun install` runs lefthook's postinstall, which
+  `bunx --bun commitlint` before any gate does, and `bun install` runs lefthook's postinstall, which
   starts under Bun when node is not on `PATH`. Read a pull request's `bunfig.toml` before running
   anything on its branch.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather

@@ -100,7 +100,7 @@ Task("prettier")
         FilePath bunx = Bunx();
         Command(
             ["bunx", "bunx.exe"],
-            "--no-install prettier --check .",
+            "--bun --no-install prettier --config .prettierrc --check .",
             settingsCustomization: settings => settings.WithToolPath(bunx)
         );
     });
@@ -246,15 +246,20 @@ const long bunMinimumReleaseAge = 259200;
 
 static TomlTable ExpectedBunInstall() => new() { ["minimumReleaseAge"] = bunMinimumReleaseAge };
 
+// .prettierrc, byte for byte, the same in every repository. The prettier row names the file with
+// --config, and the gate refuses every other file prettier would read as config.
+const string prettierConfig = "{\n  \"singleQuote\": true,\n  \"printWidth\": 120\n}\n";
+
 // The two mise data files, before anything installs from them. A lockfile that disagrees with its
 // pin is the likeliest fault after a bump, and an address in it is what an install fetches, so both
-// are read before the install rather than after. bunfig.toml is read here as well, so a pull request
-// that changes it fails the first row. The one process it starts is git, to list the tracked paths.
+// are read before the install rather than after. bunfig.toml, .prettierrc and the tree's other
+// config files are read here as well, so a pull request that changes one fails the first row. The
+// one process it starts is git, to list the tracked paths.
 // Nothing here resolves mise, so the task needs none on the machine, and check runs it ahead of
 // every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no tracked node_modules path, and bunfig.toml as cake.cs holds it"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no tracked node_modules path, bunfig.toml and .prettierrc as cake.cs holds them, and no other Prettier or npm config"
     )
     .Does(() => RequireLockfile());
 
@@ -350,6 +355,8 @@ void RequireLockfile()
     RequireOnlyPinnedMiseFiles();
     RequireNoTrackedNodeModules();
     RequireBunfig();
+    RequirePrettierConfig();
+    RequireNoConfigElsewhere();
     MiseConfig config = ReadMiseConfig("mise.toml");
     Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms, config.Versions);
     foreach (string tool in config.Versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
@@ -699,13 +706,16 @@ FilePath RequireOnPath(string name, string install) =>
 
 FilePath Dotnet() => RequireOnPath("dotnet", "Install the .NET SDK global.json names.");
 
-// bunx for the prettier row, the one bun process the gate starts. The node_modules refusal and the
-// bunfig.toml assertion run here as well as in the lockfile task, so no --target=prettier or
+// bunx for the prettier row, the one bun process the gate starts. The row passes --bun, so prettier
+// runs under this Bun rather than whichever node PATH names. The node_modules refusal and the Bun
+// and Prettier config checks run here as well as in the lockfile task, so no --target=prettier or
 // --exclusive run reaches bunx past them.
 FilePath Bunx()
 {
     RequireNoTrackedNodeModules();
     RequireBunfig();
+    RequirePrettierConfig();
+    RequireNoConfigElsewhere();
     return RequireOnPath("bunx", "Install Bun at the version package.json names.");
 }
 
@@ -968,7 +978,7 @@ void RequireNoTrackedNodeModules()
 
 // bunfig.toml, held whole to the one setting it carries. Bun reads the file in the working
 // directory on every start, and no flag stops it. A top-level preload runs a module before the
-// first line of whatever Bun starts, and bunx starts a bin under Bun whenever node is not on PATH.
+// first line of whatever Bun starts, and the prettier row's bunx --bun starts prettier under Bun.
 // Every other key reaches Bun as well: an [install] registry moves where even a frozen install
 // downloads from. So the file is read twice. Tomlyn's model has to hold [install] alone, with
 // minimumReleaseAge alone, at bunMinimumReleaseAge. Then the lines themselves, less comments and
@@ -1035,6 +1045,132 @@ void RequireBunfig()
             $"{path} reads {string.Join(" then ", lines.Select(Quoted))} once comments are set aside, and the gate takes {string.Join(" then ", expected.Select(Quoted))} alone. "
                 + "A duplicate, dotted or quoted key, or another way of writing the number, is a line Bun could read otherwise."
         );
+    }
+}
+
+// .prettierrc, byte for byte, against prettierConfig. prettier runs the modules a config names
+// under plugins, and loads the module a config written as a string names, so any change to the text
+// is refused rather than read.
+void RequirePrettierConfig()
+{
+    const string path = ".prettierrc";
+    byte[] expected = System.Text.Encoding.UTF8.GetBytes(prettierConfig);
+    byte[] actual = System.IO.File.Exists(path) ? System.IO.File.ReadAllBytes(path) : [];
+    if (!actual.AsSpan().SequenceEqual(expected))
+    {
+        throw new CakeException(
+            $"{path} is {(actual.Length == 0 ? "missing or empty" : Quoted(System.Text.Encoding.UTF8.GetString(actual)))}, and the gate takes {Quoted(prettierConfig)} alone, the text every repository shares. "
+                + "prettier runs the modules a config names, so the file has to match cake.cs byte for byte."
+        );
+    }
+}
+
+// Every other file an editor's prettier or bun could read as config, anywhere in the tree. The
+// names are CONFIG_FILES in prettier 3.9.8's src/config/prettier-config/config-searcher.js: a
+// package.json or package.yaml carrying a prettier key, then .prettierrc and the files below. A
+// .prettierrc away from the root is refused as well, and so is every package.yaml, since the gate
+// reads no YAML. A package.json is refused when it names prettier, or when it does not read as a
+// JSON object, since Bun's reader takes more than JSON does. A .npmrc moves where bun install
+// downloads from. The prettier row passes --config, so the gate's own prettier searches for none of
+// these, and the refusal is for an editor's prettier and a contributor's own bun install.
+//
+// The walk is the file system, because an editor reads an untracked file too. It skips node_modules,
+// bin, obj and .git wherever they sit, and .claude/worktrees at the root, and matches every name
+// without regard to case, as NTFS does. A directory link is refused, since the files behind it are
+// ones the walk would never name.
+void RequireNoConfigElsewhere()
+{
+    string[] prettierFiles =
+    [
+        ".prettierrc",
+        ".prettierrc.json",
+        ".prettierrc.yml",
+        ".prettierrc.yaml",
+        ".prettierrc.json5",
+        ".prettierrc.js",
+        ".prettierrc.ts",
+        ".prettierrc.mjs",
+        ".prettierrc.mts",
+        ".prettierrc.cjs",
+        ".prettierrc.cts",
+        ".prettierrc.toml",
+        "prettier.config.js",
+        "prettier.config.ts",
+        "prettier.config.mjs",
+        "prettier.config.mts",
+        "prettier.config.cjs",
+        "prettier.config.cts",
+    ];
+    string[] skipped = ["node_modules", "bin", "obj", ".git"];
+    string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+    System.IO.EnumerationOptions options = new() { AttributesToSkip = 0, IgnoreInaccessible = false };
+    List<string> found = [];
+    Stack<string> pending = new([root]);
+    while (pending.TryPop(out string? directory))
+    {
+        foreach (
+            System.IO.FileSystemInfo entry in new System.IO.DirectoryInfo(directory).EnumerateFileSystemInfos(
+                "*",
+                options
+            )
+        )
+        {
+            string relative = System.IO.Path.GetRelativePath(root, entry.FullName).Replace('\\', '/');
+            string name = entry.Name;
+            if (entry is System.IO.DirectoryInfo)
+            {
+                if (skipped.Contains(name, StringComparer.Ordinal) || relative == ".claude/worktrees")
+                {
+                    continue;
+                }
+
+                if (entry.LinkTarget is not null)
+                {
+                    found.Add($"{Quoted(relative)} (a directory link)");
+                    continue;
+                }
+
+                pending.Push(entry.FullName);
+                continue;
+            }
+
+            bool config =
+                name.Equals(".npmrc", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("package.yaml", StringComparison.OrdinalIgnoreCase)
+                || (
+                    prettierFiles.Contains(name, StringComparer.OrdinalIgnoreCase)
+                    && !(relative == ".prettierrc" && name == ".prettierrc")
+                )
+                || (name.Equals("package.json", StringComparison.OrdinalIgnoreCase) && NamesPrettier(entry.FullName));
+            if (config)
+            {
+                found.Add(Quoted(relative));
+            }
+        }
+    }
+
+    if (found.Count > 0)
+    {
+        throw new CakeException(
+            $"The tree holds {string.Join(", ", found.Order(StringComparer.Ordinal))}, and the gate takes no config for prettier but the root .prettierrc, no .npmrc and no directory link. "
+                + "prettier runs the modules a config file names, and a .npmrc moves where bun install downloads from."
+        );
+    }
+}
+
+// Whether a package.json names a prettier config for prettier to load, as far as the gate can tell:
+// a prettier key at the top, or a file that does not read as a JSON object at all.
+static bool NamesPrettier(string path)
+{
+    try
+    {
+        using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText(path));
+        return document.RootElement.ValueKind != JsonValueKind.Object
+            || document.RootElement.EnumerateObject().Any(property => property.Name == "prettier");
+    }
+    catch (JsonException)
+    {
+        return true;
     }
 }
 
