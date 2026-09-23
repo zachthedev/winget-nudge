@@ -240,14 +240,21 @@ static TomlTable ExpectedSettings() =>
 
 static TomlTable ExpectedToolConfig() => new() { ["locked"] = true };
 
-// The two data files, before anything installs from them. A lockfile that disagrees with its pin
-// is the likeliest fault after a bump, and an address in it is what an install fetches, so both are
-// read before the install rather than after. The one process it starts is git, to list the tracked
-// paths. Nothing here resolves mise, so the task needs none on the machine, and check runs it ahead
-// of every other task.
+// The one setting bunfig.toml carries: three days, in seconds, before Bun resolves a newly published
+// version. The file itself says why it is committed.
+const long bunMinimumReleaseAge = 259200;
+
+static TomlTable ExpectedBunInstall() => new() { ["minimumReleaseAge"] = bunMinimumReleaseAge };
+
+// The two mise data files, before anything installs from them. A lockfile that disagrees with its
+// pin is the likeliest fault after a bump, and an address in it is what an install fetches, so both
+// are read before the install rather than after. bunfig.toml is read here as well, so a pull request
+// that changes it fails the first row. The one process it starts is git, to list the tracked paths.
+// Nothing here resolves mise, so the task needs none on the machine, and check runs it ahead of
+// every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, and no tracked node_modules path"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no tracked node_modules path, and bunfig.toml as cake.cs holds it"
     )
     .Does(() => RequireLockfile());
 
@@ -308,8 +315,11 @@ Task("workflows")
         // job runs the online audits. Locally, the token gh holds goes into zizmor's process
         // settings alone, so no other process the gate starts receives it from the gate. A token
         // the shell exports reaches every process through the inherited environment, and the gate
-        // clears nothing.
-        string? token = OnContinuousIntegration() ? null : GitHubToken();
+        // clears nothing. The row prints which mode zizmor runs in and why, never the token, so a
+        // log shows the mode rather than leaving it to be read from this file.
+        string why = "CI is set, so the gate starts no gh, and the shared workflows job runs the online audits";
+        string? token = OnContinuousIntegration() ? null : GitHubToken(out why);
+        Information($"zizmor runs {(token is null ? "offline" : "online")}: {why}.");
         Command(
             ["zizmor", "zizmor.exe"],
             $"--no-progress {(token is null ? "--offline " : "")}--strict-collection --collect=all --config .github/zizmor.yml .github",
@@ -339,6 +349,7 @@ void RequireLockfile()
 {
     RequireOnlyPinnedMiseFiles();
     RequireNoTrackedNodeModules();
+    RequireBunfig();
     MiseConfig config = ReadMiseConfig("mise.toml");
     Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms, config.Versions);
     foreach (string tool in config.Versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
@@ -399,15 +410,15 @@ MiseConfig ReadMiseConfig(string path)
         throw new CakeException($"{path} declares no tool under [tools].");
     }
 
-    RequireWhole(path, "settings", table, ExpectedSettings());
-    RequireWhole(path, "tool_config", table, ExpectedToolConfig());
+    RequireWhole(path, "settings", table, ExpectedSettings(), "mise");
+    RequireWhole(path, "tool_config", table, ExpectedToolConfig(), "mise");
     return new MiseConfig(versions, [.. ((TomlArray)ExpectedSettings()["lockfile_platforms"]).OfType<string>()]);
 }
 
-// One table of mise.toml compared whole against what the gate expects, with every key that is
+// One table of a config file compared whole against what the gate expects, with every key that is
 // added, missing or changed named beside both values. The url_replacements entry sits in
 // ExpectedSettings, so a mise.toml without the fallback refusal, or with another entry, fails here.
-void RequireWhole(string path, string name, TomlTable file, TomlTable expected)
+void RequireWhole(string path, string name, TomlTable file, TomlTable expected, string reader)
 {
     TomlTable actual =
         file.TryGetValue(name, out object? value) && value is TomlTable declared ? declared : new TomlTable();
@@ -433,7 +444,7 @@ void RequireWhole(string path, string name, TomlTable file, TomlTable expected)
                         + $"cake.cs takes {(expected.TryGetValue(key, out object? gateValue) ? Rendered(gateValue) : "nothing")}"
                     )
                 )
-                + ". mise reads every key there, so the table has to match cake.cs whole."
+                + $". {reader} reads every key there, so the table has to match cake.cs whole."
         );
     }
 }
@@ -688,12 +699,13 @@ FilePath RequireOnPath(string name, string install) =>
 
 FilePath Dotnet() => RequireOnPath("dotnet", "Install the .NET SDK global.json names.");
 
-// bunx for the prettier row, the one bun process the gate starts. The node_modules refusal runs
-// here as well as in the lockfile task, so --target=prettier and --exclusive runs reach bunx past it
-// too.
+// bunx for the prettier row, the one bun process the gate starts. The node_modules refusal and the
+// bunfig.toml assertion run here as well as in the lockfile task, so no --target=prettier or
+// --exclusive run reaches bunx past them.
 FilePath Bunx()
 {
     RequireNoTrackedNodeModules();
+    RequireBunfig();
     return RequireOnPath("bunx", "Install Bun at the version package.json names.");
 }
 
@@ -954,6 +966,78 @@ void RequireNoTrackedNodeModules()
     }
 }
 
+// bunfig.toml, held whole to the one setting it carries. Bun reads the file in the working
+// directory on every start, and no flag stops it. A top-level preload runs a module before the
+// first line of whatever Bun starts, and bunx starts a bin under Bun whenever node is not on PATH.
+// Every other key reaches Bun as well: an [install] registry moves where even a frozen install
+// downloads from. So the file is read twice. Tomlyn's model has to hold [install] alone, with
+// minimumReleaseAge alone, at bunMinimumReleaseAge. Then the lines themselves, less comments and
+// blank ones, have to read exactly the two lines that model writes, in printable ASCII with LF or
+// CRLF endings. Bun's parser and Tomlyn could read a duplicate key, a dotted or quoted key, another
+// number form, a byte-order mark or a bare carriage return two ways, so each is refused rather than
+// resolved.
+void RequireBunfig()
+{
+    const string path = "bunfig.toml";
+    string[] expected = ["[install]", $"minimumReleaseAge = {bunMinimumReleaseAge}"];
+    string why =
+        "Bun runs a top-level preload module before the first line of whatever it starts, and reads every other key there as well.";
+    if (!System.IO.File.Exists(path))
+    {
+        throw new CakeException(
+            $"{path} is missing, and it carries the cooldown Bun resolves under: {string.Join(" then ", expected.Select(Quoted))}."
+        );
+    }
+
+    byte[] bytes = System.IO.File.ReadAllBytes(path);
+    int stray = Enumerable
+        .Range(0, bytes.Length)
+        .FirstOrDefault(
+            index =>
+                bytes[index] switch
+                {
+                    (byte)'\t' or (byte)'\n' => false,
+                    (byte)'\r' => index + 1 >= bytes.Length || bytes[index + 1] != (byte)'\n',
+                    >= 0x20 and <= 0x7E => false,
+                    _ => true,
+                },
+            -1
+        );
+    if (stray >= 0)
+    {
+        throw new CakeException(
+            $"{path} holds the byte 0x{bytes[stray]:X2} at offset {stray}, and the gate takes printable ASCII, tabs and line endings alone there, so Bun and the gate read one file."
+        );
+    }
+
+    TomlTable table = ReadToml(path);
+    string[] unknown = [.. table.Keys.Where(key => key != "install").Order(StringComparer.Ordinal)];
+    if (unknown.Length > 0)
+    {
+        throw new CakeException(
+            $"{path} holds {string.Join(", ", unknown.Select(Quoted))} at the top level, and the gate takes [install] alone. {why}"
+        );
+    }
+
+    RequireWhole(path, "install", table, ExpectedBunInstall(), "Bun");
+
+    string[] lines =
+    [
+        .. System
+            .Text.Encoding.ASCII.GetString(bytes)
+            .Split('\n')
+            .Select(line => (line.IndexOf('#') is int hash and >= 0 ? line[..hash] : line).Trim())
+            .Where(line => line.Length > 0),
+    ];
+    if (!lines.SequenceEqual(expected, StringComparer.Ordinal))
+    {
+        throw new CakeException(
+            $"{path} reads {string.Join(" then ", lines.Select(Quoted))} once comments are set aside, and the gate takes {string.Join(" then ", expected.Select(Quoted))} alone. "
+                + "A duplicate, dotted or quoted key, or another way of writing the number, is a line Bun could read otherwise."
+        );
+    }
+}
+
 // A value read from mise.toml, mise.lock or mise's own output, as every message echoes one: in double
 // quotes, with a quote or backslash escaped and every character outside printable ASCII written as
 // \uXXXX, cut to 200 characters. A crafted value then reaches the terminal as text and cannot pass
@@ -1186,15 +1270,16 @@ bool OnContinuousIntegration() =>
     && !value.Equals("false", StringComparison.OrdinalIgnoreCase)
     && value != "0";
 
-// The token gh holds for api.github.com, or null when gh is absent or holds none. Only a local run
-// asks. gh answers from GH_TOKEN before its keyring, so a token the shell exports comes back here as
-// well. The output is redirected and the process runs silent, so the token reaches zizmor's
-// environment and no log.
-string? GitHubToken()
+// The token gh holds for api.github.com, or null when gh is absent or holds none, with why in words
+// that never carry the token. Only a local run asks. gh answers from GH_TOKEN before its keyring,
+// so a token the shell exports comes back here as well. The output is redirected and the process
+// runs silent, so the token reaches zizmor's environment and no log.
+string? GitHubToken(out string why)
 {
     FilePath? gh = OnPath("gh");
     if (gh is null)
     {
+        why = "gh is not on PATH";
         return null;
     }
 
@@ -1210,7 +1295,14 @@ string? GitHubToken()
         out IEnumerable<string> printed
     );
     string token = string.Join("", printed).Trim();
-    return exit == 0 && token.Length > 0 ? token : null;
+    if (exit != 0 || token.Length == 0)
+    {
+        why = $"gh auth token exited {exit} without a token";
+        return null;
+    }
+
+    why = "gh auth token answered, and the token goes to zizmor's process alone";
+    return token;
 }
 
 // The arguments actionlint lints .github with, returned once actionlint has reported a ShellCheck

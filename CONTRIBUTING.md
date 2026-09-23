@@ -40,8 +40,9 @@ stops at the first failure and prints a summary table. `dotnet cake.cs --descrip
 task and what it checks, and `dotnet cake.cs --tree` prints the order they run in.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
-`workflows`. `lockfile` reads two data files and asks git which paths are tracked. git is the one
-process it starts, so it needs no mise on the machine, and it is the first task the whole gate runs. `--target=tools` runs `lockfile` and then
+`workflows`. `lockfile` reads `mise.toml`, `mise.lock` and `bunfig.toml`, and asks git which paths
+are tracked. git is the one process it starts, so it needs no mise on the machine, and it is the
+first task the whole gate runs. `--target=tools` runs `lockfile` and then
 `mise install`; it is the install continuous integration runs, and `check` does not reach it.
 
 `workflows` hands actionlint the ShellCheck binary it resolved, then asks actionlint for a finding
@@ -51,10 +52,11 @@ still exits 0. A clean actionlint run counts for nothing until that finding come
 The pre-push hook runs the whole gate. A local run asks `gh auth token` for a token and hands the
 answer to zizmor alone, which then runs its online audits. With no answer, zizmor runs with
 `--offline`. On continuous integration, where GitHub Actions sets `CI`, the gate never starts gh and
-runs zizmor with `--offline`, and the shared `workflows` job runs the online audits. gh reads
-`GH_TOKEN` before its keyring, so a fine-grained read-only token there is the least a local run can
-hand zizmor. A token the shell exports reaches every process the gate starts but mise, because
-the gate clears nothing else from the environment it inherits.
+runs zizmor with `--offline`, and the shared `workflows` job runs the online audits. The row prints
+which mode zizmor runs in and why, and never the token. gh reads `GH_TOKEN` before its keyring, so a
+fine-grained read-only token there is the least a local run can hand zizmor. A token the shell
+exports reaches every process the gate starts but mise, because mise is the one process whose
+environment the gate builds from nothing.
 
 `tools` depends on `lockfile` and then runs `mise install`, so the lockfile is asserted before
 anything installs from it. An address in `mise.lock` is what an install fetches, and an entry naming
@@ -271,6 +273,17 @@ directory the test owns.
   writes passes. An extraction from `git archive` has no `.git` at the root and tracks nothing, so
   the check starts no git there and passes. The `gate` job's `bun install` takes `--ignore-scripts`,
   because a frozen lockfile still runs the lifecycle scripts `package.json` names.
+- `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone, at the value `cake.cs` names.
+  Bun reads the file on every start, and no flag stops it. A top-level `preload` there runs a module
+  before the first line of whatever Bun starts, and bunx starts prettier and commitlint under Bun
+  whenever node is not on `PATH`. Every other key reaches Bun too: an `[install]` registry moves
+  where even a frozen install downloads from. So `lockfile` and the prettier row refuse any other key
+  or table, and any other value, before the gate starts bunx. The file's lines, less comments, have
+  to read exactly those two lines in printable ASCII, so Bun and the gate cannot read it two ways.
+- No row stops the first Bun process on a branch nobody has read. lefthook's commit-msg hook runs
+  `bunx commitlint` before any gate does, and `bun install` runs lefthook's postinstall, which
+  starts under Bun when node is not on `PATH`. Read a pull request's `bunfig.toml` before running
+  anything on its branch.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
