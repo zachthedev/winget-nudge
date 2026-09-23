@@ -225,9 +225,15 @@ directory the test owns.
   repository. An address carrying a control or whitespace character, a percent escape, a backslash,
   or a `.` or `..` segment is refused before any comparison. The expected owner and assets live in
   `cake.cs` rather than in `mise.lock`, so moving an install takes an edit to both.
-- mise fetches `url_api` in place of `url` when `url` answers 404, and nothing offline ties the
-  asset id in it to a release. An id naming another asset of the right repository passes the gate.
-  The whole-`url` comparison is what keeps an install off that path.
+- mise fetches an asset through its `url_api` address in place of `url` when a HEAD on `url` fails,
+  and nothing offline ties that asset id to a release. The one `url_replacements` entry in
+  `mise.toml` sends that fetch to `url-api-fallback-refused.invalid`, so such an install fails with
+  a DNS error rather than installing whatever the id names. `lockfile` refuses a `mise.toml`
+  without that entry or with any other, because another entry would move a download away from the
+  url `mise.lock` records. `tools` hands `mise install` the same entry through
+  `MISE_URL_REPLACEMENTS`, which replaces the map every config file builds: a `mise.local.toml`,
+  `.mise.toml` or `.config/mise` file in the checkout can lift the `mise.toml` entry, and cannot
+  lift the environment's. A `mise install` run by hand reads the files alone.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`

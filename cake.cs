@@ -7,6 +7,7 @@
 #:property UseAppHost=false
 #:package Tomlyn
 
+using System.Text.Json;
 using Tomlyn;
 using Tomlyn.Model;
 
@@ -128,9 +129,9 @@ const string shellCheckFinding = "SC2086";
 // here because mise.lock's backend and url are the address an install fetches from, and the file a
 // bump rewrites wholesale is not where the expected owner can live. The tag prefix and the asset
 // for each lockfile platform finish that address, with {version} standing for the pin, so the url
-// in mise.lock has to be one exact string. mise fetches the url_api asset id in its place when the
-// url answers 404, and nothing offline ties that id to a release, so the url is what keeps an
-// install on the pinned asset.
+// in mise.lock has to be one exact string. mise fetches the url_api asset id in its place when a
+// HEAD on the url fails, and nothing offline ties that id to a release. The exact url keeps that
+// HEAD on the pinned asset, and the url_replacements entry refuses the fetch when it fails anyway.
 //
 // Attested names the two aqua declares a signer workflow for, so mise verifies a GitHub attestation
 // and records it. koalaman/shellcheck declares neither a signer workflow nor a checksums file at
@@ -190,6 +191,15 @@ const string releaseApiHost = "api.github.com";
 // a bare lock write every platform the gate reads, so no flag repeats the list here.
 const string relock = "mise lock";
 
+// The one url_replacements entry mise.toml carries. mise fetches a release asset through its API
+// address in place of mise.lock's url when a HEAD on the url fails, and an asset id names no release
+// offline. This entry sends that fetch to a host that cannot resolve, so the install fails. The
+// tools task hands mise install the same entry through MISE_URL_REPLACEMENTS, which replaces the
+// whole map every config file builds, so neither a value already in the environment nor another
+// config file in the checkout can lift it there.
+const string fallbackPattern = @"regex:^https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/.*$";
+const string fallbackRefused = "https://url-api-fallback-refused.invalid/";
+
 // The two data files alone, before any process starts and before anything installs from them. A
 // lockfile that disagrees with its pin is the likeliest fault after a bump, and an address in it
 // is what an install fetches, so both are read before the install rather than after. Nothing here
@@ -200,6 +210,7 @@ Task("lockfile")
     .Does(() =>
     {
         MiseConfig config = ReadMiseConfig("mise.toml");
+        RequireFallbackRefused(config.Replacements);
         Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms);
         foreach (string tool in config.Versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
         {
@@ -210,10 +221,11 @@ Task("lockfile")
 // The tool install, behind the lockfile task. Continuous integration's gate job runs this target
 // ahead of the whole gate. The order is a dependency in this file, so this task installs nothing
 // before the assertions pass. Outside check, because a local gate runs the tools an earlier install
-// put on disk. The three settings in the environment are the ones the install leans on: locked
-// mode, the lockfile read, and re-verifying each attestation against the artifact mise.lock records
-// rather than trusting the run that wrote it. mise.toml sets all three, and this repeats them so
-// the install does not depend on the file being read or on the environment leaving them alone.
+// put on disk. The four settings in the environment are the ones the install leans on: locked
+// mode, the lockfile read, re-verifying each attestation against the artifact mise.lock records
+// rather than trusting the run that wrote it, and the url_api fallback refused. mise.toml sets all
+// four, and this repeats them so the install does not depend on the file being read or on the
+// environment leaving them alone.
 Task("tools")
     .Description("The tools mise.lock records, installed once the lockfile task has passed them")
     .IsDependentOn("lockfile")
@@ -230,6 +242,9 @@ Task("tools")
                     ["MISE_LOCKED"] = "1",
                     ["MISE_LOCKFILE"] = "1",
                     ["MISE_LOCKED_VERIFY_PROVENANCE"] = "1",
+                    ["MISE_URL_REPLACEMENTS"] = JsonSerializer.Serialize(
+                        new Dictionary<string, string>(StringComparer.Ordinal) { [fallbackPattern] = fallbackRefused }
+                    ),
                 },
             }
         );
@@ -358,7 +373,47 @@ MiseConfig ReadMiseConfig(string path)
         );
     }
 
-    return new MiseConfig(versions, platforms);
+    Dictionary<string, string> replacements = new(StringComparer.Ordinal);
+    if (
+        table.TryGetValue("settings", out object? settingsValue)
+        && settingsValue is TomlTable settingsTable
+        && settingsTable.TryGetValue("url_replacements", out object? rules)
+    )
+    {
+        if (rules is not TomlTable declaredRules)
+        {
+            throw new CakeException($"{path} sets url_replacements to something other than a table.");
+        }
+
+        foreach (KeyValuePair<string, object> rule in declaredRules)
+        {
+            replacements[rule.Key] =
+                rule.Value as string
+                ?? throw new CakeException(
+                    $"{path} maps url_replacements key {rule.Key} to something other than a string."
+                );
+        }
+    }
+
+    return new MiseConfig(versions, platforms, replacements);
+}
+
+// mise.toml's url_replacements has to be the fallback refusal and nothing else. Without it a url
+// that fails lets mise fetch whatever asset url_api names. Any other entry moves a download away
+// from the address mise.lock records, past every assertion the lockfile task makes.
+void RequireFallbackRefused(Dictionary<string, string> replacements)
+{
+    if (
+        replacements.Count != 1
+        || !replacements.TryGetValue(fallbackPattern, out string? destination)
+        || destination != fallbackRefused
+    )
+    {
+        throw new CakeException(
+            $"mise.toml's [settings.url_replacements] has to hold one entry, '{fallbackPattern}' = \"{fallbackRefused}\", "
+                + $"and it holds [{string.Join(", ", replacements.Select(rule => $"'{rule.Key}' = \"{rule.Value}\""))}]."
+        );
+    }
 }
 
 // mise.lock as mise writes it, read as TOML: [[tools.<name>]] carries the version, the specifiers
@@ -557,7 +612,8 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         }
 
         // An asset id names no release offline, so url_api is held to its shape alone: one asset of
-        // the tool's own repository. mise reaches it only when the url above answers 404.
+        // the tool's own repository. mise reaches it only when a HEAD on the url above fails, and the
+        // url_replacements entry refuses that fetch.
         string assets = $"https://{releaseApiHost}/repos/{pin.Repository}/releases/assets/";
         RequireAddressText(tool, platform, "url_api", artifact.UrlApi);
         if (
@@ -568,7 +624,7 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
         {
             throw new CakeException(
                 $"mise.lock records {tool} {platform} url_api as \"{artifact.UrlApi}\", and the gate takes {assets} followed by an asset id alone. "
-                    + $"mise fetches it when the url answers 404. Write it again with: {relock}"
+                    + $"mise fetches it when a HEAD on the url fails. Write it again with: {relock}"
             );
         }
 
@@ -787,4 +843,9 @@ sealed record MisePin(string Repository, string TagPrefix, Dictionary<string, st
 /// <summary>What mise.toml declares: the pinned version of each tool, and the platforms the lockfile carries.</summary>
 /// <param name="Versions">Tool name to the version mise.toml pins.</param>
 /// <param name="Platforms">The lockfile_platforms list every mise.lock entry has to carry.</param>
-sealed record MiseConfig(Dictionary<string, string> Versions, string[] Platforms);
+/// <param name="Replacements">The url_replacements entries under [settings], pattern to destination.</param>
+sealed record MiseConfig(
+    Dictionary<string, string> Versions,
+    string[] Platforms,
+    Dictionary<string, string> Replacements
+);

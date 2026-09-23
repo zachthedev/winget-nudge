@@ -39,6 +39,15 @@ github_attestations = true
 [settings.aqua]
 github_attestations = true
 
+# mise fetches a release asset through its GitHub API address in place of the url mise.lock records
+# when a HEAD on that url fails, and an asset id names no release, so nothing ties that fetch to the
+# pin. This entry sends it to a host that cannot resolve, and the install fails with a DNS error for
+# url-api-fallback-refused.invalid. The gate refuses any other entry here, because one would move a
+# download away from the url mise.lock records, and its install carries the same entry in
+# MISE_URL_REPLACEMENTS, because another config file in the checkout can lift this one.
+[settings.url_replacements]
+'regex:^https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/.*$' = "https://url-api-fallback-refused.invalid/"
+
 # locked_scopes is a global-only setting, so this file cannot set it and MISE_LOCKED_SCOPES can
 # drop project from the scopes locked mode covers. mise enforces a config-root locked whatever that
 # list says, so this is the one place locked mode cannot be lifted off this repository's tools.
