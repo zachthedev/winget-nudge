@@ -23,7 +23,8 @@ bind an agent as they bind a person.
   packages, and the real scheduled tasks here run the installed app.
 - Never edit the version in `Directory.Build.props` or `CHANGELOG.md` by hand
   ([what never happens](CONTRIBUTING.md#what-never-happens)).
-- Never hand-edit `mise.lock` ([what never happens](CONTRIBUTING.md#what-never-happens)).
+- Never write a `mise.lock` line outside `mise lock`, except a checksum computed as `mise.toml`
+  says ([what never happens](CONTRIBUTING.md#what-never-happens)).
 - Never disable an analyzer, suppress a finding or delete an assertion to make the gate pass
   ([what never happens](CONTRIBUTING.md#what-never-happens)).
 - Never invent a commit scope ([what never happens](CONTRIBUTING.md#what-never-happens)).

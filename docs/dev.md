@@ -21,10 +21,10 @@ winget install --id jdx.mise --exact
   commitlint, prettier and lefthook.
 - PowerShell 7, for the scripts under `tools` and the commands in this document.
 - [mise](https://mise.jdx.dev), at any current version; continuous integration pins the one it runs
-  on the `jdx/mise-action` line in `.github/workflows/ci.yml`. It installs actionlint, zizmor and
-  ShellCheck: `mise.toml` pins the version of each one, `mise.lock` records the artifact that
-  version resolved to, and continuous integration installs from the same two files. The gate names
-  the `winget install` command when mise is missing.
+  on the `jdx/mise-action` line in `.github/workflows/ci.yml`. It installs actionlint, zizmor,
+  ShellCheck and taplo: `mise.toml` pins the version of each one, `mise.lock` records the artifact
+  that version resolved to, and continuous integration installs from the same two files. The gate
+  names the `winget install` command when mise is missing.
 
 The app needs the Windows App Runtime at run time. [install.md](install.md#requirements) names the
 version and where it comes from.
@@ -43,10 +43,11 @@ dotnet cake.cs
 
 `bun install` also installs the git hooks. `dotnet tool restore` installs CSharpier at the version
 `dotnet-tools.json` pins. `mise trust` marks this repository's `mise.toml` as one mise may read, and
-`mise install` puts the linters on disk from the artifacts `mise.lock` records. `dotnet cake.cs`
-runs the whole gate, which a pre-push hook runs again before anything leaves the machine.
+`mise install` puts the linters and taplo on disk from the artifacts `mise.lock` records.
+`dotnet cake.cs` runs the whole gate, which a pre-push hook runs again before anything leaves the
+machine.
 
-The gate resolves each linter with `mise which` and runs the path it gets back. `mise install` is
+The gate resolves each mise tool with `mise which` and runs the path it gets back. `mise install` is
 the step that needs the network; the gate itself reaches it only for zizmor's online audits, when
 `gh auth token` answers.
 

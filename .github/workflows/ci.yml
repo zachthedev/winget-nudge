@@ -20,7 +20,7 @@ concurrency:
 # no cooldown; a commit cannot. Renovate bumps the hash and keeps the version comment current.
 jobs:
   # The whole gate, the same command a contributor runs before a push. Windows alone: the app is
-  # WinUI 3 and the installer is a WiX MSI, and neither builds on darwin or linux. The linters come
+  # WinUI 3 and the installer is a WiX MSI, and neither builds on darwin or linux. The tools come
   # from mise: mise.toml carries the version of each one and mise.lock carries the artifact that
   # version resolved to, so this job, the workflows job below and a local run install the same
   # bytes from the same two files. jdx/mise-action pins mise itself on its version line and
@@ -71,8 +71,9 @@ jobs:
       contents: read
     uses: zachthedev/.github/.github/workflows/commits.yml@c53d09e393028ceddee0d761f2a7963394289a72 # v0.1.0
 
-  # The same linters on Linux, from the same lockfile, so an entry only one platform can install
-  # fails on a pull request rather than on a contributor's machine.
+  # The workflow linters on Linux, from the same lockfile. Its install covers every tool mise.toml
+  # pins, taplo included, so an entry only one platform can install fails on a pull request rather
+  # than on a contributor's machine.
   workflows:
     permissions:
       contents: read

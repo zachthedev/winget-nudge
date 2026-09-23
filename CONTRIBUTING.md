@@ -7,10 +7,11 @@ the rules that apply to every change.
 
 [docs/dev.md](docs/dev.md#prerequisites) names the toolchain and the pin file each tool's version
 lives in. Install it before the first commit: `bun install` runs `lefthook install`, which writes
-the git hooks, and `mise trust` then `mise install` put the workflow linters on disk. A clone where
-`bun install` never ran has no hooks, so git commits and pushes with no local check. A hook that
-cannot find lefthook prints `Can't find lefthook in PATH` and exits 0. The control is continuous
-integration: the `commits` job lints every commit message, and the `gate` job runs the whole gate.
+the git hooks, and `mise trust` then `mise install` put the workflow linters and taplo on disk. A
+clone where `bun install` never ran has no hooks, so git commits and pushes with no local check. A
+hook that cannot find lefthook prints `Can't find lefthook in PATH` and exits 0. The control is
+continuous integration: the `commits` job lints every commit message, and the `gate` job runs the
+whole gate.
 
 The committed `.claude/settings.json` pre-approves read-only git commands and nothing else, and
 denies the `--output` form of `git diff`, `git log` and `git show`, which writes a file. A branch
@@ -57,7 +58,7 @@ anything installs from it. An address in `mise.lock` is what an install fetches,
 a repository other than the one `cake.cs` records is refused before anything downloads from it. The
 order is a dependency in `cake.cs`, so on the `gate` job no arrangement of steps can install first.
 The Linux linter leg installs through mise alone, with the attestations verified. `check` does
-not reach `tools`: a local gate resolves linters an earlier `mise install` put on disk, and the
+not reach `tools`: a local gate resolves tools an earlier `mise install` put on disk, and the
 one network request it makes is zizmor's online audit when `gh` holds a token. `tools` installs
 with the attestations re-verified on a cold cache, so every pull request checks the artifacts
 `mise.lock` records rather than trusting the run that wrote them.
@@ -173,16 +174,21 @@ directory the test owns.
   first is the winget release the COM projection comes from. The second is the SHA-256 of the
   `Microsoft.WinGet.Client` package of the same version on the PowerShell Gallery, the only source
   of `winrtact.dll`. Renovate holds the projection for that reason.
-- The workflow linters are pinned in `mise.toml`, and `mise.lock` records the artifact each version
-  resolved to. Both legs install from those two files, so no pin is asserted against a copy of
-  itself. Renovate rewrites both in one pull request by running `mise lock`. The pins sit in a data
-  file rather than in `cake.cs`, because a formatter moves source and a pin that moves is a pin no
-  tool can read.
+- The workflow linters and taplo are pinned in `mise.toml`, and `mise.lock` records the artifact
+  each version resolved to. Both legs install from those two files, so no pin is asserted against a
+  copy of itself. Renovate rewrites both in one pull request by running `mise lock`. The pins sit in
+  a data file rather than in `cake.cs`, because a formatter moves source and a pin that moves is a
+  pin no tool can read.
 - mise verifies a GitHub build attestation for actionlint and zizmor, because aqua's registry
   declares a signer workflow for each. It verifies none for ShellCheck. `koalaman/shellcheck`
   declares neither a signer workflow nor a checksums file at any version constraint, so ShellCheck's
   integrity here is the recorded hash alone. The gate asserts a checksum for every tool and
   provenance for each one that carries it.
+- mise verifies no attestation for taplo either. Its release assets carry no GitHub digest and its
+  aqua entry names no checksum file, so `mise lock` records no checksum for it. Its two checksum
+  lines are the sha256 of the artifact at each recorded url, computed as `mise.toml` says, and a
+  relock at the same version keeps them. A taplo bump drops them, so its pull request stays red at
+  `lockfile` until the new hashes are computed and committed in the same change.
 - The gate also asserts the `backend`, `url` and `url_api` of every entry against the aqua
   repository `cake.cs` names for that tool. Those three are what an install fetches, so a provenance
   line beside an address somewhere else would be a claim about bytes nobody downloads. The expected
@@ -245,7 +251,8 @@ certificate; [docs/dev.md](docs/dev.md) shows how.
   next one or disagrees with the tag it cuts.
 - No invented commit scope. commitlint accepts only the scopes `.github/commit-scopes.json` lists,
   so an invented one fails the hook and the `commits` job; omit the scope instead.
-- No hand edit of `mise.lock`. Its entries are the addresses an install fetches and the checksums it
-  verifies against, so a hand-written line is an address nobody verified. Write it with `mise lock`.
+- No `mise.lock` line is written outside `mise lock`, except a checksum computed as `mise.toml` says.
+  Its entries are the addresses an install fetches and the checksums it verifies against, so a
+  hand-written line is an address nobody verified.
 - No analyzer disabled, finding suppressed or assertion deleted to make the gate pass without saying
   why in the same change. A task that fails is reporting something.

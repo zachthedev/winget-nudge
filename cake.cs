@@ -32,6 +32,22 @@ Task("prettier")
     .Description("Markdown, YAML and JSON formatting")
     .Does(() => Command(["bunx", "bunx.exe"], "--no-install prettier --check ."));
 
+// taplo comes from mise like the workflow linters, so it runs from the path mise which resolves
+// once the lockfile task has passed its entry. --config names the committed file so TAPLO_CONFIG
+// in the environment cannot swap it.
+Task("toml")
+    .Description("TOML formatting, through taplo, over the files .taplo.toml names")
+    .IsDependentOn("lockfile")
+    .Does(() =>
+    {
+        FilePath taplo = Installed(RequireMise(), "taplo");
+        Command(
+            ["taplo", "taplo.exe"],
+            "fmt --check --config .taplo.toml",
+            settingsCustomization: settings => settings.WithToolPath(taplo)
+        );
+    });
+
 // Both configurations: everything ships from Release, and the demo inventory behind #if DEBUG
 // compiles only in Debug, so a Release-only gate would never analyze or even parse it.
 Task("build")
@@ -87,6 +103,7 @@ Task("code")
     .IsDependentOn("lockfile")
     .IsDependentOn("format")
     .IsDependentOn("prettier")
+    .IsDependentOn("toml")
     .IsDependentOn("tests")
     .IsDependentOn("installer");
 
@@ -106,18 +123,20 @@ const string shellCheckCanary = """
 
 const string shellCheckFinding = "SC2086";
 
-// What the gate knows about each linter beside the version mise.toml pins. The aqua repository is
+// What the gate knows about each tool beside the version mise.toml pins. The aqua repository is
 // here because mise.lock's backend and url are the address an install fetches from, and the file a
 // bump rewrites wholesale is not where the expected owner can live.
 //
 // Attested names the two aqua declares a signer workflow for, so mise verifies a GitHub attestation
 // and records it. koalaman/shellcheck declares neither a signer workflow nor a checksums file at
 // any version constraint, so its entry carries a checksum and no provenance, and asserting one
-// would fail a lockfile that is correct.
+// would fail a lockfile that is correct. tamasfe/taplo declares no signer workflow either, and its
+// entry carries the checksum mise.toml says how to compute.
 Dictionary<string, MisePin> misePins = new(StringComparer.Ordinal)
 {
     ["actionlint"] = new("rhysd/actionlint", Attested: true),
     ["shellcheck"] = new("koalaman/shellcheck", Attested: false),
+    ["taplo"] = new("tamasfe/taplo", Attested: false),
     ["zizmor"] = new("zizmorcore/zizmor", Attested: true),
 };
 
@@ -155,7 +174,7 @@ Task("lockfile")
 // rather than trusting the run that wrote it. mise.toml sets all three, and this repeats them so
 // the install does not depend on the file being read or on the environment leaving them alone.
 Task("tools")
-    .Description("The linters mise.lock records, installed once the lockfile task has passed them")
+    .Description("The tools mise.lock records, installed once the lockfile task has passed them")
     .IsDependentOn("lockfile")
     .Does(() =>
     {
@@ -236,7 +255,7 @@ RunTarget(target);
 
 // ///// Pins /////
 
-// mise.toml, read as TOML: the [tools] table is where the linter versions live rather than here,
+// mise.toml, read as TOML: the [tools] table is where the tool versions live rather than here,
 // because a formatter moves source and a pin that moves is a pin no tool can read. Both legs
 // install from this file, so no version has to be asserted against another file's copy of itself.
 // lockfile_platforms is the list every mise.lock entry has to carry, so a bump made on one machine
@@ -455,8 +474,8 @@ void RequireRecorded(string tool, string version, string[] platforms, Dictionary
             relock
         );
 
-        // ShellCheck's aqua entry declares no signer workflow and no checksums file, so mise has
-        // no attestation to verify for it and its entry carries a checksum alone.
+        // The aqua entries for ShellCheck and taplo declare no signer workflow, so mise has no
+        // attestation to verify for either and each entry carries a checksum alone.
         if (!pin.Attested)
         {
             continue;
@@ -637,7 +656,7 @@ sealed record MiseArtifact(
     string UrlApi
 );
 
-/// <summary>What cake.cs knows about one pinned linter, beside the version mise.toml carries.</summary>
+/// <summary>What cake.cs knows about one pinned tool, beside the version mise.toml carries.</summary>
 /// <param name="Repository">The GitHub repository aqua resolves the artifact from, as owner/name.</param>
 /// <param name="Attested">Whether aqua declares a signer workflow, so mise records provenance.</param>
 sealed record MisePin(string Repository, bool Attested);
