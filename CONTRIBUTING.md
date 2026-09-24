@@ -7,11 +7,25 @@ the rules that apply to every change.
 
 [docs/dev.md](docs/dev.md#prerequisites) names the toolchain and the pin file each tool's version
 lives in. Install it before the first commit: `bun install` runs `lefthook install`, which writes
-the git hooks, and `mise trust` then `mise install` put the workflow linters and taplo on disk. A
-clone where `bun install` never ran has no hooks, so git commits and pushes with no local check. A
-hook that cannot find lefthook prints `Can't find lefthook in PATH` and exits 0. The control is
-continuous integration: the `commits` job lints every commit message, and the `gate` job runs the
-whole gate.
+the git hooks, and `mise trust` then `mise install` put the workflow linters and taplo on disk.
+[Safety](#safety) says why the hooks are no control, and [Troubleshooting](#troubleshooting) says
+when to install again.
+
+## Safety
+
+Read a pull request's diff before running anything on its branch, a commit included. The gate is
+the branch's own `cake.cs`, and the hooks run the branch's `lefthook.yml` and `commitlint.config.js`,
+so no check runs ahead of the branch's code.
+
+No row stops the first Bun process on a branch nobody has read. lefthook's commit-msg hook runs
+`bunx --bun commitlint` before any gate row, and `bun install` runs lefthook's postinstall, which
+starts under Bun when node is not on `PATH`. Read a pull request's `bunfig.toml`, and any root `.env`
+or `.env.*`, before running anything on its branch.
+
+The hooks are not a control. A clone where `bun install` never ran has no hooks, so git commits and
+pushes with no local check. A hook that cannot find lefthook prints `Can't find lefthook in PATH` and
+exits 0. The control is continuous integration: the `commits` job lints every commit message, and the
+`gate` job runs the whole gate.
 
 The committed `.claude/settings.json` pre-approves read-only git commands and nothing else, and
 denies the `--output` form of `git diff`, `git log` and `git show`, which writes a file. A branch
@@ -26,6 +40,27 @@ clone would run a stranger's code without a prompt. Approve those for yourself i
   }
 }
 ```
+
+Two things reach the JS tools from your own environment:
+
+- A root `.env`. The gate refuses a tracked one, but your own untracked `.env` passes the
+  tracked-path check. Bun loads it into prettier and commitlint, because `bunfig.toml` holds the
+  cooldown alone. `bunx` accepts `--no-env-file` in every position and ignores it. No variable
+  either tool reads from it loads code. `bun install` loads the root one too, whatever flag it gets.
+  There it moves the registry, and it swaps a package under a frozen lockfile with no `bun.lock`
+  change, through `BUN_INSTALL_CACHE_DIR`, or `BUN_CONFIG_SKIP_LOAD_LOCKFILE` with a registry. It
+  hands its values to every script it runs. `prepare` passes `--no-env-file`, so `bun run prepare`
+  hands lefthook's `install` none of them, but under `bun install` lefthook still sees them.
+- The Bun variables. Bun reads command-line flags from `BUN_OPTIONS`, so a `--preload` there runs a
+  module in every Bun process, and an `--env-file` there loads that file. Bun preloads the module
+  `BUN_INSPECT_PRELOAD` names, and reads `BUN_INSPECT` and `BUN_INSPECT_CONNECT_TO` for its
+  inspector. The gate and the hooks leave all four in place, in any letter case. Keep
+  `BUN_OPTIONS`, `BUN_INSPECT`, `BUN_INSPECT_CONNECT_TO` and `BUN_INSPECT_PRELOAD` unset in the
+  shell you commit from and run the gate from.
+
+`prepare` starts `bun` by name, and a `package.json` script finds it in every `node_modules/.bin`
+before `PATH`. A dependency declaring its own `bun` bin would win there, and it would arrive as a
+change to `bun.lock` that review reads.
 
 ## The gate
 
@@ -140,6 +175,20 @@ pull request title alike. A `Refs: <sha>` footer names each commit it reverts. A
 copied whole can overrun the header limit `commitlint.config.js` sets. commitlint skips the
 `Revert "..."` subject that git and GitHub write. release-please cannot parse it, so that revert
 never reaches the changelog.
+
+commitlint also skips a commit whose header starts with a `commit-message` prefix
+`.github/dependabot.yml` sets, then `: `, when a line after that header starts
+`Signed-off-by: dependabot[bot] <`, the trailer Dependabot writes. Here that header is `fix(deps): `.
+A Dependabot body carries lines past the width limit, and the body rule exempts only a line holding
+a URL. A one-commit pull request lands under its commit's header, so a skipped commit lands a
+header that starts with Dependabot's type and scope, and the rest of it goes unchecked. A one-line
+pull request title has no line after its header, so the title lint checks it.
+
+github.com shows a commit subject whole up to 72 characters and cuts it at 73. The 72 applies to
+the header that lands. The `commits` job lints a pull request's title, or a one-commit pull
+request's subject, with ` (#N)` appended. So a title fits in 64 to 67 characters, by the width of
+the pull request number. A Dependabot pull request whose landed header runs past 72 fails that lint.
+It is closed, and the bump is taken by hand. No Dependabot pull request here ran past it.
 
 Each version heading in `CHANGELOG.md` after the first links GitHub's compare view from the previous
 tag. That view lists every commit in the release, hidden types included.
@@ -468,10 +517,13 @@ directory the test owns.
   the root; and a root `cake.config`, which Cake reads before any task runs. It refuses a
   `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules prettier and
   commitlint load, and the repository has no TypeScript.
-- A `package.json` with a top-level `prettier`, `commitlint` or `cosmiconfig` key is refused. So is
-  one that names a key twice at any depth, because Bun keeps the first of two keys and
-  `JSON.parse` the last. The finding names the key path. `dotnet-tools.json` is held to each key
-  once the same way.
+- A `package.json` with a top-level `prettier`, `commitlint`, `cosmiconfig` or `patchedDependencies`
+  key is refused. So is one that names a key twice at any depth, because Bun keeps the first of two
+  keys and `JSON.parse` the last. The finding names the key path. `bun install` applies a root
+  `patchedDependencies` entry to the package it names, under a frozen lockfile too and with no
+  `bun.lock` change, so a patch would change what prettier or commitlint runs. Bun reads the key in
+  an escaped spelling too, and the refusal matches the decoded name. `dotnet-tools.json` is held to
+  each key once the same way.
 - lefthook's commit-msg hook passes `--config commitlint.config.js`, so commitlint searches for no
   other config. The shared `commits` job runs commitlint without it, so a planted
   `.commitlintrc.json` passes that job, and the refusal above is where it lands. cosmiconfig runs a
@@ -479,10 +531,10 @@ directory the test owns.
   any gate row. So the hook's first job fails on a `.config`, and `piped: true` stops the hook
   there, before commitlint starts. That job stops an accidental `.config`, not a hostile branch:
   lefthook merges a `.config/lefthook-local.*` file over `lefthook.yml` before any job runs, so the
-  same directory can replace the job. Read a pull request before running anything on its branch, a
-  commit included, as the bullet on the first Bun process below says. lefthook also merges a
-  `lefthook-local.*` or `.lefthook-local.*` file at the root on every run, and no switch stops it.
-  The tracked-path check refuses a tracked one, and `.gitignore` covers a contributor's own.
+  same directory can replace the job, which is why [Safety](#safety) says to read a branch first.
+  lefthook also merges a `lefthook-local.*` or `.lefthook-local.*` file at the root on every run,
+  and no switch stops it. The tracked-path check refuses a tracked one, and `.gitignore` covers a
+  contributor's own.
 - The tracked-path check also refuses a path with a `.git`, `.sl`, `.svn`, `.hg` or `.jj` segment,
   in any case, because prettier's CLI skips such a directory without a word. It refuses a
   `zizmor: ignore[` comment in any tracked file under `.github`, because zizmor honors one with no
@@ -508,14 +560,6 @@ directory the test owns.
   ignores. Every job passing `secrets: inherit` has to call a workflow under
   `zachthedev/.github/.github/workflows/`, and zizmor's count of such jobs has to equal the
   `secrets: inherit` lines in the workflows. The row prints each callee.
-- No row stops the first Bun process on a branch nobody has read. lefthook's commit-msg hook runs
-  `bunx --bun commitlint` before any gate row, and `bun install` runs lefthook's postinstall, which
-  starts under Bun when node is not on `PATH`. Read a pull request's `bunfig.toml` before running
-  anything on its branch.
-- A contributor's own untracked `.env` passes the tracked-path check, and Bun loads it into prettier
-  and commitlint, because `bunfig.toml` holds the cooldown alone. No variable either tool reads from
-  it loads code. `PRETTIER_EXPERIMENTAL_CLI` set there turns the prettier row red, since that CLI
-  refuses `--config`.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
@@ -573,6 +617,24 @@ release-please owns the version in `Directory.Build.props` and the whole of `CHA
 
 Release MSIs are unsigned for now. A local build signs when `Directory.Signing.props` names a
 certificate; [docs/dev.md](docs/dev.md) shows how.
+
+## Troubleshooting
+
+- A local run that disagrees with continuous integration may have run another copy of a tool. The
+  prettier row and the commit-msg hook start theirs with `bunx --bun --no-install`, which runs
+  `node_modules/.bin/<tool>` in the checkout and never downloads. With no install there, bunx runs
+  the first copy it finds in a parent directory's `node_modules/.bin`, then on `PATH`, then in Bun's
+  cache, and says nothing about which. With an install older than `bun.lock`, it runs that older
+  copy. The `gate` job's `bun install` is fresh, so neither happens there.
+- A git worktree has no `node_modules` of its own, and `.worktreeinclude` copies none in. So a
+  worktree under the main checkout runs the main checkout's copy. A new clone takes Setup's plain
+  `bun install`, which writes the hooks. Run `bun install --frozen-lockfile --ignore-scripts` in each
+  new worktree, and again after `bun.lock` changes. [Safety](#safety) says what to read before that
+  install. Keep the scripts off there: `prepare` and lefthook's postinstall each run
+  `lefthook install`, which rewrites the shared hooks to name that worktree's lefthook.
+- A personal `.env` reaches a local run and never continuous integration. `PRETTIER_EXPERIMENTAL_CLI`
+  set there turns the prettier row red, since that CLI refuses `--config`. A Bun variable in your
+  shell changes every Bun start the same way, and [Safety](#safety) lists them.
 
 ## What never happens
 

@@ -2038,7 +2038,9 @@ static string? SearchedConfig(string relative)
 
 // Why the gate refuses a package.json, or null when it takes it. prettier reads a top-level prettier
 // key as config, commitlint a commitlint key, and cosmiconfig a cosmiconfig key as options for every
-// search it makes. Bun's reader takes more than JSON does, so a file that does not read as a JSON
+// search it makes. bun install applies a top-level patchedDependencies entry to the package it names,
+// under a frozen lockfile too and with no bun.lock edit, so a patch changes what prettier or
+// commitlint runs. Bun's reader takes more than JSON does, so a file that does not read as a JSON
 // object is refused. Bun keeps the first of two keys, and JSON.parse the last, so a key named twice
 // at any depth is refused too. JsonDocument parses a key holding a lone surrogate escape, and throws
 // InvalidOperationException only when the key is read, so that file is refused as not JSON as well.
@@ -2063,13 +2065,15 @@ static string? RefusedPackageJson(string path)
         [
             .. top.EnumerateObject()
                 .Select(property => property.Name)
-                .Where(key => key is "prettier" or "commitlint" or "cosmiconfig")
+                .Where(key => key is "prettier" or "commitlint" or "cosmiconfig" or "patchedDependencies")
                 .Select(key =>
                     key switch
                     {
                         "prettier" => "a top-level \"prettier\" key, which prettier reads as config",
                         "commitlint" =>
                             "a top-level \"commitlint\" key, which commitlint reads as config when run without --config",
+                        "patchedDependencies" =>
+                            "a top-level \"patchedDependencies\" key, which bun install applies to the package it names, frozen lockfile or not",
                         _ => "a top-level \"cosmiconfig\" key, which cosmiconfig reads as options for every search",
                     }
                 ),
