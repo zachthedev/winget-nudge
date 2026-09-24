@@ -6,16 +6,27 @@
 // dotnet exec, so the gate's own code runs in the signed dotnet host.
 #:property UseAppHost=false
 #:package Tomlyn
+#:package YamlDotNet
 
 using System.Text.Json;
 using Tomlyn;
 using Tomlyn.Model;
+using YamlDotNet.RepresentationModel;
 
 // The gate: every check a change must pass before it leaves the machine. Each Description says
 // what its task covers, and --description lists them. The pre-push hook runs the check target.
 // Continuous integration's gate job runs the tools target, which asserts the lockfile and then
 // installs from it, and then the check target. The release build in cd.yml runs the installer
 // target.
+
+// actionlint starts this program again as its ShellCheck, through the -shellcheck value
+// ShellCheckStandIn builds. The branch runs before any Cake alias, so Cake never reads the
+// arguments actionlint hands ShellCheck.
+const string shellCheckStandInArgument = "--shellcheck-stand-in";
+if (args is [shellCheckStandInArgument, string standInShellCheck, .. string[] standInArguments])
+{
+    Environment.Exit(RunShellCheckStandIn(standInShellCheck, standInArguments));
+}
 
 string target = Argument("target", "check");
 
@@ -482,10 +493,34 @@ const string shellCheckCanary = """
 
 const string shellCheckFinding = "SC2086";
 
+// A workflow whose one script carries a ShellCheck directive, which the stand-in refuses.
+const string shellCheckDirectiveCanary = """
+    name: canary
+    on: push
+    jobs:
+      canary:
+        runs-on: ubuntu-latest
+        steps:
+          - run: |
+              # shellcheck disable=SC2086
+              echo $GITHUB_REF
+    """;
+
+const string shellCheckDirectiveRefusal = "The gate refuses a ShellCheck directive in a workflow script";
+
+// The shells a workflow may name: bash and sh, whose scripts actionlint hands ShellCheck, and pwsh,
+// a Windows runner's default, which ShellCheck cannot read. actionlint matches a shell by its first
+// word, so shell: /bin/bash runs bash with no ShellCheck, and every other value is refused.
+string[] shellCheckedShells = ["bash", "sh", "pwsh"];
+
 // ShellCheck 0.11.0 reads this variable as extra arguments on every run, past the --norc actionlint
 // passes, so an -e there drops a finding. It is the one variable ShellCheck reads that changes one,
-// and actionlint and its canary both run with it empty.
+// and actionlint and its canaries run with it empty. The stand-in removes it again.
 const string shellCheckOptions = "SHELLCHECK_OPTS";
+
+// The one place whose reusable workflows a job may call with secrets: inherit, which hands the called
+// workflow every secret its caller can read.
+const string inheritCallee = "zachthedev/.github/.github/workflows/";
 
 // The host each address in mise.lock has to name, and the path under it. A url elsewhere is an
 // install fetching bytes from elsewhere, whatever the rest of the entry says.
@@ -597,13 +632,13 @@ const string zizmorConfig = """
           days: 3
       # cd.yml's release-pr job and deps.yml's deps job each call a job that names an environment, and
       # run in none themselves, so secrets: inherit is the one form that passes that environment's
-      # secret. The gate refuses an inline ignore comment, so each waiver sits here by file and by the
-      # line of the job's secrets key. A job that moves reports the finding again, unless its uses line
-      # lands on that line.
+      # secret. The gate refuses an inline ignore comment, so both waivers sit here, one per file. A
+      # waiver binds a file, never the workflow a job calls, so the workflows row also runs zizmor with
+      # no config and fails unless every job passing secrets: inherit calls a zachthedev/.github workflow.
       secrets-inherit:
         ignore:
-          - cd.yml:23
-          - deps.yml:39
+          - cd.yml
+          - deps.yml
 
     """;
 
@@ -627,10 +662,15 @@ const string csharpierIgnore = "*" + csharpierIgnoredSuffix + "\n";
 const string lefthookConfig = """
     # Git hooks. `bun install` runs `lefthook install`, which writes the hooks into .git/hooks.
 
+    # cosmiconfig runs a module from .config at the root before commitlint reads --config, so the first
+    # job refuses the directory, and piped stops the hook at the first job that fails.
     # --bun runs commitlint under the Bun that runs this hook, rather than whichever node PATH names.
     # --config names the one commitlint config, so commitlint searches for no other.
     commit-msg:
+      piped: true
       jobs:
+        - name: no .config
+          run: test ! -e .config || { echo 'cosmiconfig runs modules from .config, so remove it' >&2; exit 1; }
         - name: commitlint
           run: bunx --bun --no-install commitlint --config commitlint.config.js --edit {1}
 
@@ -691,7 +731,7 @@ Task("tools")
 
 Task("workflows")
     .Description(
-        "actionlint with ShellCheck over .github/workflows, then zizmor over .github, from the paths mise resolves in locked mode"
+        "actionlint with ShellCheck behind a stand-in that refuses its directives over .github/workflows, each shell: held to bash, sh or pwsh, then zizmor over .github, from the paths mise resolves in locked mode, and every job passing secrets: inherit held to a zachthedev/.github workflow"
     )
     .IsDependentOn("lockfile")
     .Does(() =>
@@ -727,6 +767,7 @@ Task("workflows")
                 .Order(StringComparer.Ordinal),
         ];
         RequireChecked("actionlint", workflows);
+        RequireShellCheckedShells(workflows);
         Command(
             ["actionlint", "actionlint.exe"],
             $"{ProvenAnalyzers(actionlint, Verified(resolved, "shellcheck"))} {string.Join(" ", workflows.Select(file => $"\"{file}\""))}",
@@ -763,6 +804,8 @@ Task("workflows")
                 return token is null ? settings : settings.WithEnvironmentVariable("GH_TOKEN", token);
             }
         );
+
+        RequireInheritCallees(Verified(resolved, "zizmor"), workflows);
     });
 
 // lockfile first by name as well as through code, so the order is stated where the gate is
@@ -1375,17 +1418,17 @@ void RequireOnlyPinnedMiseFiles()
 // install keeps a package it finds already at the version bun.lock records, so a committed
 // node_modules/prettier still runs as prettier after the install. A tracked path with a bin or obj
 // segment is refused the same way, since MSBuild imports files from obj by wildcard, and a
-// committed one reaches every checkout. A tracked .env or .env.<name> at the root is refused as
-// well: Bun loads one into every process it starts, prettier and commitlint included, and no bunx
-// flag stops it. So is a lefthook-local or .lefthook-local file at the root, which lefthook merges
-// over lefthook.yml on every run. A path with a .git, .sl, .svn, .hg or .jj segment is refused, in
-// any case, because prettier's CLI skips such a directory without a word. A zizmor: ignore[ comment
-// in a tracked file under .github is refused, because zizmor honors it with no config. git answers
-// what is tracked, so the node_modules an install writes, and a contributor's own untracked .env or
-// lefthook-local file, pass. An extraction from git archive has no .git at the root and tracks
-// nothing, so the check starts no git there and passes. No GIT_ variable reaches git, and git has to
-// name the root as its top level, so the repository and index it reads are the checkout's own, never
-// ones a shell or hook exported or a directory above the root holds.
+// committed one reaches every checkout. A tracked .env or .env.<name> at any depth is refused as
+// well: Bun loads the one at the root into every process it starts, prettier and commitlint
+// included, and no bunx flag stops it. So is a lefthook-local or .lefthook-local file at the root,
+// which lefthook merges over lefthook.yml on every run. A path with a .git, .sl, .svn, .hg or .jj
+// segment is refused, in any case, because prettier's CLI skips such a directory without a word. A
+// zizmor: ignore[ comment in a tracked file under .github is refused, because zizmor honors it with
+// no config. git answers what is tracked, so the node_modules an install writes, and a contributor's
+// own untracked .env or lefthook-local file, pass. An extraction from git archive has no .git at the
+// root and tracks nothing, so the check starts no git there and passes. No GIT_ variable reaches git,
+// and git has to name the root as its top level, so the repository and index it reads are the
+// checkout's own, never ones a shell or hook exported or a directory above the root holds.
 void RequireNoRefusedTrackedPaths()
 {
     string root = Context.Environment.WorkingDirectory.FullPath;
@@ -1458,10 +1501,10 @@ void RequireNoRefusedTrackedPaths()
     [
         .. tracked
             .Where(path =>
-                !path.Contains('/')
+                path.Split('/')[^1] is string name
                 && (
-                    path.Equals(".env", StringComparison.OrdinalIgnoreCase)
-                    || path.StartsWith(".env.", StringComparison.OrdinalIgnoreCase)
+                    name.Equals(".env", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith(".env.", StringComparison.OrdinalIgnoreCase)
                 )
             )
             .Order(StringComparer.Ordinal),
@@ -1469,8 +1512,9 @@ void RequireNoRefusedTrackedPaths()
     if (envFiles.Length > 0)
     {
         throw new CakeException(
-            $"The repository tracks {string.Join(", ", envFiles.Select(Quoted))} at the root, and the gate takes no tracked .env file. "
-                + "Bun loads one into every process it starts, prettier and commitlint included, and no bunx flag stops it."
+            $"The repository tracks {string.Join(", ", envFiles.Select(Quoted))}, and the gate takes no tracked .env file at any depth. "
+                + "Bun loads one at the root into every process it starts, prettier and commitlint included, and no bunx flag stops it. "
+                + "A tool started in any other directory loads the one there, and each holds values meant to stay out of git. Remove it from the commit."
         );
     }
 
@@ -1539,7 +1583,7 @@ void RequireNoRefusedTrackedPaths()
         throw new CakeException(
             $"The repository tracks a zizmor: ignore[ comment at {string.Join(", ", waivers)}, and the gate takes no inline zizmor waiver under .github. "
                 + "zizmor honors one with no config, so nothing the gate holds names it. "
-                + "Move the waiver to rules.<audit>.ignore in .github/zizmor.yml as <file>:<line>, and change zizmorConfig in cake.cs to match."
+                + "Move the waiver to rules.<audit>.ignore in .github/zizmor.yml as the file name, and change zizmorConfig in cake.cs to match."
         );
     }
 
@@ -1803,7 +1847,7 @@ void RequireNoConfigElsewhere()
 // and jsconfig.json, Cake's cake.config, taplo 0.10.0, zizmor 1.30.1, commitlint 21.2.2 over
 // cosmiconfig 9.0.2, lefthook 2.1.14, and the test platform's testconfig.json and xUnit's
 // xunit.runner.json. A name is refused at every depth the tool, or an editor running it, searches.
-// package.yaml is refused whole, since the gate reads no YAML. In obj, MSBuild imports
+// package.yaml is refused whole, since the gate does not read its keys. In obj, MSBuild imports
 // <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on every
 // restore, so that pair alone passes.
 static string? SearchedConfig(string relative)
@@ -1869,7 +1913,8 @@ static string? SearchedConfig(string relative)
     {
         _ when prettierFiles.Contains(name) && relative != ".prettierrc" =>
             "prettier reads it as config and runs the modules it names",
-        _ when name == "package.yaml" => "prettier and cosmiconfig read its keys as config, and the gate reads no YAML",
+        _ when name == "package.yaml" =>
+            "prettier and cosmiconfig read its keys as config, and the gate does not read its keys",
         _ when name == ".npmrc" => "it moves where bun install downloads from",
         _ when name.StartsWith(".csharpierrc", StringComparison.Ordinal) && relative != ".csharpierrc" =>
             "CSharpier reads it as config for every file below it",
@@ -2425,55 +2470,369 @@ string? GitHubToken(out string why)
     return token;
 }
 
-// The arguments actionlint lints .github with, returned once actionlint has reported a ShellCheck
-// finding with them. -shellcheck names the file the version check resolved. The pinned binary and
-// the binary actionlint starts are therefore one path, not two lookups. -pyflakes= because no
-// Windows package manager ships pyflakes, and actionlint skips that pass without a word when it is
-// missing. A ShellCheck actionlint cannot start leaves the shellcheck rule off and the exit code 0.
-// The canary is what gives a clean actionlint run any weight.
-string ProvenAnalyzers(FilePath actionlint, FilePath shellcheck)
+// .github/zizmor.yml waives secrets-inherit by file, and a waiver binds a file, never the workflow a
+// job calls. So a new job in cd.yml or deps.yml could hand every secret to another repository's
+// workflow unseen. This runs zizmor again, offline, with no config and no ignores, and every
+// secrets-inherit finding has to call a workflow under inheritCallee. zizmor 1.30.1's json-v1 output
+// gives the callee as the concrete feature of the finding's primary location, the job's uses value.
+// The findings have to number the secrets: inherit lines in the workflows, so a changed output
+// shape, or a finding zizmor stops reporting, fails the row rather than passing it.
+void RequireInheritCallees(FilePath zizmor, string[] workflows)
 {
-    string analyzers = $"-pyflakes= -shellcheck=\"{shellcheck.FullPath}\"";
-    FilePath canary = System.IO.Path.Combine(
-        System.IO.Path.GetTempPath(),
-        $"actionlint-shellcheck-canary-{Guid.NewGuid():N}.yaml"
+    int exit = StartProcess(
+        zizmor,
+        new ProcessSettings
+        {
+            Arguments =
+                "--no-progress --offline --no-config --no-ignores --strict-collection --no-exit-codes --format json-v1 --collect=all .github",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            Silent = true,
+        },
+        out IEnumerable<string> output,
+        out IEnumerable<string> errors
     );
+    if (exit != 0)
+    {
+        throw new CakeException(
+            $"zizmor exited {exit} listing its findings with no config, saying {Quoted(string.Join(" ", errors))}."
+        );
+    }
 
+    List<string> callees = [];
     try
     {
-        System.IO.File.WriteAllText(canary.FullPath, shellCheckCanary);
-        int exit = StartProcess(
-            actionlint,
-            new ProcessSettings
-            {
-                Arguments = $"{analyzers} \"{canary.FullPath}\"",
-                RedirectStandardOutput = true,
-                Silent = true,
-                EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    [shellCheckOptions] = "",
-                },
-            },
-            out IEnumerable<string> reported
-        );
-
-        string said = string.Join('\n', reported).Trim();
-        if (!said.Contains(shellCheckFinding, StringComparison.Ordinal))
+        using JsonDocument document = JsonDocument.Parse(string.Join("\n", output));
+        foreach (JsonElement finding in document.RootElement.EnumerateArray())
         {
-            throw new CakeException(
-                $"actionlint found no {shellCheckFinding} in a script that carries one, so ShellCheck never ran. "
-                    + "No run: block under .github/workflows was checked. "
-                    + $"actionlint exited {exit} saying: {(said.Length == 0 ? "nothing" : said)}. "
-                    + $"Check that {shellcheck.FullPath} starts."
+            if (finding.GetProperty("ident").GetString() != "secrets-inherit")
+            {
+                continue;
+            }
+
+            callees.Add(
+                finding
+                    .GetProperty("locations")
+                    .EnumerateArray()
+                    .Where(location => location.GetProperty("symbolic").GetProperty("kind").GetString() == "Primary")
+                    .Select(location => location.GetProperty("concrete").GetProperty("feature").GetString())
+                    .FirstOrDefault()
+                    ?? throw new CakeException(
+                        "zizmor reported a secrets-inherit finding with no primary location, so the gate cannot tell which workflow the job calls."
+                    )
             );
         }
     }
-    finally
+    catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException)
     {
-        System.IO.File.Delete(canary.FullPath);
+        throw new CakeException(
+            $"zizmor's JSON did not read as json-v1 from zizmor 1.30.1, which the gate reads for secrets-inherit callees: {Quoted(error.Message)}."
+        );
+    }
+
+    System.Text.RegularExpressions.Regex inherit = new(@"^\s*secrets\s*:\s*inherit\s*(#.*)?$");
+    int inherits = workflows.Sum(file => System.IO.File.ReadAllLines(file).Count(line => inherit.IsMatch(line)));
+    if (callees.Count != inherits)
+    {
+        throw new CakeException(
+            $"zizmor reported {callees.Count} jobs passing secrets: inherit, and the workflows hold {inherits} secrets: inherit lines. "
+                + "The gate holds each such job to its callee, so the two counts have to agree. Write each one as secrets: inherit on its own line."
+        );
+    }
+
+    string[] outside =
+    [
+        .. callees.Where(callee => !callee.StartsWith(inheritCallee, StringComparison.Ordinal)).Select(Quoted),
+    ];
+    if (outside.Length > 0)
+    {
+        throw new CakeException(
+            $"A job passing secrets: inherit calls {string.Join(", ", outside)}, and the gate takes a workflow under {inheritCallee} alone. "
+                + "inherit hands the called workflow every secret the caller can read. Pass the secrets it needs by name, or call a workflow in zachthedev/.github."
+        );
+    }
+
+    Information(
+        "secrets: inherit reaches {0} called workflows, each under {1}: {2}",
+        callees.Count,
+        inheritCallee,
+        string.Join(", ", callees.Order(StringComparer.Ordinal))
+    );
+}
+
+// The arguments actionlint lints .github with, returned once actionlint has reported a ShellCheck
+// finding and a stand-in refusal with them. -shellcheck names the stand-in in front of the file the
+// version check resolved, so the pinned binary and the binary the stand-in starts are one path, not
+// two lookups. -pyflakes= because no Windows package manager ships pyflakes, and actionlint skips
+// that pass without a word when it is missing. A ShellCheck or stand-in actionlint cannot start
+// leaves the shellcheck rule off and the exit code 0. The first canary proves ShellCheck runs behind
+// the stand-in, and the second that the stand-in refuses a directive. Together they are what give a
+// clean actionlint run any weight.
+string ProvenAnalyzers(FilePath actionlint, FilePath shellcheck)
+{
+    string analyzers = $"-pyflakes= \"-shellcheck={ShellCheckStandIn(shellcheck)}\"";
+    (string Text, string Expected, string Why)[] canaries =
+    [
+        (
+            shellCheckCanary,
+            shellCheckFinding,
+            $"actionlint found no {shellCheckFinding} in a script that carries one, so ShellCheck never ran"
+        ),
+        (
+            shellCheckDirectiveCanary,
+            shellCheckDirectiveRefusal,
+            "actionlint reported no refusal of a script carrying a ShellCheck directive, so the stand-in refuses none"
+        ),
+    ];
+    foreach ((string text, string expected, string why) in canaries)
+    {
+        FilePath canary = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            $"actionlint-shellcheck-canary-{Guid.NewGuid():N}.yaml"
+        );
+
+        try
+        {
+            System.IO.File.WriteAllText(canary.FullPath, text);
+            int exit = StartProcess(
+                actionlint,
+                new ProcessSettings
+                {
+                    Arguments = $"{analyzers} \"{canary.FullPath}\"",
+                    RedirectStandardOutput = true,
+                    Silent = true,
+                    EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [shellCheckOptions] = "",
+                    },
+                },
+                out IEnumerable<string> reported
+            );
+
+            string said = string.Join('\n', reported).Trim();
+            if (!said.Contains(expected, StringComparison.Ordinal))
+            {
+                throw new CakeException(
+                    $"{why}. No run: block under .github/workflows was checked. "
+                        + $"actionlint exited {exit} saying: {(said.Length == 0 ? "nothing" : said)}. "
+                        + $"Check that {shellcheck.FullPath} starts."
+                );
+            }
+        }
+        finally
+        {
+            System.IO.File.Delete(canary.FullPath);
+        }
     }
 
     return analyzers;
+}
+
+// Every shell: a workflow names, on a step or under defaults.run for the workflow or a job, held to
+// shellCheckedShells. The stand-in reads only a script actionlint hands ShellCheck, so a shell no
+// ShellCheck reads is refused here. Each workflow is read with YamlDotNet, so an escape or an alias
+// resolves to the value GitHub reads, and a key matches in any case. A file YamlDotNet cannot read
+// is refused, since the gate then cannot tell which shells it names.
+void RequireShellCheckedShells(string[] workflows)
+{
+    List<string> found = [];
+    foreach (string workflow in workflows)
+    {
+        YamlStream stream = new();
+        try
+        {
+            stream.Load(new System.IO.StringReader(System.IO.File.ReadAllText(workflow)));
+        }
+        catch (YamlDotNet.Core.YamlException error)
+        {
+            throw new CakeException(
+                $"{Quoted(workflow)} does not read as YAML at line {error.Start.Line}: {Quoted(error.Message)}. "
+                    + "The gate reads each workflow for the shells it names. Fix the file."
+            );
+        }
+
+        foreach (YamlDocument document in stream.Documents)
+        {
+            if (document.RootNode is not YamlMappingNode top)
+            {
+                continue;
+            }
+
+            List<YamlNode> shells = [.. ShellsUnderDefaults(top)];
+            foreach (
+                YamlMappingNode job in Values(top, "jobs")
+                    .OfType<YamlMappingNode>()
+                    .SelectMany(jobs => jobs.Children.Values)
+                    .OfType<YamlMappingNode>()
+            )
+            {
+                shells.AddRange(ShellsUnderDefaults(job));
+                shells.AddRange(
+                    Values(job, "steps")
+                        .OfType<YamlSequenceNode>()
+                        .SelectMany(steps => steps.Children)
+                        .OfType<YamlMappingNode>()
+                        .SelectMany(step => Values(step, "shell"))
+                );
+            }
+
+            found.AddRange(
+                shells
+                    .Where(shell =>
+                        shell is not YamlScalarNode { Value: string name }
+                        || !shellCheckedShells.Contains(name, StringComparer.Ordinal)
+                    )
+                    .Select(shell =>
+                        $"{Quoted(workflow)} line {shell.Start.Line}, shell {(shell is YamlScalarNode { Value: string name } ? Quoted(name) : $"as a {shell.NodeType}")}"
+                    )
+            );
+        }
+    }
+
+    if (found.Count > 0)
+    {
+        throw new CakeException(
+            $"The workflows name {string.Join("; ", found)}, and the gate takes {string.Join(", ", shellCheckedShells)} alone. "
+                + "actionlint hands ShellCheck a script by the shell's first word, so any other shell runs a script no check reads. Name one of those."
+        );
+    }
+
+    static IEnumerable<YamlNode> Values(YamlMappingNode map, string key) =>
+        map
+            .Children.Where(child =>
+                child.Key is YamlScalarNode { Value: string name }
+                && name.Equals(key, StringComparison.OrdinalIgnoreCase)
+            )
+            .Select(child => child.Value);
+
+    static IEnumerable<YamlNode> ShellsUnderDefaults(YamlMappingNode scope) =>
+        Values(scope, "defaults")
+            .OfType<YamlMappingNode>()
+            .SelectMany(defaults => Values(defaults, "run"))
+            .OfType<YamlMappingNode>()
+            .SelectMany(run => Values(run, "shell"));
+}
+
+// The -shellcheck value that starts this program again as ShellCheck's stand-in, in front of the
+// pinned ShellCheck. cake.cs runs under dotnet exec, so the command is dotnet, this assembly, the
+// stand-in argument and the ShellCheck path. actionlint splits the value into words with
+// go-shellwords, which drops an unquoted backslash and leaves the shellcheck rule off without a
+// word. So each word goes single-quoted with forward slashes, and a path holding a quote is refused.
+string ShellCheckStandIn(FilePath shellcheck)
+{
+    string host = Environment.ProcessPath ?? "";
+    string assembly = Environment.GetCommandLineArgs()[0];
+    if (
+        !System.IO.Path.GetFileNameWithoutExtension(host).Equals("dotnet", StringComparison.OrdinalIgnoreCase)
+        || !assembly.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+        || !System.IO.File.Exists(assembly)
+    )
+    {
+        throw new CakeException(
+            $"The gate runs as {Quoted(host)} with {Quoted(assembly)}, not as an assembly under dotnet exec, so it cannot start itself as ShellCheck's stand-in. "
+                + "cake.cs sets UseAppHost=false so dotnet run starts it that way."
+        );
+    }
+
+    string[] words =
+    [
+        .. ((string[])[host, assembly, shellCheckStandInArgument, shellcheck.FullPath]).Select(word =>
+            word.Replace('\\', '/')
+        ),
+    ];
+    string[] quoted = [.. words.Where(word => word.Contains('\'') || word.Contains('"'))];
+    if (quoted.Length > 0)
+    {
+        throw new CakeException(
+            $"{string.Join(", ", quoted.Select(Quoted))} holds a quote, and actionlint's -shellcheck value quotes each path in single quotes. Move it to a path without one."
+        );
+    }
+
+    return string.Join(" ", words.Select(word => $"'{word}'"));
+}
+
+// The ShellCheck actionlint starts, through ShellCheckStandIn's value. actionlint writes the script
+// ShellCheck reads to stdin, with every YAML escape decoded and every fold joined, so a directive no
+// line of a workflow shows arrives here as a line. A line holding # then shellcheck and a blank, in
+// any case, comes back as an error finding in ShellCheck's JSON form, and actionlint prints it and
+// fails. ShellCheck honors every such directive, and no file the gate holds names one. Otherwise the
+// pinned ShellCheck runs over the same bytes, with SHELLCHECK_OPTS removed, and its output and exit
+// code pass through. An error here exits 2 with nothing on stdout, which actionlint fails on.
+static int RunShellCheckStandIn(string shellCheck, string[] arguments)
+{
+    try
+    {
+        using System.IO.MemoryStream buffer = new();
+        using (System.IO.Stream input = Console.OpenStandardInput())
+        {
+            input.CopyTo(buffer);
+        }
+
+        byte[] script = buffer.ToArray();
+        System.Text.RegularExpressions.Regex directive = new(
+            @"#\s*shellcheck\s",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                | System.Text.RegularExpressions.RegexOptions.CultureInvariant
+        );
+        (string Line, int Number)[] refused =
+        [
+            .. new System.Text.UTF8Encoding(false)
+                .GetString(script)
+                .Split('\n')
+                .Select((line, index) => (line, index + 1))
+                .Where(entry => directive.IsMatch(entry.Item1)),
+        ];
+        if (refused.Length > 0)
+        {
+            using System.IO.Stream output = Console.OpenStandardOutput();
+            using Utf8JsonWriter json = new(output);
+            json.WriteStartArray();
+            foreach ((string line, int number) in refused)
+            {
+                json.WriteStartObject();
+                json.WriteString("file", "-");
+                json.WriteNumber("line", number);
+                json.WriteNumber("endLine", number);
+                json.WriteNumber("column", 1);
+                json.WriteNumber("endColumn", 1);
+                json.WriteString("level", "error");
+                json.WriteNumber("code", 0);
+                json.WriteString(
+                    "message",
+                    $"{shellCheckDirectiveRefusal}, since ShellCheck honors it and no file the gate holds names it: {line.Trim()}"
+                );
+                json.WriteNull("fix");
+                json.WriteEndObject();
+            }
+
+            json.WriteEndArray();
+            return 1;
+        }
+
+        System.Diagnostics.ProcessStartInfo start = new(shellCheck)
+        {
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+        };
+        foreach (string argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        start.Environment.Remove(shellCheckOptions);
+        using System.Diagnostics.Process process =
+            System.Diagnostics.Process.Start(start)
+            ?? throw new InvalidOperationException($"{shellCheck} did not start.");
+        process.StandardInput.BaseStream.Write(script);
+        process.StandardInput.Close();
+        process.WaitForExit();
+        return process.ExitCode;
+    }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine($"The ShellCheck stand-in failed: {error.Message}");
+        return 2;
+    }
 }
 
 /// <summary>What mise.lock records for one tool on one platform.</summary>

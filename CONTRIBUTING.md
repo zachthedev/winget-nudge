@@ -48,9 +48,10 @@ the same config checks first, so `--exclusive` skips none of them. `--target=too
 and then `mise install`; it is the install continuous integration runs, and `check` does not reach
 it.
 
-`workflows` hands actionlint the ShellCheck binary it resolved, then asks actionlint for a finding
-only ShellCheck reports. actionlint leaves its shell checks off when that binary cannot start, and
-still exits 0. A clean actionlint run counts for nothing until that finding comes back.
+`workflows` hands actionlint a ShellCheck stand-in in front of the ShellCheck binary it resolved,
+then asks actionlint for a finding only ShellCheck reports and for a refusal only the stand-in
+reports. actionlint leaves its shell checks off when that command cannot start, and still exits 0.
+A clean actionlint run counts for nothing until both come back.
 
 Every row that checks files from the tree prints the files it checked and fails when there are
 none, because taplo, prettier and CSharpier each exit 0 having checked nothing. The `format` row
@@ -300,15 +301,16 @@ directory the test owns.
   runs after an install. `lockfile` refuses every tracked path with a `node_modules` segment, in any
   case, and the prettier row refuses them again before it starts bunx. They refuse a tracked path
   with a `bin` or `obj` segment too, since MSBuild imports files from `obj` by wildcard, and a
-  committed one reaches every checkout. They also refuse a tracked `.env` or `.env.<name>` at the
-  root, which Bun loads into prettier and commitlint, and no bunx flag stops it. `git ls-files`
-  answers what is tracked, so the `node_modules` an install writes, and a contributor's own `.env`,
-  pass. An extraction from `git archive` has no `.git` at the root and tracks nothing, so the check
-  starts no git there and passes. Beside a `.git`, `git rev-parse --show-cdup` has to print an
-  empty line, because git searches the directories above a `.git` it cannot open and would list
-  another repository's paths. It compares no paths, so a checkout reached through a junction passes.
-  The `gate` job's `bun install` takes `--ignore-scripts`, because a frozen lockfile still runs the
-  lifecycle scripts `package.json` names.
+  committed one reaches every checkout. They also refuse a tracked `.env` or `.env.<name>` at any
+  depth. Bun loads the one at the root into prettier and commitlint, and no bunx flag stops it, and
+  one anywhere else holds values meant to stay out of git. `git ls-files` answers what is tracked,
+  so the `node_modules` an install writes, and a contributor's own `.env`, pass. An extraction from
+  `git archive` has no `.git` at the root and tracks nothing, so the check starts no git there and
+  passes. Beside a `.git`, `git rev-parse --show-cdup` has to print an empty line, because git
+  searches the directories above a `.git` it cannot open and would list another repository's paths.
+  It compares no paths, so a checkout reached through a junction passes. The `gate` job's
+  `bun install` takes `--ignore-scripts`, because a frozen lockfile still runs the lifecycle
+  scripts `package.json` names.
 - `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone, at the value `cake.cs` names.
   Bun reads the file on every start, and no flag stops it. A top-level `preload` there runs a
   module before the first line of whatever Bun starts, prettier and commitlint included. Every other
@@ -398,19 +400,42 @@ directory the test owns.
   once the same way.
 - lefthook's commit-msg hook passes `--config commitlint.config.js`, so commitlint searches for no
   other config. The shared `commits` job runs commitlint without it, so a planted
-  `.commitlintrc.json` passes that job, and the refusal above is where it lands. lefthook merges a
-  `lefthook-local.*` or `.lefthook-local.*` file at the root over `lefthook.yml` on every run, and
-  no switch stops it. The tracked-path check refuses a tracked one, and `.gitignore` covers a
-  contributor's own.
+  `.commitlintrc.json` passes that job, and the refusal above is where it lands. cosmiconfig runs a
+  module from `.config` at the root before commitlint reads `--config`, and the hook runs before
+  any gate row. So the hook's first job fails on a `.config`, and `piped: true` stops the hook
+  there, before commitlint starts. That job stops an accidental `.config`, not a hostile branch:
+  lefthook merges a `.config/lefthook-local.*` file over `lefthook.yml` before any job runs, so the
+  same directory can replace the job. Read a pull request before running anything on its branch, a
+  commit included, as the bullet on the first Bun process below says. lefthook also merges a
+  `lefthook-local.*` or `.lefthook-local.*` file at the root on every run, and no switch stops it.
+  The tracked-path check refuses a tracked one, and `.gitignore` covers a contributor's own.
 - The tracked-path check also refuses a path with a `.git`, `.sl`, `.svn`, `.hg` or `.jj` segment,
   in any case, because prettier's CLI skips such a directory without a word. It refuses a
   `zizmor: ignore[` comment in any tracked file under `.github`, because zizmor honors one with no
-  config. A waiver goes in `.github/zizmor.yml` as a `rules.<audit>.ignore` entry,
-  `<file>:<line>`. zizmor matches the line against each location a finding reports, so a job that
-  moves off the line reports its finding again. zizmor takes no config waiver for a composite
-  action's finding, so such a finding cannot be waived here.
+  config. A waiver goes in `.github/zizmor.yml` as a `rules.<audit>.ignore` entry. zizmor takes no
+  config waiver for a composite action's finding, so such a finding cannot be waived here.
+- The `workflows` row passes actionlint a `-shellcheck` command that starts `cake.cs` again as a
+  ShellCheck stand-in, through a hidden argument it reads before Cake reads any. actionlint writes
+  each script to the stand-in's stdin as ShellCheck would read it, with every YAML escape decoded
+  and every fold joined. The stand-in refuses any line holding `#`, then `shellcheck` and a blank,
+  in any case, as an error finding, because ShellCheck honors every such directive inside a `run:`
+  script and nothing holds a waiver for one. No line check over the file sees through an escape or
+  a fold. Otherwise the stand-in runs the pinned ShellCheck over the same bytes, with
+  `SHELLCHECK_OPTS` removed, and passes its output and exit code through. It adds about a quarter
+  of a second per script. The paths in the command go single-quoted with forward slashes, since
+  actionlint drops an unquoted backslash and turns ShellCheck off without a word.
+- The row also refuses a `shell:` on a step or under `defaults.run`, for the workflow or a job,
+  other than `bash`, `sh` or `pwsh`. actionlint hands ShellCheck a script by the shell's first
+  word, so `shell: /bin/bash` runs bash with no ShellCheck at all. It reads each workflow with
+  YamlDotNet for that, so an escape or an alias resolves to the value GitHub reads, and it refuses
+  a workflow YamlDotNet cannot read.
+- The two `secrets-inherit` waivers name `cd.yml` and `deps.yml` whole. A waiver binds a file,
+  never the workflow a job calls, so the `workflows` row runs zizmor again with no config and no
+  ignores. Every job passing `secrets: inherit` has to call a workflow under
+  `zachthedev/.github/.github/workflows/`, and zizmor's count of such jobs has to equal the
+  `secrets: inherit` lines in the workflows. The row prints each callee.
 - No row stops the first Bun process on a branch nobody has read. lefthook's commit-msg hook runs
-  `bunx --bun commitlint` before any gate does, and `bun install` runs lefthook's postinstall, which
+  `bunx --bun commitlint` before any gate row, and `bun install` runs lefthook's postinstall, which
   starts under Bun when node is not on `PATH`. Read a pull request's `bunfig.toml` before running
   anything on its branch.
 - A contributor's own untracked `.env` passes the tracked-path check, and Bun loads it into prettier
@@ -429,17 +454,18 @@ directory the test owns.
   bundles a ShellCheck copied out of `koalaman/shellcheck-alpine:stable` when that image is built,
   so a run through the image has no pin on the ShellCheck it executes. One `mise.toml` entry drives
   the binary both legs run.
-- actionlint and its ShellCheck canary run with `SHELLCHECK_OPTS` empty. ShellCheck reads that
-  variable as extra arguments past actionlint's `--norc`, so an `-e` there drops a finding.
+- actionlint and its two canaries run with `SHELLCHECK_OPTS` empty, and the stand-in removes it
+  again. ShellCheck reads that variable as extra arguments past actionlint's `--norc`, so an `-e`
+  there drops a finding.
 - The `gate` job pins mise itself on its `jdx/mise-action` line in `.github/workflows/ci.yml`. The
   shared `workflows` job pins its own on the same action's line in the reusable workflow `ci.yml`
   calls. The action verifies its download against the release's minisign-signed `SHASUMS256.txt`,
   which is the check on the tool that verifies the linters. A local run takes whichever mise is on
   `PATH`.
 - `cake.cs` restores in locked mode against `cake.packages.lock.json`, and it imports
-  `Directory.Packages.props`. After changing the Cake.Sdk version in `global.json`, the Tomlyn
-  version, or any `PackageVersion` naming a package Cake.Sdk depends on, regenerate it with
-  `dotnet restore cake.cs --force-evaluate`.
+  `Directory.Packages.props`. After changing the Cake.Sdk version in `global.json`, the Tomlyn or
+  YamlDotNet version, or any `PackageVersion` naming a package Cake.Sdk depends on, regenerate it
+  with `dotnet restore cake.cs --force-evaluate`.
 
 ## Releases
 

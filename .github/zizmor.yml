@@ -16,10 +16,10 @@ rules:
       days: 3
   # cd.yml's release-pr job and deps.yml's deps job each call a job that names an environment, and
   # run in none themselves, so secrets: inherit is the one form that passes that environment's
-  # secret. The gate refuses an inline ignore comment, so each waiver sits here by file and by the
-  # line of the job's secrets key. A job that moves reports the finding again, unless its uses line
-  # lands on that line.
+  # secret. The gate refuses an inline ignore comment, so both waivers sit here, one per file. A
+  # waiver binds a file, never the workflow a job calls, so the workflows row also runs zizmor with
+  # no config and fails unless every job passing secrets: inherit calls a zachthedev/.github workflow.
   secrets-inherit:
     ignore:
-      - cd.yml:23
-      - deps.yml:39
+      - cd.yml
+      - deps.yml

@@ -1,9 +1,14 @@
 # Git hooks. `bun install` runs `lefthook install`, which writes the hooks into .git/hooks.
 
+# cosmiconfig runs a module from .config at the root before commitlint reads --config, so the first
+# job refuses the directory, and piped stops the hook at the first job that fails.
 # --bun runs commitlint under the Bun that runs this hook, rather than whichever node PATH names.
 # --config names the one commitlint config, so commitlint searches for no other.
 commit-msg:
+  piped: true
   jobs:
+    - name: no .config
+      run: test ! -e .config || { echo 'cosmiconfig runs modules from .config, so remove it' >&2; exit 1; }
     - name: commitlint
       run: bunx --bun --no-install commitlint --config commitlint.config.js --edit {1}
 
