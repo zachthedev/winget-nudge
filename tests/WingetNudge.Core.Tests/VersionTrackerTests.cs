@@ -123,6 +123,31 @@ public sealed class VersionTrackerTests : IDisposable
         File.Exists(_data.Paths.VersionTracking).Should().BeFalse();
     }
 
+    [Fact]
+    public void Load_WhileARenameHoldsTheFile_ReadsTheSavedTracking()
+    {
+        // A rename holds the file it moves with delete access and shares everything, for as long as the
+        // rename takes. This handle stands in for it, and lets go only once the load has returned.
+        _tracker.Reconcile([Fixture.Current("Git.Git", "2.47.0")]);
+        using FileStream rename = new(
+            _data.Paths.VersionTracking,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            4096,
+            FileOptions.DeleteOnClose
+        );
+
+        Func<Dictionary<string, Dictionary<string, VersionObservation>>> load = () => _tracker.Load();
+
+        load.Should()
+            .NotThrow("a read shares delete access, so a rename under way never refuses it")
+            .Which.Should()
+            .ContainKey("Git.Git", "the load reads what the reconcile saved")
+            .WhoseValue.Should()
+            .ContainKey("2.47.0");
+    }
+
     [Theory]
     [InlineData(2, true, 22)]
     [InlineData(23.5, true, 1)]

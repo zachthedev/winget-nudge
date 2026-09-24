@@ -66,53 +66,57 @@ public static class JsonFile
             return null;
         }
 
+        try
+        {
+            using FileStream stream = OpenRead(path);
+            return JsonSerializer.Deserialize<T>(stream, Options);
+        }
+        catch (FileNotFoundException)
+        {
+            // Set aside under the write lock since the check above.
+            return null;
+        }
+        catch (JsonException) when (holdsLock)
+        {
+            // The write that follows would take the only copy of a file that could not move aside. A
+            // holder, a denied directory and a full disk all refuse the move, so the reason given is the
+            // move's own error.
+            if (SetAside(path, deleteIfCorrupt, beforeWrite) is Exception refused && beforeWrite && !deleteIfCorrupt)
+            {
+                throw new IOException(
+                    $"{Path.GetFileName(path)} is corrupt and could not be moved aside for repair, so nothing was "
+                        + $"saved: {refused.Message}",
+                    refused
+                );
+            }
+
+            return null;
+        }
+        catch (JsonException)
+        {
+            return RereadUnderLock(path, () => ReadCore<T>(path, deleteIfCorrupt, holdsLock: true, beforeWrite: false));
+        }
+    }
+
+    /// <summary>
+    /// Opens a state file for reading, retrying while another handle refuses the open. Every read of a
+    /// JSON state file opens it here.
+    /// </summary>
+    /// <param name="path">File to open.</param>
+    /// <returns>The open file, positioned at its start.</returns>
+    /// <exception cref="FileNotFoundException">The file is missing.</exception>
+    /// <exception cref="IOException">Another handle still refuses the open once the retries run out.</exception>
+    internal static FileStream OpenRead(string path)
+    {
         for (int attempt = 1; ; attempt++)
         {
             try
             {
                 // A rename holds the file it moves with delete access until it finishes, and a read that
                 // does not share delete is refused for that long.
-                using FileStream stream = new(
-                    path,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete
-                );
-                return JsonSerializer.Deserialize<T>(stream, Options);
+                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             }
-            catch (FileNotFoundException)
-            {
-                // Set aside under the write lock since the check above.
-                return null;
-            }
-            catch (JsonException) when (holdsLock)
-            {
-                // The write that follows would take the only copy of a file that could not move aside. A
-                // holder, a denied directory and a full disk all refuse the move, so the reason given is the
-                // move's own error.
-                if (
-                    SetAside(path, deleteIfCorrupt, beforeWrite) is Exception refused
-                    && beforeWrite
-                    && !deleteIfCorrupt
-                )
-                {
-                    throw new IOException(
-                        $"{Path.GetFileName(path)} is corrupt and could not be moved aside for repair, so nothing was "
-                            + $"saved: {refused.Message}",
-                        refused
-                    );
-                }
-
-                return null;
-            }
-            catch (JsonException)
-            {
-                return RereadUnderLock(
-                    path,
-                    () => ReadCore<T>(path, deleteIfCorrupt, holdsLock: true, beforeWrite: false)
-                );
-            }
-            catch (IOException) when (attempt < ReadRetries)
+            catch (IOException exception) when (exception is not FileNotFoundException && attempt < ReadRetries)
             {
                 // Another program holds the file without sharing it; the next attempt may find it gone.
                 Thread.Sleep(50 * attempt);

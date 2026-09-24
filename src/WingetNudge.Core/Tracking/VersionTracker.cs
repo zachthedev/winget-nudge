@@ -33,7 +33,10 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
 
         try
         {
-            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(paths.VersionTracking));
+            // The reader decodes by any byte order mark, UTF-16 included, where JsonDocument reads UTF-8 alone.
+            using FileStream stream = JsonFile.OpenRead(paths.VersionTracking);
+            using StreamReader reader = new(stream);
+            using JsonDocument document = JsonDocument.Parse(reader.ReadToEnd());
             JsonElement root = document.RootElement;
             if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("packages", out JsonElement packages))
             {
