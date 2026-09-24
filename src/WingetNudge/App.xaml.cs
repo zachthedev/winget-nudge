@@ -24,21 +24,15 @@ public sealed partial class App : Application
     /// </summary>
     private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs args)
     {
-        try
-        {
-            string path = Path.Combine(AppServices.Current.Paths.Directory, "crash.log");
-            Directory.CreateDirectory(AppServices.Current.Paths.Directory);
-            Core.Storage.SafePath.EnsureNotReparsePoint(AppServices.Current.Paths.Directory);
-            File.AppendAllText(
-                path,
-                $"{DateTimeOffset.Now:o} {args.Message}{Environment.NewLine}{args.Exception}{Environment.NewLine}{Environment.NewLine}"
-            );
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            // Nothing left to report to.
-        }
-
+        // Handled keeps the process alive, so an exception that repeats can append many entries a day.
+        // The log's age window and size cap bound what that leaves on disk.
+        AppServices services = AppServices.Current;
+        Core.Storage.BoundedLog.Append(
+            services.Paths,
+            services.Paths.CrashLog,
+            services.Clock,
+            $"{args.Message}{Environment.NewLine}{args.Exception}"
+        );
         args.Handled = true;
     }
 

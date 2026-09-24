@@ -7,31 +7,35 @@ namespace WingetNudge.Core.Storage;
 /// A text log of timestamped entries, bounded by age and by size. An entry starts on a line that
 /// opens with its round-trip timestamp, and every line after it up to the next such line belongs to it.
 /// </summary>
-internal static class BoundedLog
+public static class BoundedLog
 {
     /// <summary>
     /// Largest a log grows before its oldest entries go, whatever their age. An app stuck in a crash
     /// loop writes many entries a day, so the age window alone does not bound the file.
     /// </summary>
-    internal const int MaxBytes = 1024 * 1024;
+    public const int MaxBytes = 1024 * 1024;
+
+    // Written before every line of an entry after its first, so no line of the text can open an entry.
+    private const string ContinuationIndent = "  ";
 
     /// <summary>
     /// Appends an entry, then drops the entries past the retention window and the oldest past the size
-    /// cap. The newest entry always stays.
+    /// cap. The newest entry always stays, whole, even when it alone is larger than the cap.
     /// </summary>
     /// <remarks>
     /// A failure to write is swallowed: a log that cannot be written has nowhere left to report to,
     /// and it must not fail the operation it records. A log that is itself a link is refused that way,
-    /// without reading the file it names.
+    /// without reading the file it names. A log past the cap is read from its last
+    /// <paramref name="maxBytes"/> only, so no append reads much more than the cap.
     /// </remarks>
     /// <param name="paths">Data file locations.</param>
     /// <param name="path">The log file.</param>
     /// <param name="clock">Time source for the timestamp and the window.</param>
-    /// <param name="text">The entry after its timestamp. It may span lines.</param>
+    /// <param name="text">The entry after its timestamp. It may span lines, and each line after the first is indented.</param>
     /// <param name="retentionDays">Days an entry stays, or <c>null</c> to read the user's setting.</param>
     /// <param name="maxBytes">Size cap for the whole file.</param>
     /// <returns><c>true</c> when the entry was written.</returns>
-    internal static bool Append(
+    public static bool Append(
         DataPaths paths,
         string path,
         TimeProvider clock,
@@ -46,7 +50,7 @@ internal static class BoundedLog
             DateTimeOffset now = clock.GetUtcNow();
             string entry = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{now:o} {text.ReplaceLineEndings(Environment.NewLine)}"
+                $"{now:o} {text.ReplaceLineEndings(Environment.NewLine + ContinuationIndent)}"
             );
             return JsonFile.Locked(path, () => Rewrite(path, now.AddDays(-days), entry, maxBytes));
         }
@@ -59,7 +63,10 @@ internal static class BoundedLog
 
     private static bool Rewrite(string path, DateTimeOffset cutoff, string entry, int maxBytes)
     {
-        List<string> kept = [.. Entries(path).Where(existing => existing.Stamp > cutoff).Select(static e => e.Text)];
+        List<string> kept =
+        [
+            .. Entries(path, maxBytes).Where(existing => existing.Stamp > cutoff).Select(static e => e.Text),
+        ];
         kept.Add(entry);
         long total = kept.Sum(Size);
         int first = 0;
@@ -89,7 +96,7 @@ internal static class BoundedLog
     private static long Size(string entry) => Encoding.UTF8.GetByteCount(entry) + Environment.NewLine.Length;
 
     // Lines before the first timestamp cannot be aged, so they go.
-    private static List<(DateTimeOffset Stamp, string Text)> Entries(string path)
+    private static List<(DateTimeOffset Stamp, string Text)> Entries(string path, int maxBytes)
     {
         List<(DateTimeOffset Stamp, string Text)> entries = [];
         FileStream stream;
@@ -104,6 +111,17 @@ internal static class BoundedLog
         }
 
         using StreamReader reader = new(stream);
+
+        // A log can outgrow the cap: one entry past the cap stays whole, and a crash.log written before the
+        // cap existed has no bound. This read runs inside the crash handler, so it covers only the last
+        // maxBytes, all the cap can keep. The line the seek cuts needs no special case. With no stamp of
+        // its own it goes like any line before the first stamp. With one, it reads as the oldest entry,
+        // which the cap drops first, since what was read already fills the cap before the new entry joins.
+        if (stream.Length > maxBytes)
+        {
+            stream.Seek(stream.Length - maxBytes, SeekOrigin.Begin);
+        }
+
         DateTimeOffset? stamp = null;
         StringBuilder text = new();
         while (reader.ReadLine() is string line)
@@ -132,8 +150,9 @@ internal static class BoundedLog
         return entries;
     }
 
-    // Only the exact round-trip form opens an entry. A lenient parse reads a line of an exception
-    // message that starts with "10:00" or "1/2" as a new entry, which the window then ages on its own.
+    // Only the exact round-trip form opens an entry, at the very start of a line. A lenient parse reads
+    // a line of an exception message that starts with "10:00" or "1/2" as a new entry, which the window
+    // then ages on its own.
     private static DateTimeOffset? StampOf(string line)
     {
         int space = line.IndexOf(' ', StringComparison.Ordinal);

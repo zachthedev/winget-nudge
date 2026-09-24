@@ -41,6 +41,9 @@ public sealed record DataPaths(string Directory)
     /// <summary>One line per state write that failed while the app carried on without it.</summary>
     public string DiagnosticsLog => Path.Combine(Directory, "diagnostics.log");
 
+    /// <summary>Each exception the app caught nowhere else, with its stack trace.</summary>
+    public string CrashLog => Path.Combine(Directory, "crash.log");
+
     /// <summary>
     /// File one run holds an exclusive handle on, so a second process of the same kind stands
     /// down. It stays empty; the handle is the lock.
