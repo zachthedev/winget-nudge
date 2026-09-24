@@ -21,6 +21,11 @@ launchSettings.json
 .claude/settings.local.json
 .claude/worktrees/
 
+# A contributor's own lefthook settings, which lefthook merges over lefthook.yml. The gate refuses
+# a tracked one.
+/lefthook-local.*
+/.lefthook-local.*
+
 # github/gitignore VisualStudio.gitignore
 #
 # From

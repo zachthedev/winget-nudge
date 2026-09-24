@@ -19,10 +19,6 @@ using Tomlyn.Model;
 
 string target = Argument("target", "check");
 
-// Release throughout, so the tests and the installer reuse one build. RestoreLockedMode fails a
-// restore whose package graph disagrees with a packages.lock.json rather than re-resolving it.
-DotNetMSBuildSettings locked = new DotNetMSBuildSettings().WithProperty("RestoreLockedMode", "true");
-
 // What the gate knows about each tool beside the version mise.toml pins. The aqua repository is
 // here because mise.lock's backend and url are the address an install fetches from, and the file a
 // bump rewrites wholesale is not where the expected owner can live. The tag prefix and the asset
@@ -82,25 +78,146 @@ Dictionary<string, MisePin> misePins = new(StringComparer.Ordinal)
 
 // ///// Code /////
 
+// The extensions CSharpier 1.3.0 formats, from PrinterOptions.GetFormatter, which matches them
+// without regard to case.
+string[] csharpierExtensions =
+[
+    ".cs",
+    ".csx",
+    ".config",
+    ".csproj",
+    ".props",
+    ".slnx",
+    ".targets",
+    ".axaml",
+    ".xaml",
+    ".xml",
+];
+
+// The one pattern the held .csharpierignore carries, so the format row leaves out what CSharpier
+// would drop from its count. CSharpier matches the pattern in exact case, and so does the row.
+const string csharpierIgnoredSuffix = ".g.cs";
+
+// CSharpier handed a directory reads every .gitignore and nested .csharpierignore above each file,
+// and a root ignore line of * checks nothing and exits 0. So the row names each file TreeFiles finds
+// with an extension CSharpier formats, less those the held .csharpierignore leaves out, and names
+// the held config and ignore file too, so CSharpier reads no other. The config path is absolute,
+// because CSharpier anchors a config's overrides to its directory, and a relative path leaves them
+// matching nothing where an editor's CSharpier applies them. --include-generated checks a file whose
+// header calls it generated, which CSharpier otherwise counts and skips. Windows caps a command line
+// at 32,767 characters, and dotnet starts CSharpier with the same arguments again, so the row names
+// the files in batches of at most csharpierBatchCharacters. Each batch fails unless CSharpier reports
+// checking exactly as many files as the batch named, and a batch names at least one.
 Task("format")
-    .Description("C# formatting, through CSharpier")
+    .Description("C# and XML formatting, through CSharpier, over every such file in the tree, each named to CSharpier")
     .Does(() =>
-        DotNetTool(
-            "WingetNudge.slnx",
-            "csharpier",
-            new ProcessArgumentBuilder().Append("check").Append("."),
-            new DotNetToolSettings { ToolPath = Dotnet() }
-        )
-    );
+    {
+        const int csharpierBatchCharacters = 16_000;
+        FilePath dotnet = Dotnet();
+        string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+        string[] files =
+        [
+            .. TreeFiles(buildOutput: false)
+                .Where(file =>
+                    csharpierExtensions.Contains(System.IO.Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)
+                    && !file.EndsWith(csharpierIgnoredSuffix, StringComparison.Ordinal)
+                )
+                .Order(StringComparer.Ordinal),
+        ];
+        RequireChecked("format", files);
+
+        List<List<string>> batches = [];
+        int characters = 0;
+        foreach (string file in files)
+        {
+            if (batches.Count == 0 || characters + file.Length + 3 > csharpierBatchCharacters)
+            {
+                batches.Add([]);
+                characters = 0;
+            }
+
+            batches[^1].Add(file);
+            characters += file.Length + 3;
+        }
+
+        foreach (List<string> batch in batches)
+        {
+            ProcessArgumentBuilder arguments = new ProcessArgumentBuilder()
+                .Append("csharpier")
+                .Append("check")
+                .Append("--config-path")
+                .AppendQuoted(System.IO.Path.Combine(root, ".csharpierrc"))
+                .Append("--ignore-path")
+                .Append(".csharpierignore")
+                .Append("--include-generated");
+            foreach (string file in batch)
+            {
+                arguments.AppendQuoted(file);
+            }
+
+            int exit = StartProcess(
+                dotnet,
+                new ProcessSettings
+                {
+                    Arguments = arguments,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                },
+                out IEnumerable<string> output,
+                out IEnumerable<string> errors
+            );
+            string[] logged = [.. output.Concat(errors)];
+            foreach (string line in logged)
+            {
+                Information("{0}", line);
+            }
+
+            if (exit != 0)
+            {
+                throw new CakeException($"csharpier check exited {exit}.");
+            }
+
+            System.Text.RegularExpressions.Match reported = System.Text.RegularExpressions.Regex.Match(
+                string.Join("\n", logged),
+                @"^Checked (\d+) files in ",
+                System.Text.RegularExpressions.RegexOptions.Multiline
+            );
+            if (!reported.Success)
+            {
+                throw new CakeException(
+                    "CSharpier exited 0 without saying how many files it checked, so the row cannot tell it checked any."
+                );
+            }
+
+            int count = int.Parse(reported.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+            if (count == 0 || count != batch.Count)
+            {
+                throw new CakeException(
+                    $"CSharpier checked {count} files, and the row named {batch.Count} in that batch, from {Quoted(batch[0])} to {Quoted(batch[^1])}. "
+                        + "CSharpier drops a named file an ignore file matches, and one whose extension it does not format, and still exits 0."
+                );
+            }
+        }
+
+        Information(
+            "The row named {0} files to CSharpier across {1} {2}.",
+            files.Length,
+            batches.Count,
+            batches.Count == 1 ? "run" : "runs"
+        );
+    });
 
 // --ignore-path names .prettierignore alone, which replaces prettier's default pair, so .gitignore
-// takes nothing out of the row. prettier --check names no file it checked and passes on none, so a
-// --debug-check pass first lists them, with the same options, and the row refuses an empty list.
+// takes nothing out of the row. --no-editorconfig stops prettier mapping an .editorconfig's indent,
+// line ending and width onto the options .prettierrc leaves unset, from any directory above a file.
+// prettier --check names no file it checked and passes on none, so a --debug-check pass first lists
+// them, with the same options, and the row refuses an empty list.
 Task("prettier")
     .Description("Markdown, YAML and JSON formatting, over the files the row lists first")
     .Does(() =>
     {
-        const string options = "--bun --no-install prettier --config .prettierrc --ignore-path .prettierignore";
+        const string options =
+            "--bun --no-install prettier --config .prettierrc --ignore-path .prettierignore --no-editorconfig";
         FilePath bunx = Bunx();
         int exit = StartProcess(
             bunx,
@@ -147,7 +264,7 @@ Task("toml")
         string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
         string[] files =
         [
-            .. TreeFiles()
+            .. TreeFiles(buildOutput: false)
                 .Where(file => file.EndsWith(".toml", StringComparison.OrdinalIgnoreCase))
                 .Order(StringComparer.Ordinal),
         ];
@@ -222,11 +339,13 @@ Task("toml")
     });
 
 // Both configurations: everything ships from Release, and the demo inventory behind #if DEBUG
-// compiles only in Debug, so a Release-only gate would never analyze or even parse it.
+// compiles only in Debug, so a Release-only gate would never analyze or even parse it. The tests and
+// the installer run Release, so they reuse this build.
 Task("build")
     .Description("Every project in Release and Debug, analyzer warnings as errors, lock files honored")
     .Does(() =>
     {
+        FilePath dotnet = Dotnet();
         foreach (string configuration in (string[])["Release", "Debug"])
         {
             DotNetBuild(
@@ -234,17 +353,27 @@ Task("build")
                 new DotNetBuildSettings
                 {
                     Configuration = configuration,
-                    MSBuildSettings = locked,
-                    ToolPath = Dotnet(),
+                    MSBuildSettings = RootNamed(noAutoResponse: true),
+                    ToolPath = dotnet,
                 }
             );
         }
     });
 
+// dotnet test evaluates every test project, so it reads the Directory files as a build does. It reads
+// no Directory.Build.rsp, and hands -noAutoResponse to the test application, which refuses it. A
+// filter the test application reads reports every test it leaves out as skipped, and dotnet test
+// still exits 0, so the row reads the test run summary and fails unless every test ran and
+// succeeded. A summary it cannot read fails the row too, whatever the exit code says. dotnet test
+// localizes the summary's labels, so the row sets DOTNET_CLI_UI_LANGUAGE=en over the shell's value.
 Task("tests")
-    .Description("The Core suite, and the versions docs/install.md restates from Directory.Packages.props")
+    .Description(
+        "The Core suite, and the versions docs/install.md restates from Directory.Packages.props, every test run and succeeded"
+    )
     .IsDependentOn("build")
     .Does(() =>
+    {
+        List<string> said = [];
         DotNetTest(
             "WingetNudge.slnx",
             new DotNetTestSettings
@@ -253,9 +382,61 @@ Task("tests")
                 PathType = DotNetTestPathType.Solution,
                 Configuration = "Release",
                 NoBuild = true,
+                MSBuildSettings = RootNamed(noAutoResponse: false),
+                EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["DOTNET_CLI_UI_LANGUAGE"] = "en",
+                },
+                SetupProcessSettings = process =>
+                {
+                    process.RedirectStandardOutput = true;
+                    process.RedirectStandardError = true;
+                },
+                PostAction = process =>
+                {
+                    said.AddRange(process.GetStandardOutput().Concat(process.GetStandardError()));
+                    foreach (string line in said)
+                    {
+                        Information("{0}", line);
+                    }
+                },
             }
-        )
-    );
+        );
+
+        Dictionary<string, int[]> counts = new(StringComparer.Ordinal);
+        foreach (string name in (string[])["total", "failed", "succeeded", "skipped"])
+        {
+            counts[name] =
+            [
+                .. said.Select(line => System.Text.RegularExpressions.Regex.Match(line, $@"^\s*{name}:\s*(\d+)\s*$"))
+                    .Where(match => match.Success)
+                    .Select(match =>
+                        int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
+                    ),
+            ];
+        }
+
+        int summaries = said.Count(line => line.StartsWith("Test run summary:", StringComparison.Ordinal));
+        if (summaries != 1 || counts.Values.Any(found => found.Length != 1))
+        {
+            throw new CakeException(
+                $"The row could not read one test run summary, with one total, failed, succeeded and skipped count, from dotnet test's output, which held {summaries} summary lines. "
+                    + "Without it the row cannot tell how many tests ran, and it never takes the exit code alone."
+            );
+        }
+
+        int total = counts["total"][0];
+        int succeeded = counts["succeeded"][0];
+        int skipped = counts["skipped"][0];
+        if (total == 0 || succeeded != total || skipped != 0)
+        {
+            throw new CakeException(
+                $"dotnet test ran {total} tests: {succeeded} succeeded, {counts["failed"][0]} failed and {skipped} skipped, and exited 0. "
+                    + "The row takes a run where every test succeeds and none is skipped. "
+                    + "A filter the test application reads, such as xUnit's explicit setting in a testconfig.json, reports every test it leaves out as skipped."
+            );
+        }
+    });
 
 // An empty global property outranks the thumbprint Directory.Signing.props imports, so the package
 // builds unsigned on every machine. cd.yml builds the release MSI through this task, so a release
@@ -271,9 +452,7 @@ Task("installer")
             {
                 ToolPath = Dotnet(),
                 Configuration = "Release",
-                MSBuildSettings = new DotNetMSBuildSettings()
-                    .WithProperty("RestoreLockedMode", "true")
-                    .WithProperty("SigningCertificateThumbprint", ""),
+                MSBuildSettings = RootNamed(noAutoResponse: true).WithProperty("SigningCertificateThumbprint", ""),
             }
         )
     );
@@ -302,6 +481,11 @@ const string shellCheckCanary = """
     """;
 
 const string shellCheckFinding = "SC2086";
+
+// ShellCheck 0.11.0 reads this variable as extra arguments on every run, past the --norc actionlint
+// passes, so an -e there drops a finding. It is the one variable ShellCheck reads that changes one,
+// and actionlint and its canary both run with it empty.
+const string shellCheckOptions = "SHELLCHECK_OPTS";
 
 // The host each address in mise.lock has to name, and the path under it. A url elsewhere is an
 // install fetching bytes from elsewhere, whatever the rest of the entry says.
@@ -411,6 +595,68 @@ const string zizmorConfig = """
       dependabot-cooldown:
         config:
           days: 3
+      # cd.yml's release-pr job and deps.yml's deps job each call a job that names an environment, and
+      # run in none themselves, so secrets: inherit is the one form that passes that environment's
+      # secret. The gate refuses an inline ignore comment, so each waiver sits here by file and by the
+      # line of the job's secrets key. A job that moves reports the finding again, unless its uses line
+      # lands on that line.
+      secrets-inherit:
+        ignore:
+          - cd.yml:23
+          - deps.yml:39
+
+    """;
+
+// .csharpierrc, byte for byte. The format row names it with --config-path, and the gate refuses every
+// other name CSharpier searches for.
+const string csharpierConfig = """
+    {
+      "printWidth": 120,
+      "indentSize": 4,
+      "useTabs": false,
+      "endOfLine": "lf"
+    }
+
+    """;
+
+// .csharpierignore, byte for byte. The format row names it with --ignore-path.
+const string csharpierIgnore = "*" + csharpierIgnoredSuffix + "\n";
+
+// lefthook.yml, byte for byte. lefthook runs each job's command as written, and an extends or remotes
+// key there pulls in more config.
+const string lefthookConfig = """
+    # Git hooks. `bun install` runs `lefthook install`, which writes the hooks into .git/hooks.
+
+    # --bun runs commitlint under the Bun that runs this hook, rather than whichever node PATH names.
+    # --config names the one commitlint config, so commitlint searches for no other.
+    commit-msg:
+      jobs:
+        - name: commitlint
+          run: bunx --bun --no-install commitlint --config commitlint.config.js --edit {1}
+
+    # The gate, run before anything leaves this machine. `dotnet cake.cs --description` lists its steps.
+    pre-push:
+      jobs:
+        - name: gate
+          run: dotnet cake.cs
+
+    """;
+
+// The two .editorconfig files below the root, byte for byte. The analyzers read every .editorconfig
+// above each source file, and a severity there can turn a finding off.
+const string appEditorConfig = """
+    [*.xaml.cs]
+    # XAML wires event handlers to instance methods
+    dotnet_diagnostic.CA1822.severity = none
+
+    """;
+
+const string testsEditorConfig = """
+    [*.cs]
+    # Test names use Method_Scenario_Expectation
+    dotnet_diagnostic.CA1707.severity = none
+    # Tests are the documentation
+    dotnet_diagnostic.CS1591.severity = none
 
     """;
 
@@ -422,7 +668,7 @@ const string zizmorConfig = """
 // mise, so the task needs none on the machine, and check runs it ahead of every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no tracked node_modules path or .env file, bunfig.toml and every config file a row reads as cake.cs holds them, and no other Prettier or npm config"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, bunfig.toml and every config file a row reads as cake.cs holds them, and no other config file a tool the gate starts searches for"
     )
     .Does(() => RequireLockfile());
 
@@ -465,12 +711,13 @@ Task("workflows")
 
         // actionlint prints no file it checked, and with no file named it finds the workflows
         // through a .git alone, so a git archive extraction fails it. The row names every workflow
-        // file under .github/workflows itself, prints them, and refuses an empty list.
+        // file under .github/workflows itself, prints them, and refuses an empty list. The prefix
+        // matches in any case, as NTFS names a checked-out folder by the first path git writes.
         string[] workflows =
         [
-            .. TreeFiles()
+            .. TreeFiles(buildOutput: false)
                 .Where(file =>
-                    file.StartsWith(".github/workflows/", StringComparison.Ordinal)
+                    file.StartsWith(".github/workflows/", StringComparison.OrdinalIgnoreCase)
                     && !file[".github/workflows/".Length..].Contains('/')
                     && (
                         file.EndsWith(".yml", StringComparison.OrdinalIgnoreCase)
@@ -483,7 +730,8 @@ Task("workflows")
         Command(
             ["actionlint", "actionlint.exe"],
             $"{ProvenAnalyzers(actionlint, Verified(resolved, "shellcheck"))} {string.Join(" ", workflows.Select(file => $"\"{file}\""))}",
-            settingsCustomization: settings => settings.WithToolPath(actionlint)
+            settingsCustomization: settings =>
+                settings.WithToolPath(actionlint).WithEnvironmentVariable(shellCheckOptions, "")
         );
 
         // --strict-collection fails on a file zizmor cannot parse. Without it the file is dropped
@@ -534,10 +782,7 @@ RunTarget(target);
 void RequireLockfile()
 {
     RequireOnlyPinnedMiseFiles();
-    RequireNoRefusedTrackedPaths();
-    RequireBunfig();
-    RequireHeldFiles();
-    RequireNoConfigElsewhere();
+    RequireConfigFiles();
     MiseConfig config = ReadMiseConfig("mise.toml");
     Dictionary<string, MiseArtifact> artifacts = MiseArtifacts("mise.lock", config.Platforms, config.Versions);
     foreach (string tool in config.Versions.Keys.OrderBy(name => name, StringComparer.Ordinal))
@@ -885,19 +1130,62 @@ FilePath? OnPath(string name)
 FilePath RequireOnPath(string name, string install) =>
     OnPath(name) ?? throw new CakeException($"{name} is not on PATH. {install}");
 
-FilePath Dotnet() => RequireOnPath("dotnet", "Install the .NET SDK global.json names.");
+// dotnet for the format, build, tests and installer rows. The config checks run here as well as in
+// the lockfile task, so no --target=build or --exclusive run reaches MSBuild or CSharpier past them.
+FilePath Dotnet()
+{
+    RequireConfigFiles();
+    return RequireOnPath("dotnet", "Install the .NET SDK global.json names.");
+}
+
+// The settings every build and test the gate runs hands MSBuild. RestoreLockedMode fails a restore
+// whose package graph disagrees with a packages.lock.json rather than re-resolving it. The three
+// Directory paths name the root files, so MSBuild searches above no project for them. MSBuild imports
+// a named file only when it exists, and the root holds no Directory.Build.targets, so none is
+// imported. The two ImportDirectorySolution switches stop a solution build importing a
+// Directory.Solution.props or .targets from the root or any directory above it.
+// DiscoverGlobalAnalyzerConfigFiles=false stops the compiler reading a file named .globalconfig from
+// any directory above a source file. It leaves an .editorconfig that sets is_global, which is global
+// under any name, and MSBuild still finds one in any directory above a source file, up to the drive
+// root. RequireNoConfigElsewhere refuses one in the tree, and no check reaches one above the
+// checkout. noAutoResponse passes -noAutoResponse, which stops MSBuild reading a Directory.Build.rsp.
+// RestoreForce=true makes each build's restore write obj/<project file>.nuget.g.props and .targets
+// again from what NuGet computes, where a restore with nothing to do leaves a changed one in place.
+// dotnet test --no-build restores nothing, so it is inert on the tests row.
+DotNetMSBuildSettings RootNamed(bool noAutoResponse)
+{
+    string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+    DotNetMSBuildSettings settings = new DotNetMSBuildSettings()
+        .WithProperty("RestoreLockedMode", "true")
+        .WithProperty("RestoreForce", "true")
+        .WithProperty("DirectoryBuildPropsPath", System.IO.Path.Combine(root, "Directory.Build.props"))
+        .WithProperty("DirectoryBuildTargetsPath", System.IO.Path.Combine(root, "Directory.Build.targets"))
+        .WithProperty("DirectoryPackagesPropsPath", System.IO.Path.Combine(root, "Directory.Packages.props"))
+        .WithProperty("ImportDirectorySolutionProps", "false")
+        .WithProperty("ImportDirectorySolutionTargets", "false")
+        .WithProperty("DiscoverGlobalAnalyzerConfigFiles", "false");
+    settings.ExcludeAutoResponseFiles = noAutoResponse;
+    return settings;
+}
 
 // bunx for the prettier row, the one bun process the gate starts. The row passes --bun, so prettier
-// runs under this Bun rather than whichever node PATH names. The tracked-path refusals and the
-// config checks run here as well as in the lockfile task, so no --target=prettier or --exclusive
-// run reaches bunx past them.
+// runs under this Bun rather than whichever node PATH names. The config checks run here as well as
+// in the lockfile task, so no --target=prettier or --exclusive run reaches bunx past them.
 FilePath Bunx()
+{
+    RequireConfigFiles();
+    return RequireOnPath("bunx", "Install Bun at the version package.json names.");
+}
+
+// Every check on the tree's config files, run before each tool the gate starts: the tracked-path
+// refusals, bunfig.toml, the held files, the tool manifest, and every other name a tool searches for.
+void RequireConfigFiles()
 {
     RequireNoRefusedTrackedPaths();
     RequireBunfig();
     RequireHeldFiles();
+    RequireToolManifest();
     RequireNoConfigElsewhere();
-    return RequireOnPath("bunx", "Install Bun at the version package.json names.");
 }
 
 // Files named like a program some step starts by name, at the root or anywhere under tools. Cake's
@@ -1017,24 +1305,24 @@ int RunMise(FilePath mise, string[] arguments, List<string>? output = null)
 // config from this directory, from its .config, mise and .mise subdirectories and from the
 // directories above it, and merges each config file's sibling lockfile ahead of mise.lock. A
 // mise.local.toml beside a mise.local.lock would then install from a url the lockfile task never
-// read. The match is on the mise and .mise prefixes every such name carries, at the root and
-// under .config, so a name a later mise adds is refused as well. .tool-versions carries neither
-// prefix, so it is refused by name. The walk is the file system, not git, because mise reads a
-// file whether git tracks it or not. No other subdirectory is read by a mise run here, so none is
-// walked, and the directories above the checkout are outside what a pull request can write. A name
-// with a trailing dot, a trailing space or a stream suffix still starts with the prefix it carries,
-// and mise opens the plain names alone, so no name is normalized first.
+// read. The match is on the mise and .mise prefixes every such name carries, so a name a later mise
+// adds is refused as well. .tool-versions carries neither prefix, so it is refused by name.
+// RequireNoConfigElsewhere refuses the .config directory whole. The walk is the file system, not
+// git, because mise reads a file whether git tracks it or not. No other subdirectory is read by a
+// mise run here, so none is walked, and the directories above the checkout are outside what a pull
+// request can write. A name with a trailing dot, a trailing space or a stream suffix still starts
+// with the prefix it carries, and mise opens the plain names alone, so no name is normalized first.
 //
-// A symbolic link or junction at the root, or under .config, .mise or mise, is refused as well. mise
-// and every check here follow one to wherever it points, so the file behind it is one this walk
-// never names.
+// A symbolic link or junction at the root, or under .mise or mise, is refused as well. mise and
+// every check here follow one to wherever it points, so the file behind it is one this walk never
+// names.
 void RequireOnlyPinnedMiseFiles()
 {
     static bool MiseNamed(string name) =>
         name.StartsWith("mise", StringComparison.OrdinalIgnoreCase)
         || name.StartsWith(".mise", StringComparison.OrdinalIgnoreCase);
 
-    string[] linkRoots = [".", ".config", ".mise", "mise"];
+    string[] linkRoots = [".", ".mise", "mise"];
     string[] linked =
     [
         .. linkRoots
@@ -1053,12 +1341,12 @@ void RequireOnlyPinnedMiseFiles()
     if (linked.Length > 0)
     {
         throw new CakeException(
-            $"The repository holds the link {string.Join(", ", linked.Select(Quoted))}, and the gate takes no symbolic link or junction at the root or under .config, .mise or mise. "
+            $"The repository holds the link {string.Join(", ", linked.Select(Quoted))}, and the gate takes no symbolic link or junction at the root or under .mise or mise. "
                 + "mise follows a link to wherever it points, so the file it reads is one the gate never named."
         );
     }
 
-    string[] root =
+    string[] found =
     [
         .. System
             .IO.Directory.EnumerateFileSystemEntries(".")
@@ -1069,18 +1357,9 @@ void RequireOnlyPinnedMiseFiles()
                     && !name.Equals("mise.toml", StringComparison.OrdinalIgnoreCase)
                     && !name.Equals("mise.lock", StringComparison.OrdinalIgnoreCase)
                 ) || name.Equals(".tool-versions", StringComparison.OrdinalIgnoreCase)
-            ),
+            )
+            .Order(StringComparer.Ordinal),
     ];
-    string[] config = System.IO.Directory.Exists(".config")
-        ?
-        [
-            .. System
-                .IO.Directory.EnumerateFileSystemEntries(".config")
-                .Select(entry => $".config/{System.IO.Path.GetFileName(entry)}")
-                .Where(name => MiseNamed(name[".config/".Length..])),
-        ]
-        : [];
-    string[] found = [.. root.Concat(config).Order(StringComparer.Ordinal)];
     if (found.Length > 0)
     {
         throw new CakeException(
@@ -1094,51 +1373,49 @@ void RequireOnlyPinnedMiseFiles()
 // Every tracked path with a node_modules segment, in any case, since NTFS reads NODE_MODULES as the
 // same directory. bunx --no-install starts node_modules/.bin/<name> ahead of anything else, and bun
 // install keeps a package it finds already at the version bun.lock records, so a committed
-// node_modules/prettier still runs as prettier after the install. A tracked .env or .env.<name> at
-// the root is refused as well: Bun loads one into every process it starts, prettier and commitlint
-// included, and no bunx flag stops it. git answers what is tracked, so the node_modules an install
-// writes, and a contributor's own untracked .env, pass. An extraction from git archive has no .git at
-// the root and tracks nothing, so the check starts no git there and passes. No GIT_ variable reaches
-// git, so the repository and index it reads are the checkout's own, never ones a shell or hook
-// exported.
+// node_modules/prettier still runs as prettier after the install. A tracked path with a bin or obj
+// segment is refused the same way, since MSBuild imports files from obj by wildcard, and a
+// committed one reaches every checkout. A tracked .env or .env.<name> at the root is refused as
+// well: Bun loads one into every process it starts, prettier and commitlint included, and no bunx
+// flag stops it. So is a lefthook-local or .lefthook-local file at the root, which lefthook merges
+// over lefthook.yml on every run. A path with a .git, .sl, .svn, .hg or .jj segment is refused, in
+// any case, because prettier's CLI skips such a directory without a word. A zizmor: ignore[ comment
+// in a tracked file under .github is refused, because zizmor honors it with no config. git answers
+// what is tracked, so the node_modules an install writes, and a contributor's own untracked .env or
+// lefthook-local file, pass. An extraction from git archive has no .git at the root and tracks
+// nothing, so the check starts no git there and passes. No GIT_ variable reaches git, and git has to
+// name the root as its top level, so the repository and index it reads are the checkout's own, never
+// ones a shell or hook exported or a directory above the root holds.
 void RequireNoRefusedTrackedPaths()
 {
     string root = Context.Environment.WorkingDirectory.FullPath;
     string dotGit = System.IO.Path.Combine(root, ".git");
     if (!System.IO.Directory.Exists(dotGit) && !System.IO.File.Exists(dotGit))
     {
-        Information("No .git at the root, so nothing is tracked and no node_modules path or .env file is refused.");
+        Information("No .git at the root, so nothing is tracked and no tracked path is refused.");
         return;
     }
 
     FilePath git = RequireOnPath("git", "Install it with: winget install --id Git.Git --exact");
-    System.Diagnostics.ProcessStartInfo start = new(git.FullPath)
-    {
-        UseShellExecute = false,
-        RedirectStandardOutput = true,
-        StandardOutputEncoding = new System.Text.UTF8Encoding(false),
-        WorkingDirectory = root,
-    };
-    start.ArgumentList.Add("ls-files");
-    start.ArgumentList.Add("-z");
-    foreach (
-        string name in start
-            .Environment.Keys.Where(name => name.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase))
-            .ToArray()
-    )
-    {
-        start.Environment.Remove(name);
-    }
-
-    using System.Diagnostics.Process process =
-        System.Diagnostics.Process.Start(start)
-        ?? throw new CakeException($"git did not start from {Quoted(git.FullPath)}.");
-    string listed = process.StandardOutput.ReadToEnd();
-    process.WaitForExit();
-    if (process.ExitCode != 0)
+    (int listedExit, string listed) = Git("ls-files", "-z");
+    if (listedExit != 0)
     {
         throw new CakeException(
-            $"git ls-files exited {process.ExitCode} beside a .git at the root, so the gate cannot tell which paths are tracked."
+            $"git ls-files exited {listedExit} beside a .git at the root, so the gate cannot tell which paths are tracked."
+        );
+    }
+
+    // git reads a .git it cannot open as no repository at all, and searches the directories above for
+    // one, so an empty .git leaves ls-files listing a parent repository's paths. --show-cdup prints
+    // the path from the root up to the top level git found, an empty line when the root is the top
+    // level, and it compares no paths, so a root reached through a junction passes.
+    (int cdupExit, string cdup) = Git("rev-parse", "--show-cdup");
+    if (cdupExit != 0 || cdup.Trim().Length != 0)
+    {
+        throw new CakeException(
+            $"git rev-parse --show-cdup exited {cdupExit} printing {Quoted(cdup.Trim())} at the root {Quoted(root)}, and the gate takes an empty line. "
+                + "git searched past the .git at the root, so the paths it lists are another repository's. "
+                + "Restore the repository, or remove the .git and the check reads the tree as an extraction."
         );
     }
 
@@ -1156,6 +1433,24 @@ void RequireNoRefusedTrackedPaths()
         throw new CakeException(
             $"The repository tracks {string.Join(", ", found.Take(5).Select(Quoted))}{(found.Length > 5 ? $" and {found.Length - 5} more" : "")} under node_modules, and the gate takes no tracked node_modules path. "
                 + "bunx starts node_modules/.bin before anything else, and bun install keeps a package already at the version bun.lock records, so a committed file there runs in place of prettier."
+        );
+    }
+
+    string[] buildOutputSegments = ["bin", "obj"];
+    string[] underBuildOutput =
+    [
+        .. tracked
+            .Where(path =>
+                path.Split('/').Any(segment => buildOutputSegments.Contains(segment, StringComparer.OrdinalIgnoreCase))
+            )
+            .Order(StringComparer.Ordinal),
+    ];
+    if (underBuildOutput.Length > 0)
+    {
+        throw new CakeException(
+            $"The repository tracks {string.Join(", ", underBuildOutput.Take(5).Select(Quoted))}{(underBuildOutput.Length > 5 ? $" and {underBuildOutput.Length - 5} more" : "")}, "
+                + "and the gate takes no tracked path with a segment named bin or obj, in any case. "
+                + "MSBuild imports obj/<project file>.*.props and .targets into every build of a project, so a committed one reaches the build in CI's checkout. Remove it from the commit."
         );
     }
 
@@ -1177,6 +1472,107 @@ void RequireNoRefusedTrackedPaths()
             $"The repository tracks {string.Join(", ", envFiles.Select(Quoted))} at the root, and the gate takes no tracked .env file. "
                 + "Bun loads one into every process it starts, prettier and commitlint included, and no bunx flag stops it."
         );
+    }
+
+    string[] lefthookLocal =
+    [
+        .. tracked
+            .Where(path =>
+                !path.Contains('/')
+                && (
+                    path.StartsWith("lefthook-local.", StringComparison.OrdinalIgnoreCase)
+                    || path.StartsWith(".lefthook-local.", StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            .Order(StringComparer.Ordinal),
+    ];
+    if (lefthookLocal.Length > 0)
+    {
+        throw new CakeException(
+            $"The repository tracks {string.Join(", ", lefthookLocal.Select(Quoted))} at the root, and the gate takes no tracked lefthook local file. "
+                + "lefthook merges one over lefthook.yml on every run, so a job there replaces the hook's command. "
+                + "Remove it from the commit, and keep your own copy untracked, as .gitignore does."
+        );
+    }
+
+    string[] versionControlSegments = [".git", ".sl", ".svn", ".hg", ".jj"];
+    string[] underVersionControl =
+    [
+        .. tracked
+            .Where(path =>
+                path.Split('/')
+                    .Any(segment => versionControlSegments.Contains(segment, StringComparer.OrdinalIgnoreCase))
+            )
+            .Order(StringComparer.Ordinal),
+    ];
+    if (underVersionControl.Length > 0)
+    {
+        throw new CakeException(
+            $"The repository tracks {string.Join(", ", underVersionControl.Take(5).Select(Quoted))}{(underVersionControl.Length > 5 ? $" and {underVersionControl.Length - 5} more" : "")}, "
+                + $"and the gate takes no tracked path with a segment named {string.Join(", ", versionControlSegments)}, in any case. "
+                + "prettier's CLI skips a directory of that name without a word, so no row would check what is under it. Rename the segment."
+        );
+    }
+
+    System.Text.RegularExpressions.Regex waiver = new(
+        @"zizmor\s*:\s*ignore\s*\[",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+    );
+    string[] waivers =
+    [
+        .. tracked
+            .Where(path =>
+                path.StartsWith(".github/", StringComparison.OrdinalIgnoreCase)
+                && System.IO.File.Exists(System.IO.Path.Combine(root, path))
+            )
+            .SelectMany(path =>
+                System
+                    .IO.File.ReadAllLines(System.IO.Path.Combine(root, path))
+                    .Select((line, index) => (path, line, number: index + 1))
+            )
+            .Where(entry => waiver.IsMatch(entry.line))
+            .Select(entry => $"{Quoted(entry.path)} line {entry.number}")
+            .Order(StringComparer.Ordinal),
+    ];
+    if (waivers.Length > 0)
+    {
+        throw new CakeException(
+            $"The repository tracks a zizmor: ignore[ comment at {string.Join(", ", waivers)}, and the gate takes no inline zizmor waiver under .github. "
+                + "zizmor honors one with no config, so nothing the gate holds names it. "
+                + "Move the waiver to rules.<audit>.ignore in .github/zizmor.yml as <file>:<line>, and change zizmorConfig in cake.cs to match."
+        );
+    }
+
+    // One git command at the root, with every GIT_ variable removed, and what it wrote to stdout.
+    (int ExitCode, string Output) Git(params string[] arguments)
+    {
+        System.Diagnostics.ProcessStartInfo start = new(git.FullPath)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+            WorkingDirectory = root,
+        };
+        foreach (string argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        foreach (
+            string name in start
+                .Environment.Keys.Where(name => name.StartsWith("GIT_", StringComparison.OrdinalIgnoreCase))
+                .ToArray()
+        )
+        {
+            start.Environment.Remove(name);
+        }
+
+        using System.Diagnostics.Process process =
+            System.Diagnostics.Process.Start(start)
+            ?? throw new CakeException($"git did not start from {Quoted(git.FullPath)}.");
+        string output = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        return (process.ExitCode, output);
     }
 }
 
@@ -1252,33 +1648,82 @@ void RequireBunfig()
     }
 }
 
-// Every config file a row reads that could load code or narrow what the row checks, each byte for
-// byte against the text cake.cs holds for it. prettier runs the modules .prettierrc names, and a
-// line in .prettierignore takes files out of the prettier row. .taplo.toml's exclude takes files out
-// of the toml row, and a rule in .github/zizmor.yml can disable an audit or ignore a finding. So any
-// change to one of these texts is refused rather than read. .github/actionlint.yaml, in either
-// extension, is refused outright: its paths block ignores actionlint's errors by pattern, and the
-// repository carries none.
+// The nine config files below, each held byte for byte against the text cake.cs holds for it.
+// prettier runs the modules .prettierrc names, and a line in .prettierignore takes files out of the
+// prettier row. .taplo.toml's exclude takes files out of the toml row, and a rule in
+// .github/zizmor.yml can disable an audit or ignore a finding. An override in .csharpierrc and a line
+// in .csharpierignore do the same to the format row. lefthook.yml holds the commands the hooks run,
+// and a severity in either .editorconfig below the root can turn an analyzer finding off. So any
+// change to one of these texts is refused rather than read, and the finding names the constant and
+// the first line that differs. .github/actionlint.yaml, in either extension, is refused outright:
+// its paths block ignores actionlint's errors by pattern, and the repository carries none.
 void RequireHeldFiles()
 {
-    (string Path, string Text, string Why)[] held =
+    (string Path, string Constant, string Text, string Why)[] held =
     [
-        (".prettierrc", prettierConfig, "prettier runs the modules a config names"),
-        (".prettierignore", prettierIgnore, "a line there takes files out of the prettier row"),
-        (".taplo.toml", taploConfig, "its exclude takes files out of the toml row"),
-        (".github/zizmor.yml", zizmorConfig, "a rule there can disable an audit or ignore a finding"),
+        (".prettierrc", nameof(prettierConfig), prettierConfig, "prettier runs the modules a config names"),
+        (".prettierignore", nameof(prettierIgnore), prettierIgnore, "a line there takes files out of the prettier row"),
+        (".taplo.toml", nameof(taploConfig), taploConfig, "its exclude takes files out of the toml row"),
+        (
+            ".github/zizmor.yml",
+            nameof(zizmorConfig),
+            zizmorConfig,
+            "a rule there can disable an audit or ignore a finding"
+        ),
+        (
+            ".csharpierrc",
+            nameof(csharpierConfig),
+            csharpierConfig,
+            "an override there changes the format row's options"
+        ),
+        (
+            ".csharpierignore",
+            nameof(csharpierIgnore),
+            csharpierIgnore,
+            "a line there takes files out of the format row"
+        ),
+        (
+            "lefthook.yml",
+            nameof(lefthookConfig),
+            lefthookConfig,
+            "lefthook runs the commands there, and an extends or remotes key pulls in more config"
+        ),
+        (
+            "src/WingetNudge/.editorconfig",
+            nameof(appEditorConfig),
+            appEditorConfig,
+            "a severity there can turn an analyzer finding off"
+        ),
+        (
+            "tests/.editorconfig",
+            nameof(testsEditorConfig),
+            testsEditorConfig,
+            "a severity there can turn an analyzer finding off"
+        ),
     ];
-    foreach ((string path, string text, string why) in held)
+    foreach ((string path, string constant, string text, string why) in held)
     {
         byte[] expected = System.Text.Encoding.UTF8.GetBytes(text);
         byte[] actual = System.IO.File.Exists(path) ? System.IO.File.ReadAllBytes(path) : [];
-        if (!actual.AsSpan().SequenceEqual(expected))
+        int offset = actual.AsSpan().CommonPrefixLength(expected);
+        if (offset == actual.Length && offset == expected.Length)
+        {
+            continue;
+        }
+
+        string reason = $"{why[..1].ToUpperInvariant()}{why[1..]}, so the file has to match {constant} byte for byte.";
+        if (!System.IO.File.Exists(path))
         {
             throw new CakeException(
-                $"{path} is {(actual.Length == 0 ? "missing or empty" : Quoted(System.Text.Encoding.UTF8.GetString(actual)))}, and the gate takes the text cake.cs holds for it alone, {Quoted(text)}. "
-                    + $"{why[..1].ToUpperInvariant()}{why[1..]}, so the file has to match cake.cs byte for byte."
+                $"{path} is missing, and the gate takes the text {constant} in cake.cs holds for it. {reason} Restore the file."
             );
         }
+
+        int line = expected.AsSpan(0, offset).Count((byte)'\n') + 1;
+        throw new CakeException(
+            $"{path} differs from {constant} in cake.cs at line {line}, byte {offset}: the file has {LineAt(actual, offset)}, and {constant} has {LineAt(expected, offset)}. "
+                + $"{reason} Change both together, or restore the file."
+        );
     }
 
     string[] actionlintConfig =
@@ -1294,17 +1739,74 @@ void RequireHeldFiles()
     }
 }
 
-// Every other file an editor's prettier or bun could read as config, anywhere in the tree. The
-// names are CONFIG_FILES in prettier 3.9.8's src/config/prettier-config/config-searcher.js: a
-// package.json or package.yaml carrying a prettier key, then .prettierrc and the files below. A
-// .prettierrc away from the root is refused as well, and so is every package.yaml, since the gate
-// reads no YAML. A package.json is refused when it names prettier, or when it does not read as a
-// JSON object, since Bun's reader takes more than JSON does. A .npmrc moves where bun install
-// downloads from. The prettier row passes --config, so the gate's own prettier searches for none of
-// these, and the refusal is for an editor's prettier and a contributor's own bun install. The walk
-// is TreeFiles, because an editor reads an untracked file too, and every name matches without regard
-// to case, as NTFS does.
+// Every other file a tool the gate starts, or an editor running that tool, would read as config,
+// anywhere in the tree, each named with why. The gate hands each tool its one config by name, so
+// the refusals keep an editor's run, and a run the gate does not make, reading what the gate reads.
+// The walk is TreeFiles with the build output, because an editor reads an untracked file too, and
+// MSBuild imports files from obj. Every name matches without regard to case, as NTFS does, and the
+// one config the gate names for a tool passes in its exact case alone. An .editorconfig that sets
+// is_global is refused wherever it sits, the root one and the two held ones included, since the
+// analyzers apply a global config to every file of a project that finds it. A .config entry at the
+// root is refused whole: mise, dotnet tool run, cosmiconfig and lefthook each read config from it,
+// and cosmiconfig runs a module there on every commitlint start. No tool the gate starts reads a
+// .config below the root, since each reads its working directory, the root, or the directories
+// above it.
 void RequireNoConfigElsewhere()
+{
+    string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+    List<string> found = [];
+    foreach (string relative in TreeFiles(buildOutput: true))
+    {
+        string name = System.IO.Path.GetFileName(relative);
+        string? why =
+            SearchedConfig(relative)
+            ?? (
+                name.Equals(".editorconfig", StringComparison.OrdinalIgnoreCase)
+                && SetsIsGlobal(System.IO.Path.Combine(root, relative))
+                    ? "it sets is_global, and the analyzers apply a global config to every file of a project with a source file below it"
+                    : null
+            )
+            ?? (
+                name.Equals("package.json", StringComparison.OrdinalIgnoreCase)
+                    ? RefusedPackageJson(System.IO.Path.Combine(root, relative))
+                    : null
+            );
+        if (why is not null)
+        {
+            found.Add($"{Quoted(relative)}, since {why}");
+        }
+    }
+
+    found.AddRange(
+        System
+            .IO.Directory.EnumerateFileSystemEntries(".")
+            .Select(entry => System.IO.Path.GetFileName(entry))
+            .Where(name => name.Equals(".config", StringComparison.OrdinalIgnoreCase))
+            .Select(name =>
+                $"{Quoted(name)}, since mise, dotnet tool run, cosmiconfig and lefthook each read config from it, and cosmiconfig runs a module there on every commitlint start"
+            )
+    );
+    if (found.Count > 0)
+    {
+        throw new CakeException(
+            $"The tree holds {string.Join("; ", found.Order(StringComparer.Ordinal))}. "
+                + "The gate names each tool's one config itself and takes no other file the tool searches for. "
+                + "Remove each one, and put any setting it carries in the file the gate names."
+        );
+    }
+}
+
+// Why the gate refuses a file of this name where it sits, or null when it takes it. The names are
+// each tool's own search list at the version the gate pins: prettier 3.9.8's CONFIG_FILES, CSharpier
+// 1.3.0's .csharpierrc family, MSBuild's Directory files, response file, project .user files and
+// obj imports, NuGet's config, the analyzers' .editorconfig and .globalconfig, Bun's tsconfig.json
+// and jsconfig.json, Cake's cake.config, taplo 0.10.0, zizmor 1.30.1, commitlint 21.2.2 over
+// cosmiconfig 9.0.2, lefthook 2.1.14, and the test platform's testconfig.json and xUnit's
+// xunit.runner.json. A name is refused at every depth the tool, or an editor running it, searches.
+// package.yaml is refused whole, since the gate reads no YAML. In obj, MSBuild imports
+// <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on every
+// restore, so that pair alone passes.
+static string? SearchedConfig(string relative)
 {
     string[] prettierFiles =
     [
@@ -1327,46 +1829,244 @@ void RequireNoConfigElsewhere()
         "prettier.config.cjs",
         "prettier.config.cts",
     ];
-    string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
-    string[] found =
+    string[] commitlintFiles =
     [
-        .. TreeFiles()
-            .Where(relative =>
-            {
-                string name = System.IO.Path.GetFileName(relative);
-                return name.Equals(".npmrc", StringComparison.OrdinalIgnoreCase)
-                    || name.Equals("package.yaml", StringComparison.OrdinalIgnoreCase)
-                    || (
-                        prettierFiles.Contains(name, StringComparer.OrdinalIgnoreCase)
-                        && !(relative == ".prettierrc" && name == ".prettierrc")
-                    )
-                    || (
-                        name.Equals("package.json", StringComparison.OrdinalIgnoreCase)
-                        && NamesPrettier(System.IO.Path.Combine(root, relative))
-                    );
-            })
-            .Select(Quoted)
-            .Order(StringComparer.Ordinal),
+        ".commitlintrc",
+        ".commitlintrc.json",
+        ".commitlintrc.yaml",
+        ".commitlintrc.yml",
+        ".commitlintrc.js",
+        ".commitlintrc.cjs",
+        ".commitlintrc.mjs",
+        ".commitlintrc.ts",
+        ".commitlintrc.cts",
+        ".commitlintrc.mts",
+        "commitlint.config.js",
+        "commitlint.config.cjs",
+        "commitlint.config.mjs",
+        "commitlint.config.ts",
+        "commitlint.config.cts",
+        "commitlint.config.mts",
     ];
-    if (found.Length > 0)
+    string[] zizmorFiles =
+    [
+        ".github/zizmor.yaml",
+        "zizmor.yml",
+        "zizmor.yaml",
+        ".github/.github/zizmor.yml",
+        ".github/.github/zizmor.yaml",
+    ];
+    string[] lefthookFiles = ["lefthook.yaml", "lefthook.json", "lefthook.jsonc", "lefthook.toml"];
+    string[] heldEditorConfigs = ["src/WingetNudge/.editorconfig", "tests/.editorconfig"];
+    string[] segments = relative.Split('/');
+    string name = segments[^1].ToLowerInvariant();
+    bool atRoot = segments.Length == 1;
+    System.Text.RegularExpressions.Match objImport = System.Text.RegularExpressions.Regex.Match(
+        name,
+        @"^.+\.(csproj|wixproj)\.(.*)\.(props|targets)$"
+    );
+    return relative switch
     {
-        throw new CakeException(
-            $"The tree holds {string.Join(", ", found)}, and the gate takes no config for prettier but the root .prettierrc, and no .npmrc. "
-                + "prettier runs the modules a config file names, and a .npmrc moves where bun install downloads from."
-        );
+        _ when prettierFiles.Contains(name) && relative != ".prettierrc" =>
+            "prettier reads it as config and runs the modules it names",
+        _ when name == "package.yaml" => "prettier and cosmiconfig read its keys as config, and the gate reads no YAML",
+        _ when name == ".npmrc" => "it moves where bun install downloads from",
+        _ when name.StartsWith(".csharpierrc", StringComparison.Ordinal) && relative != ".csharpierrc" =>
+            "CSharpier reads it as config for every file below it",
+        _ when name == ".csharpierignore" && relative != ".csharpierignore" =>
+            "CSharpier leaves out every file it matches below it",
+        _ when (name is "directory.build.props" or "directory.build.targets" or "directory.packages.props")
+                && !atRoot => "MSBuild imports it for every project below it in a build that names no root file",
+        _ when name == "directory.build.rsp" => "MSBuild reads its switches on every command-line build",
+        _ when name is "directory.solution.props" or "directory.solution.targets" =>
+            "MSBuild imports it into a build of any solution in its directory or below, and an editor's build passes no switch that stops it",
+        _ when name.EndsWith(".csproj.user", StringComparison.Ordinal)
+                || name.EndsWith(".wixproj.user", StringComparison.Ordinal) =>
+            "MSBuild imports it after the project body in every build of the project, so a property there switches what the gate's builds check, "
+                + "and a debug profile belongs in Properties/launchSettings.json instead, which MSBuild does not import",
+        _ when segments.Length > 1
+                && segments[^2].Equals("obj", StringComparison.OrdinalIgnoreCase)
+                && objImport.Success
+                && objImport.Groups[2].Value != "nuget.g" =>
+            "MSBuild imports it into every build of the project beside obj, and NuGet's own nuget.g files are the only ones the gate takes there",
+        _ when name == "nuget.config" && !atRoot =>
+            "NuGet adds its sources past the root nuget.config's <clear /> for every project below it",
+        _ when name == ".editorconfig" && !atRoot && !heldEditorConfigs.Contains(relative) =>
+            "the analyzers read its severities, and an editor's prettier its indent and line endings, for every file below it",
+        _ when name == ".globalconfig" =>
+            "the analyzers apply it to every file of a project with a source file below it, in an editor's build, which does not pass DiscoverGlobalAnalyzerConfigFiles=false as the gate's does",
+        _ when name is "testconfig.json" or "xunit.runner.json"
+                || name.EndsWith(".testconfig.json", StringComparison.Ordinal)
+                || name.EndsWith(".xunit.runner.json", StringComparison.Ordinal) =>
+            "the test application reads it as config, and the build copies a testconfig.json beside a test project into its output, where a filter can leave every test out",
+        _ when name is "tsconfig.json" or "jsconfig.json" =>
+            "Bun reads its paths and jsx settings for the modules prettier and commitlint load",
+        _ when atRoot && name == "cake.config" => "Cake reads its settings before any task runs",
+        _ when atRoot && name == "taplo.toml" =>
+            "taplo reads it as config when run without --config, as an editor runs it",
+        _ when zizmorFiles.Contains(relative.ToLowerInvariant()) =>
+            "zizmor reads it as config when run without --config",
+        _ when atRoot && commitlintFiles.Contains(name) && relative != "commitlint.config.js" =>
+            "commitlint reads it as config when run without --config, as the shared commits job runs it",
+        _ when atRoot && (lefthookFiles.Contains(name) || name.StartsWith(".lefthook.", StringComparison.Ordinal)) =>
+            "lefthook reads it as its config",
+        _ => null,
+    };
+}
+
+// Why the gate refuses a package.json, or null when it takes it. prettier reads a top-level prettier
+// key as config, commitlint a commitlint key, and cosmiconfig a cosmiconfig key as options for every
+// search it makes. Bun's reader takes more than JSON does, so a file that does not read as a JSON
+// object is refused. Bun keeps the first of two keys, and JSON.parse the last, so a key named twice
+// at any depth is refused too. JsonDocument parses a key holding a lone surrogate escape, and throws
+// InvalidOperationException only when the key is read, so that file is refused as not JSON as well.
+static string? RefusedPackageJson(string path)
+{
+    try
+    {
+        using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText(path));
+        JsonElement top = document.RootElement;
+        if (top.ValueKind != JsonValueKind.Object)
+        {
+            return "it is not a JSON object, and Bun's reader takes more than JSON does";
+        }
+
+        string[] duplicates = [.. DuplicateKeys(top, "$")];
+        if (duplicates.Length > 0)
+        {
+            return $"it names {string.Join(", ", duplicates.Select(Quoted))} twice, and Bun keeps the first of two keys where JSON.parse keeps the last";
+        }
+
+        string[] keys =
+        [
+            .. top.EnumerateObject()
+                .Select(property => property.Name)
+                .Where(key => key is "prettier" or "commitlint" or "cosmiconfig")
+                .Select(key =>
+                    key switch
+                    {
+                        "prettier" => "a top-level \"prettier\" key, which prettier reads as config",
+                        "commitlint" =>
+                            "a top-level \"commitlint\" key, which commitlint reads as config when run without --config",
+                        _ => "a top-level \"cosmiconfig\" key, which cosmiconfig reads as options for every search",
+                    }
+                ),
+        ];
+        return keys.Length > 0 ? $"it carries {string.Join(", and ", keys)}" : null;
+    }
+    catch (Exception error) when (error is JsonException or InvalidOperationException)
+    {
+        return "it does not read as JSON, and Bun's reader takes more than JSON does";
+    }
+}
+
+// Whether an .editorconfig sets is_global, which makes it a global config under any name. The
+// compiler reads a property line as optional blanks, a key, then = or :, and compares keys without
+// regard to case. The match runs over every line, in or out of a section, so no layout hides one.
+static bool SetsIsGlobal(string path) =>
+    System.Text.RegularExpressions.Regex.IsMatch(
+        System.IO.File.ReadAllText(path).ReplaceLineEndings("\n"),
+        @"^\s*is_global\s*[=:]",
+        System.Text.RegularExpressions.RegexOptions.Multiline
+            | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.CultureInvariant
+    );
+
+// Every key path in a JSON value, from $, whose key its object names a second time. Names compare
+// as decoded text, so an escaped spelling of a key is the same key.
+static IEnumerable<string> DuplicateKeys(JsonElement element, string path)
+{
+    if (element.ValueKind == JsonValueKind.Object)
+    {
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            string child = $"{path}.{property.Name}";
+            if (!seen.Add(property.Name))
+            {
+                yield return child;
+            }
+
+            foreach (string nested in DuplicateKeys(property.Value, child))
+            {
+                yield return nested;
+            }
+        }
+    }
+    else if (element.ValueKind == JsonValueKind.Array)
+    {
+        int index = 0;
+        foreach (JsonElement item in element.EnumerateArray())
+        {
+            foreach (string nested in DuplicateKeys(item, $"{path}[{index}]"))
+            {
+                yield return nested;
+            }
+
+            index++;
+        }
+    }
+}
+
+// dotnet-tools.json, holding "isRoot": true. dotnet tool run takes no manifest path: it walks up from
+// the working directory, reading .config/dotnet-tools.json and then dotnet-tools.json in each
+// directory, until a manifest sets isRoot. Without it, a manifest above the checkout could name the
+// csharpier the format row runs. RequireNoConfigElsewhere refuses the .config directory. A key named
+// twice is refused, since the SDK and JsonDocument each read the last and another reader the first.
+// A key holding a lone surrogate escape throws InvalidOperationException when read, and is refused
+// as not JSON.
+void RequireToolManifest()
+{
+    const string path = "dotnet-tools.json";
+    if (!System.IO.File.Exists(path))
+    {
+        throw new CakeException($"{path} is missing, and it names the csharpier the format row runs. Restore it.");
+    }
+
+    try
+    {
+        using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText(path));
+        JsonElement top = document.RootElement;
+        string[] duplicates = top.ValueKind == JsonValueKind.Object ? [.. DuplicateKeys(top, "$")] : [];
+        if (duplicates.Length > 0)
+        {
+            throw new CakeException(
+                $"{path} names {string.Join(", ", duplicates.Select(Quoted))} twice, and the gate takes each key once. "
+                    + "The SDK reads the last of two keys, and another reader the first. Remove the duplicate."
+            );
+        }
+
+        if (
+            top.ValueKind != JsonValueKind.Object
+            || !top.TryGetProperty("isRoot", out JsonElement isRoot)
+            || isRoot.ValueKind != JsonValueKind.True
+        )
+        {
+            throw new CakeException(
+                $"{path} does not set \"isRoot\": true, and the gate takes a manifest that does. "
+                    + "dotnet tool run walks up from the root until a manifest sets it, so a manifest above the checkout could name the csharpier the format row runs. Set it."
+            );
+        }
+    }
+    catch (Exception error) when (error is JsonException or InvalidOperationException)
+    {
+        throw new CakeException($"{path} does not read as JSON: {Quoted(error.Message)}. Restore it.");
     }
 }
 
 // Every file in the tree, relative to the root with forward slashes, for the refusals and rows that
-// read the tree rather than handing a tool a directory. It skips node_modules, bin, obj and .git
-// wherever they sit, and .claude/worktrees and .vs at the root, where agents and IDEs write. A
-// directory link is refused, since the files behind it are ones no check here would name. A
-// directory the gate cannot list, or one deleted while the walk reads it, is refused by name as
-// well, so a row fails rather than checking a shorter list than the tree holds.
-List<string> TreeFiles()
+// read the tree rather than handing a tool a directory. It skips .git wherever it sits, and
+// node_modules, .claude/worktrees and .vs at the root, where installs, agents and IDEs write. bin
+// and obj beside a .csproj or .wixproj hold what the SDK writes, so the rows skip them, and the
+// refusals pass buildOutput to read them, since MSBuild imports files from obj. The SDK compiles a
+// file in a bin or obj anywhere else, so every walk enters one. A directory link is refused, since
+// the files behind it are ones no check here would name. A directory the gate cannot list, or one
+// deleted while the walk reads it, is refused by name as well, so a row fails rather than checking
+// a shorter list than the tree holds.
+List<string> TreeFiles(bool buildOutput)
 {
-    string[] skipped = ["node_modules", "bin", "obj", ".git"];
-    string[] skippedAtRoot = [".claude/worktrees", ".vs"];
+    string[] skippedAtRoot = ["node_modules", ".claude/worktrees", ".vs"];
+    string[] projectOutput = ["bin", "obj"];
     string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
     System.IO.EnumerationOptions options = new() { AttributesToSkip = 0, IgnoreInaccessible = false };
     List<string> files = [];
@@ -1386,6 +2086,13 @@ List<string> TreeFiles()
             continue;
         }
 
+        bool projectRoot = entries.Any(entry =>
+            entry is not System.IO.DirectoryInfo
+            && (
+                entry.Name.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+                || entry.Name.EndsWith(".wixproj", StringComparison.OrdinalIgnoreCase)
+            )
+        );
         foreach (System.IO.FileSystemInfo entry in entries)
         {
             string relative = System.IO.Path.GetRelativePath(root, entry.FullName).Replace('\\', '/');
@@ -1396,8 +2103,9 @@ List<string> TreeFiles()
             }
 
             if (
-                skipped.Contains(entry.Name, StringComparer.Ordinal)
+                entry.Name == ".git"
                 || skippedAtRoot.Contains(relative, StringComparer.Ordinal)
+                || (!buildOutput && projectRoot && projectOutput.Contains(entry.Name, StringComparer.Ordinal))
             )
             {
                 continue;
@@ -1436,20 +2144,18 @@ void RequireChecked(string row, IReadOnlyCollection<string> files)
     Information("{0} checks {1} files: {2}", row, files.Count, string.Join(", ", files));
 }
 
-// Whether a package.json names a prettier config for prettier to load, as far as the gate can tell:
-// a prettier key at the top, or a file that does not read as a JSON object at all.
-static bool NamesPrettier(string path)
+// The line of a text that holds a byte offset, quoted, or "nothing more" when the text ends before
+// the offset.
+static string LineAt(byte[] bytes, int offset)
 {
-    try
+    if (offset >= bytes.Length)
     {
-        using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText(path));
-        return document.RootElement.ValueKind != JsonValueKind.Object
-            || document.RootElement.EnumerateObject().Any(property => property.Name == "prettier");
+        return "nothing more";
     }
-    catch (JsonException)
-    {
-        return true;
-    }
+
+    int start = offset == 0 ? 0 : Array.LastIndexOf(bytes, (byte)'\n', offset - 1) + 1;
+    int end = Array.IndexOf(bytes, (byte)'\n', offset);
+    return Quoted(System.Text.Encoding.UTF8.GetString(bytes, start, (end < 0 ? bytes.Length : end) - start));
 }
 
 // A value read from mise.toml, mise.lock or mise's own output, as every message echoes one: in double
@@ -1743,6 +2449,10 @@ string ProvenAnalyzers(FilePath actionlint, FilePath shellcheck)
                 Arguments = $"{analyzers} \"{canary.FullPath}\"",
                 RedirectStandardOutput = true,
                 Silent = true,
+                EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [shellCheckOptions] = "",
+                },
             },
             out IEnumerable<string> reported
         );

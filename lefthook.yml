@@ -1,10 +1,11 @@
 # Git hooks. `bun install` runs `lefthook install`, which writes the hooks into .git/hooks.
 
 # --bun runs commitlint under the Bun that runs this hook, rather than whichever node PATH names.
+# --config names the one commitlint config, so commitlint searches for no other.
 commit-msg:
   jobs:
     - name: commitlint
-      run: bunx --bun --no-install commitlint --edit {1}
+      run: bunx --bun --no-install commitlint --config commitlint.config.js --edit {1}
 
 # The gate, run before anything leaves this machine. `dotnet cake.cs --description` lists its steps.
 pre-push:

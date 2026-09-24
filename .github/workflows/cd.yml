@@ -20,7 +20,7 @@ jobs:
   # form that reaches it.
   release-pr:
     uses: zachthedev/.github/.github/workflows/release-pr.yml@c53d09e393028ceddee0d761f2a7963394289a72 # v0.1.0
-    secrets: inherit # zizmor: ignore[secrets-inherit]
+    secrets: inherit
 
   # Builds the MSI for the release this push created. The push commit is the tagged commit, so
   # the default checkout is the right one and no ref is named. No cache: a release is built from

@@ -149,9 +149,9 @@ repository root, which `.gitignore` keeps out of commits:
 
 ```xml
 <Project>
-  <PropertyGroup>
-    <SigningCertificateThumbprint>...</SigningCertificateThumbprint>
-  </PropertyGroup>
+    <PropertyGroup>
+        <SigningCertificateThumbprint>...</SigningCertificateThumbprint>
+    </PropertyGroup>
 </Project>
 ```
 
