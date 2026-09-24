@@ -8,22 +8,27 @@ namespace WingetNudge.Core.Storage;
 /// <summary>Reads and writes the app's JSON state files with one shared serializer configuration.</summary>
 public static class JsonFile
 {
-    private const int ReadRetries = 3;
-
-    // A holder keeps a write lock for one read, change and write, a few milliseconds, or at most the
-    // replace's retries of about 0.6 s. Two seconds covers that several times over.
+    // A holder keeps a write lock for one read, change and write: a few milliseconds, or 1.4 to 1.7 s
+    // measured when another program holds up the read, the set-aside and the replace in turn. Two seconds
+    // leaves a waiter about a third of a second to spare in that worst case.
     private static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromSeconds(2);
 
     // A thread holds at most one write lock, so no two updates can wait on each other.
     [ThreadStatic]
     private static bool _holdsWriteLock;
 
-    // Waits between attempts at a replace or a set-aside: 511 ms in all, about 0.6 s once each sleep
-    // rounds up to the ~15 ms timer tick. A replace fails with access denied while any other handle is
-    // open on the target, whatever its share mode. It fails with a sharing violation while a handle
-    // without delete sharing is open on the temporary. A real-time scanner holds a freshly written file
-    // open for a few milliseconds.
-    private static readonly int[] ReplaceBackoffMilliseconds = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+    // Waits between attempts at a plain read's open, a replace or a set-aside: 511 ms in all, and 0.62 to
+    // 0.65 s measured once each sleep rounds up to the ~15 ms timer tick. A replace fails with access denied
+    // while any other handle is open on the target, whatever its share mode. It fails with a sharing
+    // violation while a handle without delete sharing is open on the temporary. An open fails with a sharing
+    // violation while another program holds the file without sharing it. A real-time scanner holds a freshly
+    // written file open for a few milliseconds.
+    private static readonly int[] HeldBackoffMilliseconds = [1, 2, 4, 8, 16, 32, 64, 128, 256];
+
+    // Waits between attempts at a read's open under the write lock: 150 ms in all, and about 0.17 s
+    // measured. The save that read belongs to may still wait out a holder at its set-aside and at its replace,
+    // and a second save waits on the lock through all three, so this read gives up sooner than a plain one.
+    private static readonly int[] LockedReadBackoffMilliseconds = [50, 100];
 
     /// <summary>Serializer options shared by every state file.</summary>
     public static JsonSerializerOptions Options { get; } =
@@ -38,7 +43,7 @@ public static class JsonFile
         };
 
     /// <summary>
-    /// Reads a JSON file, returning <c>null</c> when it is absent or unreadable.
+    /// Reads a JSON file, returning <c>null</c> when it is absent or corrupt.
     /// </summary>
     /// <typeparam name="T">Deserialized shape.</typeparam>
     /// <param name="path">File to read.</param>
@@ -51,10 +56,18 @@ public static class JsonFile
     /// <remarks>
     /// A corrupt file is set aside only under its write lock, after a second read there finds it still
     /// corrupt. Every writer of a state file holds that lock from its read to its write, so the move
-    /// never takes a file that a writer replaced after the first read. When the lock cannot be had,
-    /// or another handle holds the file, the file stays and the read returns <c>null</c> at once.
+    /// never takes a file that a writer replaced after the first read. A reader waits up to two seconds for
+    /// that lock and tries the move once. When the lock stays held or another handle refuses the move, the
+    /// corrupt file stays and the read returns <c>null</c>.
     /// </remarks>
     /// <returns>The parsed value, or <c>null</c> when the file is missing or corrupt.</returns>
+    /// <exception cref="IOException">
+    /// Another handle refused the open for the whole wait of 0.62 to 0.65 s, or the file could not be read.
+    /// </exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// The file system still denies the read once that wait runs out, or a directory took the file's place
+    /// after the read checked for it.
+    /// </exception>
     public static T? Read<T>(string path, bool deleteIfCorrupt)
         where T : class => ReadCore<T>(path, deleteIfCorrupt, holdsLock: false, beforeWrite: false);
 
@@ -68,7 +81,7 @@ public static class JsonFile
 
         try
         {
-            using FileStream stream = OpenRead(path);
+            using FileStream stream = OpenRead(path, holdsLock);
             return JsonSerializer.Deserialize<T>(stream, Options);
         }
         catch (FileNotFoundException)
@@ -99,30 +112,26 @@ public static class JsonFile
     }
 
     /// <summary>
-    /// Opens a state file for reading, retrying while another handle refuses the open. Every read of a
-    /// JSON state file opens it here.
+    /// Opens a state file for reading, retrying while another handle refuses the open: for 0.62 to 0.65 s,
+    /// or for about 0.17 s under the file's write lock. Every read of a JSON state file opens it here.
     /// </summary>
     /// <param name="path">File to open.</param>
+    /// <param name="holdsLock">Whether the caller holds the file's write lock.</param>
     /// <returns>The open file, positioned at its start.</returns>
     /// <exception cref="FileNotFoundException">The file is missing.</exception>
     /// <exception cref="IOException">Another handle still refuses the open once the retries run out.</exception>
-    internal static FileStream OpenRead(string path)
-    {
-        for (int attempt = 1; ; attempt++)
-        {
-            try
-            {
-                // A rename holds the file it moves with delete access until it finishes, and a read that
-                // does not share delete is refused for that long.
-                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            }
-            catch (IOException exception) when (exception is not FileNotFoundException && attempt < ReadRetries)
-            {
-                // Another program holds the file without sharing it; the next attempt may find it gone.
-                Thread.Sleep(50 * attempt);
-            }
-        }
-    }
+    /// <exception cref="UnauthorizedAccessException">
+    /// A directory stands at the path, or the file system still denies the read once the retries run out.
+    /// </exception>
+    internal static FileStream OpenRead(string path, bool holdsLock) =>
+        // A rename holds the file it moves with delete access until it finishes, and a read that does not
+        // share delete is refused for that long. Another program that shares nothing gets the wait a
+        // writer gives it, or a shorter one under the lock.
+        WhileHeld(
+            path,
+            holdsLock ? LockedReadBackoffMilliseconds : HeldBackoffMilliseconds,
+            () => new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)
+        );
 
     /// <summary>
     /// Reads a file again under its write lock, where setting a corrupt file aside is safe.
@@ -402,20 +411,20 @@ public static class JsonFile
     internal static void Replace(string temporary, string path) =>
         WhileHeld(path, () => File.Move(temporary, path, overwrite: true));
 
-    // Retries a move or delete of the file while another handle refuses it.
-    private static void WhileHeld(string path, Action act)
+    // Retries an open, a move or a delete of the file while another handle refuses it, sleeping each of the
+    // delays in turn before one last attempt.
+    private static TResult WhileHeld<TResult>(string path, int[] delays, Func<TResult> act)
     {
-        foreach (int delay in ReplaceBackoffMilliseconds)
+        foreach (int delay in delays)
         {
             try
             {
-                act();
-                return;
+                return act();
             }
             catch (Exception exception)
                 when (exception is UnauthorizedAccessException || exception.HResult == ExclusiveFile.SharingViolation)
             {
-                if (exception is UnauthorizedAccessException && RefusesEveryReplace(path))
+                if (exception is UnauthorizedAccessException && RefusesEveryAttempt(path))
                 {
                     throw;
                 }
@@ -424,12 +433,25 @@ public static class JsonFile
             }
         }
 
-        act();
+        return act();
     }
 
-    // A read-only target or a directory in its place refuses every attempt, so waiting only delays the
-    // error. An ACL denial reads the same as a held target from here, so it keeps the full wait.
-    private static bool RefusesEveryReplace(string path)
+    private static void WhileHeld(string path, Action act) =>
+        WhileHeld(
+            path,
+            HeldBackoffMilliseconds,
+            () =>
+            {
+                act();
+                return true;
+            }
+        );
+
+    // A read-only target refuses every replace, and a directory in its place refuses every attempt, so
+    // waiting only delays the error. An ACL denial reads the same as a held target from here, so it keeps
+    // the full wait. An open meets access denied too while the file waits on a delete that another handle
+    // keeps open, which clears once that handle closes.
+    private static bool RefusesEveryAttempt(string path)
     {
         try
         {

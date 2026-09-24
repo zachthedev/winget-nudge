@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AwesomeAssertions;
 using Microsoft.Extensions.Time.Testing;
 using WingetNudge.Core.Packages;
@@ -215,6 +216,138 @@ public sealed class SettingsTests : IDisposable
             .NotThrow("a read shares delete access, so a rename under way never refuses it")
             .Which.CooldownHours.Should()
             .Be(30, "the load reads what the save wrote");
+    }
+
+    [Fact]
+    public void Load_WhileAnExclusiveHolderLetsGoInsideTheWritersWait_ReadsTheSavedSettings()
+    {
+        // Another program holds the file sharing nothing, and a dedicated thread lets it go 370 ms in. The
+        // read retries a refused open on the writers' schedule, whose sleeps add to 511 ms before the last
+        // attempt, and a sleep never returns early. 370 ms sits midway between that and 230 ms, the latest
+        // a read that gives up after three attempts 50 and 100 ms apart was seen to give up.
+        new Settings { CooldownHours = 30 }.Save(_data.Paths);
+        FileStream holder = new(_data.Paths.Settings, FileMode.Open, FileAccess.Read, FileShare.None);
+        Thread releaser = new(() =>
+        {
+            Thread.Sleep(370);
+            holder.Dispose();
+        });
+        releaser.Start();
+
+        Func<Settings> load = () => Settings.Load(_data.Paths);
+
+        try
+        {
+            load.Should()
+                .NotThrow(
+                    "the holder lets go at 370 ms, 141 ms before the read's last attempt at 511 ms or later, "
+                        + "and 140 ms after a three-attempt read has given up"
+                )
+                .Which.CooldownHours.Should()
+                .Be(30, "the load reads what the save wrote");
+        }
+        finally
+        {
+            // The data directory is deleted after the case, and a held file would refuse that.
+            releaser.Join();
+        }
+    }
+
+    [Fact]
+    public void Load_WhileADeleteWaitsOnAnotherHandleInsideTheWritersWait_WaitsThenReadsDefaults()
+    {
+        // Another program's reader holds the file sharing delete, and a delete-on-close handle closes beside
+        // it, so the file waits deleted and every open meets access denied. A dedicated thread lets the reader
+        // go 370 ms in, which completes the delete. The read retries access denied on the writers' schedule,
+        // whose sleeps add to 511 ms before the last attempt, and a sleep never returns early. A read that
+        // does not retry access denied gives up at its first attempt.
+        new Settings { CooldownHours = 30 }.Save(_data.Paths);
+        FileStream reader = new(
+            _data.Paths.Settings,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete
+        );
+        new FileStream(
+            _data.Paths.Settings,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            4096,
+            FileOptions.DeleteOnClose
+        ).Dispose();
+        Thread releaser = new(() =>
+        {
+            Thread.Sleep(370);
+            reader.Dispose();
+        });
+        bool started = false;
+
+        try
+        {
+            File.Exists(_data.Paths.Settings).Should().BeTrue("a file that waits deleted still exists by name");
+            Action open = () =>
+                new FileStream(
+                    _data.Paths.Settings,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete
+                ).Dispose();
+            open.Should().Throw<UnauthorizedAccessException>("a file that waits deleted refuses every open");
+
+            releaser.Start();
+            started = true;
+            Func<Settings> load = () => Settings.Load(_data.Paths);
+
+            load.Should()
+                .NotThrow(
+                    "the reader lets go at 370 ms, 141 ms before the read's last attempt at 511 ms or later, "
+                        + "and 370 ms after a read that fails access denied at once has given up"
+                )
+                .Which.CooldownHours.Should()
+                .Be(Settings.DefaultCooldownHours, "the delete completes once the reader lets go, so nothing remains");
+        }
+        finally
+        {
+            // The data directory is deleted after the case, and a held file would refuse that.
+            if (started)
+            {
+                releaser.Join();
+            }
+            else
+            {
+                reader.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void Save_WhileAnotherProgramHoldsTheFile_GivesUpItsLockedReadWithinTheShortWait()
+    {
+        // Another program holds settings.json sharing nothing and never lets go. A read under the write lock
+        // retries 50 and 100 ms apart, about 0.17 s, then throws. The writers' wait sleeps 511 ms or more, and
+        // 609 ms or more as measured here, so 500 ms separates the two with about 330 ms of room for a loaded
+        // machine, and about 110 ms under a read that waits like a writer.
+        new Settings { CooldownHours = 30 }.Save(_data.Paths);
+        using FileStream holder = new(_data.Paths.Settings, FileMode.Open, FileAccess.Read, FileShare.None);
+        Action save = () => new Settings { CooldownHours = 40 }.Save(_data.Paths);
+
+        // A stall on a loaded machine can land inside any one timing, so the case keeps the fastest of three.
+        // A read that waits like a writer never sleeps less than 511 ms, so no attempt of it can pass.
+        long fastest = long.MaxValue;
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            Stopwatch watch = Stopwatch.StartNew();
+            save.Should().Throw<IOException>("the holder never lets go");
+            fastest = Math.Min(fastest, watch.ElapsedMilliseconds);
+        }
+
+        fastest
+            .Should()
+            .BeLessThan(
+                500,
+                "a read under the lock gives up after about 0.17 s, about 330 ms inside the bound, and a read that waits like a writer sleeps 511 ms or more, measured at 609 ms or more"
+            );
     }
 
     [Fact]

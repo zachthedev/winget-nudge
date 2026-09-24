@@ -148,6 +148,42 @@ public sealed class VersionTrackerTests : IDisposable
             .ContainKey("2.47.0");
     }
 
+    [Fact]
+    public void Load_WhileAnExclusiveHolderLetsGoInsideTheWritersWait_ReadsTheSavedTracking()
+    {
+        // Another program holds the file sharing nothing, and a dedicated thread lets it go 370 ms in. The read
+        // retries a refused open on the writers' schedule, whose sleeps add to 511 ms before the last attempt,
+        // and a sleep never returns early. A read that does not retry gives up at its first attempt.
+        _tracker.Reconcile([Fixture.Current("Git.Git", "2.47.0")]);
+        FileStream holder = new(_data.Paths.VersionTracking, FileMode.Open, FileAccess.Read, FileShare.None);
+        Thread releaser = new(() =>
+        {
+            Thread.Sleep(370);
+            holder.Dispose();
+        });
+        releaser.Start();
+
+        Func<Dictionary<string, Dictionary<string, VersionObservation>>> load = () => _tracker.Load();
+
+        try
+        {
+            load.Should()
+                .NotThrow(
+                    "the holder lets go at 370 ms, 141 ms before the read's last attempt at 511 ms or later, "
+                        + "and 370 ms after a read that does not retry has given up"
+                )
+                .Which.Should()
+                .ContainKey("Git.Git", "the load reads what the reconcile saved")
+                .WhoseValue.Should()
+                .ContainKey("2.47.0");
+        }
+        finally
+        {
+            // The data directory is deleted after the case, and a held file would refuse that.
+            releaser.Join();
+        }
+    }
+
     [Theory]
     [InlineData(2, true, 22)]
     [InlineData(23.5, true, 1)]
