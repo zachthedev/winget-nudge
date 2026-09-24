@@ -76,7 +76,9 @@ jobs:
       # frozen lockfile too, and this job needs none. The root prepare writes git hooks, and
       # lefthook's postinstall does nothing when CI is set.
       - run: bun install --frozen-lockfile --ignore-scripts
-      - run: dotnet tool restore
+      # --tool-manifest names the root manifest. Without it the restore reads a
+      # .config/dotnet-tools.json first, which the gate refuses only after this step.
+      - run: dotnet tool restore --tool-manifest dotnet-tools.json
       # tools is the install, held behind the lockfile assertions in cake.cs: it asserts mise.lock
       # against mise.toml and cake.cs's pins, then runs mise install with the attestations
       # re-verified, so an entry whose address is not the repository cake.cs names is refused
@@ -122,8 +124,17 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
-      - run: dotnet tool restore
-      - run: dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true
+      - run: dotnet tool restore --tool-manifest dotnet-tools.json
+      # The restore names the root Directory files, imports no Directory.Solution file and reads no
+      # response file, as the gate's build rows do, so the graph this job submits is the one the
+      # gate builds. GITHUB_WORKSPACE is the checkout's absolute path on the runner.
+      - run: >-
+          dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true
+          -p:DirectoryBuildPropsPath="$GITHUB_WORKSPACE/Directory.Build.props"
+          -p:DirectoryBuildTargetsPath="$GITHUB_WORKSPACE/Directory.Build.targets"
+          -p:DirectoryPackagesPropsPath="$GITHUB_WORKSPACE/Directory.Packages.props"
+          -p:ImportDirectorySolutionProps=false -p:ImportDirectorySolutionTargets=false
+          -noAutoResponse
       # The tool refuses an output directory that does not exist.
       - run: mkdir sbom && dotnet sbom-tool generate -b . -bc . -pn winget-nudge -pv 0.0.0 -ps zachthedev -nsb https://zachthe.dev -m sbom
       # A tool that found no project.assets.json exits 0 with a hollow file, and a snapshot with
