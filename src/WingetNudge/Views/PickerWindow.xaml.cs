@@ -80,13 +80,20 @@ public sealed partial class PickerWindow : Window
         CancellationToken token = _loadCancellation.Token;
 
         ResetList();
-        UpdateCheck check = AppServices.Current.UpdateCheck;
+
+        // Building the services reads settings.json for the first time in the process, and a read that
+        // another program holds up waits for it, so the build runs off the UI thread and fails into the
+        // scan's catch below.
+        Task<UpdateCheck> building = Task.Run(() => AppServices.Current.UpdateCheck, token);
 
         // Tool probes share nothing with the winget query, so they run alongside it and land
         // in their own section whenever they are ready. Only the probes write to this list.
         List<StateWriteFailure> toolFailures = [];
-        Task<IReadOnlyList<ToolStatus>> tools = Task.Run(() => check.RunToolsAsync(toolFailures, token), token);
-        Task<PackageScan> packages = Task.Run(() => check.RunPackagesAsync(token), token);
+        Task<IReadOnlyList<ToolStatus>> tools = Task.Run(
+            async () => await (await building).RunToolsAsync(toolFailures, token),
+            token
+        );
+        Task<PackageScan> packages = Task.Run(async () => await (await building).RunPackagesAsync(token), token);
 
         PackageScan scan;
         try
@@ -102,8 +109,26 @@ public sealed partial class PickerWindow : Window
                     is InvalidOperationException
                         or System.Runtime.InteropServices.COMException
                         or ObjectDisposedException
+                        or IOException
+                        or UnauthorizedAccessException
             )
         {
+            // The message names the failure, and crash.log keeps its stack trace. The scan can fail on
+            // settings.json itself, so the log never reads that file: it takes the retention already loaded, or
+            // the longest the setting allows. Its write can still wait on a lock, so it runs off the UI thread.
+            AppServices services = AppServices.Current;
+            int retentionDays = services.LoadedSettings?.LogRetentionDays ?? Settings.MaxLogRetentionDays;
+            await Task.Run(
+                () =>
+                    BoundedLog.Append(
+                        services.Paths,
+                        services.Paths.CrashLog,
+                        services.Clock,
+                        $"Query failed{Environment.NewLine}{exception}",
+                        retentionDays
+                    ),
+                CancellationToken.None
+            );
             ShowTerminal($"Query failed: {exception.Message}");
             return;
         }

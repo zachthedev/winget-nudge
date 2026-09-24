@@ -60,8 +60,8 @@ carried on without, such as a stale skip it could not clear. `check` and `list` 
 picker shows them in its message bar, and the upgrade window adds them to the package's row. Each new line
 drops the lines older than the update log's retention window, then the oldest lines past 1 MiB.
 
-`crash.log` gets each error the app caught nowhere else, with its stack trace. It is bounded the same way:
-each new entry drops the entries past the retention window, then the oldest past 1 MiB.
+`crash.log` gets each failed picker scan and each error the app caught nowhere else, with its stack trace. It is
+bounded the same way: each new entry drops the entries past the retention window, then the oldest past 1 MiB.
 
 On first run, the app copies state from the older PowerShell version's
 `%LOCALAPPDATA%\WingetUpdater` folder if it exists, so muted packages, tracking history and
