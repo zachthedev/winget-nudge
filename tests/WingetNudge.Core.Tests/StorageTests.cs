@@ -195,6 +195,29 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public void Load_WhileARenameHoldsTheFile_ReadsTheSavedSettings()
+    {
+        // A rename holds the file it moves with delete access and shares everything, for as long as the
+        // rename takes. This handle stands in for it, and lets go only once the load has returned.
+        new Settings { CooldownHours = 30 }.Save(_data.Paths);
+        using FileStream rename = new(
+            _data.Paths.Settings,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            4096,
+            FileOptions.DeleteOnClose
+        );
+
+        Func<Settings> load = () => Settings.Load(_data.Paths);
+
+        load.Should()
+            .NotThrow("a read shares delete access, so a rename under way never refuses it")
+            .Which.CooldownHours.Should()
+            .Be(30, "the load reads what the save wrote");
+    }
+
+    [Fact]
     public async Task Save_RacingALoadOverACorruptFile_KeepsEverySave()
     {
         // The settings view's save and another process's load meet over a corrupt file. The two interleave

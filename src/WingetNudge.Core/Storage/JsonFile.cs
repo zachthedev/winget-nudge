@@ -70,7 +70,14 @@ public static class JsonFile
         {
             try
             {
-                using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                // A rename holds the file it moves with delete access until it finishes, and a read that
+                // does not share delete is refused for that long.
+                using FileStream stream = new(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete
+                );
                 return JsonSerializer.Deserialize<T>(stream, Options);
             }
             catch (FileNotFoundException)
@@ -107,7 +114,7 @@ public static class JsonFile
             }
             catch (IOException) when (attempt < ReadRetries)
             {
-                // A writer is mid-replace; the next attempt sees the finished file.
+                // Another program holds the file without sharing it; the next attempt may find it gone.
                 Thread.Sleep(50 * attempt);
             }
         }

@@ -272,8 +272,9 @@ public sealed class JsonFileUpdateTests : IDisposable
     [Fact]
     public void Read_OfACorruptFileAnotherHandleHolds_ReturnsWithoutWaitingOnTheHolder()
     {
-        // A scanner or a second reader holding the corrupt file refuses the move. A read leaves the file
-        // for the next writer rather than waiting the holder out, so the picker's reload never stalls.
+        // A scanner or another program's reader holding the corrupt file without delete sharing refuses the
+        // move. A read leaves the file for the next writer rather than waiting the holder out, so the
+        // picker's reload never stalls.
         Directory.CreateDirectory(_data.Paths.Directory);
         File.WriteAllText(DataFile, "{ corrupt");
         using FileStream holder = new(DataFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
