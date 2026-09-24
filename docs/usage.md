@@ -43,6 +43,15 @@ left behind.
 and installs nothing. A crash frees both, because Windows closes a dead process's handles, so a
 stale lock file needs no manual cleanup.
 
+Each state file gets a lock file beside it, such as `preferences.json.lock`, the first time the app
+writes that file or finds it corrupt. A process holds it only while it reads, changes and writes that
+file, or sets a corrupt one aside, so two processes never overwrite each other's change. It stays empty,
+and a crash frees it the same way.
+
+`preferences.json` and `settings.json` hold choices worth repairing by hand, so one that fails to parse
+moves aside as `<file>.<time>-<id>.corrupt`. The newest three copies of each file stay, and older ones
+go. Any other state file that fails to parse is deleted, and the app rebuilds it.
+
 On first run, the app copies state from the older PowerShell version's
 `%LOCALAPPDATA%\WingetUpdater` folder if it exists, so muted packages, tracking history and
 registered tools carry over.

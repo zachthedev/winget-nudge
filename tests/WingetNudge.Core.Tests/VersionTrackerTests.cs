@@ -209,4 +209,34 @@ public sealed class VersionTrackerTests : IDisposable
         tracking["Git.Git"]["2.48.1"].Source.Should().Be(PublishSource.Manifest);
         tracking["Bun.Bun"]["1.4"].Published.Should().BeNull();
     }
+
+    [Fact]
+    public async Task ResolvePublishDatesAsync_KeepsAReconcileThatRanDuringTheLookup()
+    {
+        PackageInfo git = Fixture.Updatable("Git.Git", "2.47.0", "2.48.1");
+        PackageInfo vlc = Fixture.Current("VideoLAN.VLC", "3.0.23");
+        _tracker.Reconcile([git]);
+        VersionTracker other = new(_data.Paths, _clock);
+        ResolvedDate published = new(Now.AddDays(-5), PublishSource.WingetPkgs);
+
+        await _tracker.ResolvePublishDatesAsync(
+            [git],
+            new ReconcilingResolver(() => other.Reconcile([git, vlc]), published),
+            CancellationToken.None
+        );
+
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking = _tracker.Load();
+        tracking.Should().ContainKey("VideoLAN.VLC", "the reconcile that ran during the lookup survives");
+        tracking["Git.Git"]["2.48.1"].Published.Should().Be(published.Date);
+    }
+
+    // Stands in for a second process that reconciles while a publish date lookup is in flight.
+    private sealed class ReconcilingResolver(Action meanwhile, ResolvedDate date) : IReleaseDateResolver
+    {
+        public Task<ResolvedDate?> ResolveAsync(string packageId, string version, CancellationToken cancellationToken)
+        {
+            meanwhile();
+            return Task.FromResult<ResolvedDate?>(date);
+        }
+    }
 }

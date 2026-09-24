@@ -85,27 +85,23 @@ public sealed class ChangelogCache(
                 return;
             }
 
-            Prune(entries);
             Save(entries);
         }
     }
 
+    /// <summary>Loads the entries once.</summary>
+    private Dictionary<string, CachedChangelog> Entries() =>
+        _entries ??= Valid(
+            JsonFile.Read<Dictionary<string, CachedChangelog?>>(paths.ChangelogCache, deleteIfCorrupt: true)
+        );
+
     /// <summary>
-    /// Loads the entries once. A file that parses but holds a null entry is valid JSON in the
+    /// Keeps the usable entries. A file that parses but holds a null entry is valid JSON in the
     /// wrong shape, so those entries are dropped rather than trusted.
     /// </summary>
-    private Dictionary<string, CachedChangelog> Entries()
+    private static Dictionary<string, CachedChangelog> Valid(Dictionary<string, CachedChangelog?>? read)
     {
-        if (_entries is not null)
-        {
-            return _entries;
-        }
-
         Dictionary<string, CachedChangelog> entries = new(StringComparer.Ordinal);
-        Dictionary<string, CachedChangelog?>? read = JsonFile.Read<Dictionary<string, CachedChangelog?>>(
-            paths.ChangelogCache,
-            deleteIfCorrupt: true
-        );
         foreach ((string key, CachedChangelog? entry) in read ?? [])
         {
             if (entry is { Notes: not null })
@@ -114,7 +110,6 @@ public sealed class ChangelogCache(
             }
         }
 
-        _entries = entries;
         return entries;
     }
 
@@ -137,15 +132,48 @@ public sealed class ChangelogCache(
         }
     }
 
+    // This process loaded the cache once, and another process may have stored notes since, so its
+    // entries merge into a fresh read rather than replacing the file. Of two copies of one entry, the
+    // more recently used wins.
     private void Save(Dictionary<string, CachedChangelog> entries)
     {
+        Dictionary<string, CachedChangelog>? merged = null;
         try
         {
-            JsonFile.Write(paths.ChangelogCache, entries);
+            JsonFile.Update<Dictionary<string, CachedChangelog?>>(
+                paths.ChangelogCache,
+                deleteIfCorrupt: true,
+                current =>
+                {
+                    merged = Valid(current);
+                    foreach ((string key, CachedChangelog entry) in entries)
+                    {
+                        if (
+                            !merged.TryGetValue(key, out CachedChangelog? existing)
+                            || existing.LastUsed < entry.LastUsed
+                        )
+                        {
+                            merged[key] = entry;
+                        }
+                    }
+
+                    Prune(merged);
+                    return merged.ToDictionary(
+                        static pair => pair.Key,
+                        static CachedChangelog? (pair) => pair.Value,
+                        StringComparer.Ordinal
+                    );
+                }
+            );
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             // Notes are recreatable; a failed write costs one refetch next time.
+        }
+
+        if (merged is not null)
+        {
+            _entries = merged;
         }
     }
 

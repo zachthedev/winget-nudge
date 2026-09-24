@@ -20,7 +20,11 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
 {
     /// <summary>Reads the tracking file, accepting the schema-1 map of first-seen timestamps.</summary>
     /// <returns>Package id to version to observation; empty when the file is missing or corrupt.</returns>
-    public Dictionary<string, Dictionary<string, VersionObservation>> Load()
+    public Dictionary<string, Dictionary<string, VersionObservation>> Load() => Load(holdsLock: false);
+
+    // A corrupt file is deleted only under its write lock, the way JsonFile.Read sets one aside, so the
+    // delete never takes a file that a reconcile wrote after the first read.
+    private Dictionary<string, Dictionary<string, VersionObservation>> Load(bool holdsLock)
     {
         if (!File.Exists(paths.VersionTracking))
         {
@@ -40,10 +44,20 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
 
             return ReadLegacy(root);
         }
+        catch (FileNotFoundException)
+        {
+            // Deleted under the write lock since the check above.
+            return new Dictionary<string, Dictionary<string, VersionObservation>>(StringComparer.Ordinal);
+        }
+        catch (JsonException) when (holdsLock)
+        {
+            _ = JsonFile.SetAside(paths.VersionTracking, delete: true, beforeWrite: false);
+            return new Dictionary<string, Dictionary<string, VersionObservation>>(StringComparer.Ordinal);
+        }
         catch (JsonException)
         {
-            File.Delete(paths.VersionTracking);
-            return new Dictionary<string, Dictionary<string, VersionObservation>>(StringComparer.Ordinal);
+            return JsonFile.RereadUnderLock(paths.VersionTracking, () => Load(holdsLock: true))
+                ?? new Dictionary<string, Dictionary<string, VersionObservation>>(StringComparer.Ordinal);
         }
     }
 
@@ -60,10 +74,22 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
     /// <returns>The reconciled tracking data.</returns>
     public Dictionary<string, Dictionary<string, VersionObservation>> Reconcile(IReadOnlyList<PackageInfo> packages)
     {
-        bool firstRun = !File.Exists(paths.VersionTracking);
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load();
         int cooldownHours = Settings.Load(paths).CooldownHours;
         DateTimeOffset now = clock.GetUtcNow();
+
+        // The tracking file carries a legacy shape that JsonFile.Read cannot parse, so the reconcile
+        // takes the file's write lock directly and reads it afresh inside.
+        return JsonFile.Locked(paths.VersionTracking, () => ReconcileLocked(packages, cooldownHours, now));
+    }
+
+    private Dictionary<string, Dictionary<string, VersionObservation>> ReconcileLocked(
+        IReadOnlyList<PackageInfo> packages,
+        int cooldownHours,
+        DateTimeOffset now
+    )
+    {
+        bool firstRun = !File.Exists(paths.VersionTracking);
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load(holdsLock: true);
         DateTimeOffset seed = now.AddHours(-(cooldownHours + 1));
 
         // ///// Current snapshot: id -> version -> installed? /////
@@ -151,7 +177,7 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
     )
     {
         Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load();
-        bool changed = false;
+        List<(string Id, string Version, ResolvedDate Resolved)> dates = [];
 
         foreach (PackageInfo package in packages)
         {
@@ -168,17 +194,39 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
             ResolvedDate? resolved = await resolver
                 .ResolveAsync(package.Id, package.AvailableVersion, cancellationToken)
                 .ConfigureAwait(false);
-            if (resolved is null)
+            if (resolved is not null)
             {
-                continue;
+                dates.Add((package.Id, package.AvailableVersion, resolved));
             }
+        }
 
-            tracked[package.AvailableVersion] = observation with
+        if (dates.Count == 0)
+        {
+            return tracking;
+        }
+
+        // The lookups take seconds, and no lock waits across them, so the dates land on a fresh read
+        // rather than on the copy loaded before the first lookup.
+        return JsonFile.Locked(paths.VersionTracking, () => ApplyDates(dates));
+    }
+
+    private Dictionary<string, Dictionary<string, VersionObservation>> ApplyDates(
+        List<(string Id, string Version, ResolvedDate Resolved)> dates
+    )
+    {
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load(holdsLock: true);
+        bool changed = false;
+        foreach ((string id, string version, ResolvedDate resolved) in dates)
+        {
+            if (
+                tracking.TryGetValue(id, out Dictionary<string, VersionObservation>? tracked)
+                && tracked.TryGetValue(version, out VersionObservation? observation)
+                && observation.Published is null
+            )
             {
-                Published = resolved.Date,
-                Source = resolved.Source,
-            };
-            changed = true;
+                tracked[version] = observation with { Published = resolved.Date, Source = resolved.Source };
+                changed = true;
+            }
         }
 
         if (changed)

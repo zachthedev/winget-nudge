@@ -112,17 +112,26 @@ public sealed record Settings
     public int InstallerLogsPerPackage { get; init; } = 10;
 
     /// <summary>
-    /// Loads settings from disk. A corrupt file falls back to defaults and is left in place,
-    /// since it holds user choices worth repairing by hand.
+    /// Loads settings from disk. A corrupt file falls back to defaults and moves aside as a
+    /// <c>.corrupt</c> copy, since it holds user choices worth repairing by hand.
     /// </summary>
     /// <param name="paths">Data file locations.</param>
     /// <returns>Settings with defaults filled in and out-of-range values clamped.</returns>
     public static Settings Load(DataPaths paths) =>
         (JsonFile.Read<Settings>(paths.Settings, deleteIfCorrupt: false) ?? new Settings()).Clamped();
 
-    /// <summary>Writes settings to disk.</summary>
+    /// <summary>Writes settings to disk, replacing whatever the file holds.</summary>
+    /// <remarks>
+    /// The save runs under the file's write lock, so a load that sets a corrupt file aside never
+    /// moves the saved one. A corrupt file found there moves aside before the save replaces it. When
+    /// another program holds that file, the save throws and the file stays for repair.
+    /// </remarks>
     /// <param name="paths">Data file locations.</param>
-    public void Save(DataPaths paths) => JsonFile.Write(paths.Settings, Clamped());
+    public void Save(DataPaths paths)
+    {
+        Settings saved = Clamped();
+        _ = JsonFile.Update<Settings>(paths.Settings, deleteIfCorrupt: false, _ => saved);
+    }
 
     /// <summary>Stores a token, encrypted to the current user.</summary>
     /// <param name="token">Plain token, or empty to clear it.</param>

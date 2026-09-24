@@ -28,12 +28,6 @@ public sealed class RunLock : IDisposable
     /// <summary>Name of the lock the headless check holds.</summary>
     public const string Check = "check";
 
-    // ERROR_SHARING_VIOLATION and ERROR_LOCK_VIOLATION, as .NET carries them on an IOException.
-    // These two are a second run holding the file. Every other IOException is a path or a
-    // directory the open cannot use, which is a different answer for the caller.
-    private const int SharingViolation = unchecked((int)0x80070020);
-    private const int LockViolation = unchecked((int)0x80070021);
-
     private readonly FileStream _handle;
 
     private RunLock(FileStream handle) => _handle = handle;
@@ -65,13 +59,10 @@ public sealed class RunLock : IDisposable
             Directory.CreateDirectory(paths.Directory);
             SafePath.EnsureNotReparsePoint(paths.Directory);
 
-            return new RunLockAttempt.Taken(
-                new RunLock(new FileStream(file, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
-            );
-        }
-        catch (IOException exception) when (exception.HResult is SharingViolation or LockViolation)
-        {
-            return new RunLockAttempt.Held();
+            // A second run holding the file is the one answer that means stand down.
+            return ExclusiveFile.TryOpen(file) is FileStream handle
+                ? new RunLockAttempt.Taken(new RunLock(handle))
+                : new RunLockAttempt.Held();
         }
         catch (Exception exception)
             when (exception

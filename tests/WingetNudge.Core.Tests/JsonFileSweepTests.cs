@@ -31,6 +31,81 @@ public sealed class JsonFileSweepTests : IDisposable
     }
 
     [Fact]
+    public void Read_PrunesOnlyCopiesItNamedAndNeverOnesStampedLater()
+    {
+        // Two names a user chose, two copies from a clock that once ran ahead, and one from an earlier
+        // build, which named copies to the second.
+        string[] foreign = ["preferences.json.1-old.corrupt", "preferences.json.my-backup.corrupt"];
+        string[] ahead =
+        [
+            $"preferences.json.209901010000000000000-{Guid.NewGuid():N}.corrupt",
+            $"preferences.json.209901010000000000001-{Guid.NewGuid():N}.corrupt",
+        ];
+        string earlier = "preferences.json.20200101000000.corrupt";
+        foreach (string name in (string[])[.. foreign, .. ahead, earlier])
+        {
+            File.WriteAllText(Path.Combine(_data.Paths.Directory, name), name);
+        }
+
+        int made = JsonFile.CorruptCopiesKept + 2;
+        for (int copy = 0; copy < made; copy++)
+        {
+            File.WriteAllText(_data.Paths.Preferences, $"{{ corrupt {copy}");
+            JsonFile
+                .Read<Dictionary<string, string>>(_data.Paths.Preferences, deleteIfCorrupt: false)
+                .Should()
+                .BeNull();
+        }
+
+        foreach (string name in (string[])[.. foreign, .. ahead])
+        {
+            File.Exists(Path.Combine(_data.Paths.Directory, name))
+                .Should()
+                .BeTrue($"{name} is not a copy this read may count or delete");
+        }
+
+        File.Exists(Path.Combine(_data.Paths.Directory, earlier))
+            .Should()
+            .BeFalse("an earlier build's copy counts, and it is the oldest");
+        Directory
+            .GetFiles(_data.Paths.Directory, "preferences.json.*.corrupt")
+            .Where(copy => !((string[])[.. foreign, .. ahead]).Contains(Path.GetFileName(copy)))
+            .Select(File.ReadAllText)
+            .Should()
+            .BeEquivalentTo(
+                Enumerable
+                    .Range(made - JsonFile.CorruptCopiesKept, JsonFile.CorruptCopiesKept)
+                    .Select(n => $"{{ corrupt {n}"),
+                "the newest real copies keep every slot"
+            );
+    }
+
+    [Fact]
+    public void Read_KeepsOnlyTheNewestCorruptCopies()
+    {
+        int made = JsonFile.CorruptCopiesKept + 2;
+        for (int copy = 0; copy < made; copy++)
+        {
+            File.WriteAllText(_data.Paths.Preferences, $"{{ corrupt {copy}");
+            JsonFile
+                .Read<Dictionary<string, string>>(_data.Paths.Preferences, deleteIfCorrupt: false)
+                .Should()
+                .BeNull();
+        }
+
+        Directory
+            .GetFiles(_data.Paths.Directory, "preferences.json.*.corrupt")
+            .Select(File.ReadAllText)
+            .Should()
+            .BeEquivalentTo(
+                Enumerable
+                    .Range(made - JsonFile.CorruptCopiesKept, JsonFile.CorruptCopiesKept)
+                    .Select(n => $"{{ corrupt {n}"),
+                "the copy just made and the ones before it stay, and older ones go"
+            );
+    }
+
+    [Fact]
     public void SweepTemporaries_LeavesTheRealStateFiles()
     {
         string settings = Aged("settings.json", TimeSpan.FromDays(9));
@@ -100,6 +175,17 @@ public sealed class JsonFileSweepTests : IDisposable
         {
             Directory.Delete(link);
         }
+    }
+
+    [Fact]
+    public void SweepTemporaries_LeavesLockFiles()
+    {
+        string stale = Aged("preferences.json.4242-abc.tmp", TimeSpan.FromDays(9));
+        string lockFile = Aged($"preferences.json{JsonFile.LockSuffix}", TimeSpan.FromDays(9));
+
+        JsonFile.SweepTemporaries(_data.Paths.Directory, TimeSpan.FromHours(1)).Should().Be(1);
+        File.Exists(stale).Should().BeFalse();
+        File.Exists(lockFile).Should().BeTrue("a lock file is reused by every write, however old");
     }
 
     private string Aged(string name, TimeSpan age)

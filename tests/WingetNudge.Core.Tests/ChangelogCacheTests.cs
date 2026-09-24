@@ -179,4 +179,21 @@ public sealed class ChangelogCacheTests : IDisposable
 
         second["Git.Git"].Should().Contain("real notes");
     }
+
+    [Fact]
+    public void Store_FromTwoInstances_KeepsEachOthersNotes()
+    {
+        // Two instances on one data directory stand in for the picker and the upgrade window.
+        PackageInfo vlc = Fixture.Updatable("VideoLAN.VLC", "3.0.20", "3.0.23");
+        ChangelogCache first = Build();
+        ChangelogCache second = Build();
+        second.Get(vlc).Should().BeNull("the second instance loads its copy before the first one stores");
+
+        Put(first, Git, "git notes");
+        Put(second, vlc, "vlc notes");
+
+        ChangelogCache later = Build();
+        later.Get(Git).Should().Be("git notes", "the second store merges into the file rather than replacing it");
+        later.Get(vlc).Should().Be("vlc notes");
+    }
 }

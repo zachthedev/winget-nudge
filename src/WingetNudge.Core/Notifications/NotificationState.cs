@@ -52,13 +52,18 @@ public sealed class NotificationState(DataPaths paths, TimeProvider clock)
         return keys.Any(key => !announced.Contains(key));
     }
 
-    /// <summary>Records the keys a notification just announced.</summary>
+    /// <summary>Records the keys a notification just announced, replacing the last record.</summary>
+    /// <remarks>
+    /// The record runs under the file's write lock, so a load that sets a corrupt file aside never
+    /// moves the new record.
+    /// </remarks>
     /// <param name="keys">Keys for the announced updates.</param>
     public void Record(IReadOnlyList<string> keys)
     {
+        AnnouncedUpdates record = new([.. keys], clock.GetUtcNow());
         try
         {
-            JsonFile.Write(paths.NotificationState, new AnnouncedUpdates([.. keys], clock.GetUtcNow()));
+            _ = JsonFile.Update<AnnouncedUpdates>(paths.NotificationState, deleteIfCorrupt: true, _ => record);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

@@ -15,3 +15,5 @@ CLSCTX
 CryptProtectData
 CryptUnprotectData
 LocalFree
+CreateFile
+GENERIC_ACCESS_RIGHTS

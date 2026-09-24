@@ -195,6 +195,47 @@ public sealed class SettingsTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_RacingALoadOverACorruptFile_KeepsEverySave()
+    {
+        // The settings view's save and another process's load meet over a corrupt file. The two interleave
+        // differently from round to round, and every order must keep the save and a repair copy.
+        Directory.CreateDirectory(_data.Paths.Directory);
+        for (int round = 0; round < 100; round++)
+        {
+            File.WriteAllText(_data.Paths.Settings, "{ corrupt");
+            using Barrier start = new(2);
+            int hours = Settings.DefaultCooldownHours + 1 + round;
+            Task reader = Task.Run(
+                () =>
+                {
+                    start.SignalAndWait(TestContext.Current.CancellationToken);
+                    Settings.Load(_data.Paths);
+                },
+                TestContext.Current.CancellationToken
+            );
+            Task writer = Task.Run(
+                () =>
+                {
+                    start.SignalAndWait(TestContext.Current.CancellationToken);
+                    new Settings { CooldownHours = hours }.Save(_data.Paths);
+                },
+                TestContext.Current.CancellationToken
+            );
+
+            Func<Task> race = () => Task.WhenAll(reader, writer);
+            await race.Should().NotThrowAsync($"round {round}: neither side may trip over the other");
+            Settings
+                .Load(_data.Paths)
+                .CooldownHours.Should()
+                .Be(hours, $"round {round}: a save that returned is on disk, not in a repair copy");
+            Directory
+                .GetFiles(_data.Paths.Directory, "settings.json.*.corrupt")
+                .Should()
+                .HaveCount(Math.Min(round + 1, JsonFile.CorruptCopiesKept), $"round {round}: the corrupt file is kept");
+        }
+    }
+
+    [Fact]
     public void Clamped_PullsEveryValueBackIntoRange()
     {
         Settings wild = new()

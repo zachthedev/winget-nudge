@@ -54,11 +54,19 @@ public sealed class UpdateLog(
     public void Append(string packageId, string result, string status, long installerErrorCode)
     {
         DateTimeOffset now = clock.GetUtcNow();
-        List<UpdateLogEntry> entries = Load();
-        entries.Add(new UpdateLogEntry(now, packageId, result, status, installerErrorCode));
+        UpdateLogEntry appended = new(now, packageId, result, status, installerErrorCode);
         DateTimeOffset cutoff = now.AddDays(-RetentionDays);
-        entries.RemoveAll(entry => entry.Timestamp <= cutoff);
-        JsonFile.Write(paths.UpdateLog, entries);
+        JsonFile.Update<List<UpdateLogEntry>>(
+            paths.UpdateLog,
+            deleteIfCorrupt: true,
+            current =>
+            {
+                List<UpdateLogEntry> entries = current ?? [];
+                entries.Add(appended);
+                entries.RemoveAll(entry => entry.Timestamp <= cutoff);
+                return entries;
+            }
+        );
     }
 
     /// <summary>

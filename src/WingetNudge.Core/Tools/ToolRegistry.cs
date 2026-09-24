@@ -33,9 +33,17 @@ public sealed partial class ToolRegistry(DataPaths paths)
         }
 
         ToolDefinitionValidator.Ensure(definition);
-        Dictionary<string, ToolDefinition> registry = Load();
-        registry[id] = definition;
-        JsonFile.Write(paths.ToolRegistry, registry);
+        JsonFile.Update<Dictionary<string, ToolDefinition>>(
+            paths.ToolRegistry,
+            deleteIfCorrupt: true,
+            current =>
+            {
+                Dictionary<string, ToolDefinition> registry =
+                    current ?? new Dictionary<string, ToolDefinition>(StringComparer.Ordinal);
+                registry[id] = definition;
+                return registry;
+            }
+        );
     }
 
     /// <summary>Removes a tool and its cached probe result.</summary>
@@ -43,20 +51,26 @@ public sealed partial class ToolRegistry(DataPaths paths)
     /// <returns><c>true</c> when an entry was removed.</returns>
     public bool Unregister(string id)
     {
-        Dictionary<string, ToolDefinition> registry = Load();
-        if (!registry.Remove(id))
+        bool removed = false;
+        JsonFile.Update<Dictionary<string, ToolDefinition>>(
+            paths.ToolRegistry,
+            deleteIfCorrupt: true,
+            current =>
+            {
+                removed = current is not null && current.Remove(id);
+                return removed ? current : null;
+            }
+        );
+        if (!removed)
         {
             return false;
         }
 
-        JsonFile.Write(paths.ToolRegistry, registry);
-
-        Dictionary<string, ToolCacheEntry> cache = LoadCache();
-        if (cache.Remove(id))
-        {
-            JsonFile.Write(paths.ToolCache, cache);
-        }
-
+        JsonFile.Update<Dictionary<string, ToolCacheEntry>>(
+            paths.ToolCache,
+            deleteIfCorrupt: true,
+            current => current is not null && current.Remove(id) ? current : null
+        );
         return true;
     }
 
@@ -69,10 +83,16 @@ public sealed partial class ToolRegistry(DataPaths paths)
     /// <summary>Writes one cache entry.</summary>
     /// <param name="id">Tool id.</param>
     /// <param name="entry">Probe result.</param>
-    public void SaveCache(string id, ToolCacheEntry entry)
-    {
-        Dictionary<string, ToolCacheEntry> cache = LoadCache();
-        cache[id] = entry;
-        JsonFile.Write(paths.ToolCache, cache);
-    }
+    public void SaveCache(string id, ToolCacheEntry entry) =>
+        JsonFile.Update<Dictionary<string, ToolCacheEntry>>(
+            paths.ToolCache,
+            deleteIfCorrupt: true,
+            current =>
+            {
+                Dictionary<string, ToolCacheEntry> cache =
+                    current ?? new Dictionary<string, ToolCacheEntry>(StringComparer.Ordinal);
+                cache[id] = entry;
+                return cache;
+            }
+        );
 }

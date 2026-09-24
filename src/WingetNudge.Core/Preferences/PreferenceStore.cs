@@ -79,24 +79,27 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
     {
         Dictionary<string, PreferenceEntry> entries = ReadFile();
         DateTimeOffset cutoff = clock.GetUtcNow().AddDays(-ExpiryDays);
-        bool changed = false;
-
-        foreach (string id in entries.Keys.ToArray())
+        if (!entries.Values.Any(entry => IsExpired(entry, cutoff)))
         {
-            PreferenceEntry entry = entries[id];
-            if (entry.State == PreferenceState.Failed && entry.Since <= cutoff)
+            return new PreferenceSnapshot(entries);
+        }
+
+        return new PreferenceSnapshot(
+            Update(current =>
             {
-                entries.Remove(id);
-                changed = true;
-            }
-        }
+                int removed = 0;
+                foreach (string id in current.Keys.ToArray())
+                {
+                    if (IsExpired(current[id], cutoff))
+                    {
+                        current.Remove(id);
+                        removed++;
+                    }
+                }
 
-        if (changed)
-        {
-            JsonFile.Write(paths.Preferences, entries);
-        }
-
-        return new PreferenceSnapshot(entries);
+                return removed > 0;
+            })
+        );
     }
 
     /// <summary>Marks a package muted or failed.</summary>
@@ -105,9 +108,12 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
     /// <param name="reason">Failure description for the failed state.</param>
     public void Set(string packageId, PreferenceState state, string? reason = null)
     {
-        Dictionary<string, PreferenceEntry> entries = ReadFile();
-        entries[packageId] = new PreferenceEntry(state, clock.GetUtcNow(), reason);
-        JsonFile.Write(paths.Preferences, entries);
+        PreferenceEntry entry = new(state, clock.GetUtcNow(), reason);
+        Update(current =>
+        {
+            current[packageId] = entry;
+            return true;
+        });
     }
 
     /// <summary>Skips one version of a package.</summary>
@@ -115,23 +121,36 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
     /// <param name="version">Version to skip.</param>
     public void SkipVersion(string packageId, string version)
     {
-        Dictionary<string, PreferenceEntry> entries = ReadFile();
-        entries[packageId] = new PreferenceEntry(PreferenceState.Skipped, clock.GetUtcNow(), Version: version);
-        JsonFile.Write(paths.Preferences, entries);
+        PreferenceEntry entry = new(PreferenceState.Skipped, clock.GetUtcNow(), Version: version);
+        Update(current =>
+        {
+            current[packageId] = entry;
+            return true;
+        });
     }
 
     /// <summary>Removes a package's entry so it is offered again.</summary>
     /// <param name="packageId">Winget package id.</param>
-    public void Clear(string packageId)
-    {
-        Dictionary<string, PreferenceEntry> entries = ReadFile();
-        if (entries.Remove(packageId))
-        {
-            JsonFile.Write(paths.Preferences, entries);
-        }
-    }
+    public void Clear(string packageId) => Update(current => current.Remove(packageId));
+
+    private static bool IsExpired(PreferenceEntry entry, DateTimeOffset cutoff) =>
+        entry.State == PreferenceState.Failed && entry.Since <= cutoff;
 
     private Dictionary<string, PreferenceEntry> ReadFile() =>
         JsonFile.Read<Dictionary<string, PreferenceEntry>>(paths.Preferences, deleteIfCorrupt: false)
         ?? new Dictionary<string, PreferenceEntry>(StringComparer.Ordinal);
+
+    // Each write reads the file afresh under its write lock, so an entry another process wrote since
+    // this store last read survives. The change reports whether it changed anything.
+    private Dictionary<string, PreferenceEntry> Update(Func<Dictionary<string, PreferenceEntry>, bool> change) =>
+        JsonFile.Update<Dictionary<string, PreferenceEntry>>(
+            paths.Preferences,
+            deleteIfCorrupt: false,
+            current =>
+            {
+                Dictionary<string, PreferenceEntry> entries =
+                    current ?? new Dictionary<string, PreferenceEntry>(StringComparer.Ordinal);
+                return change(entries) ? entries : null;
+            }
+        ) ?? new Dictionary<string, PreferenceEntry>(StringComparer.Ordinal);
 }
