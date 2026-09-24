@@ -87,9 +87,10 @@ which registers the installed copy.
 
 ## Generated files
 
-`src/WingetNudge.Core/Packages/WingetErrorCodes.g.cs` comes from the installed winget's own error
-table, and the failure text on a package card comes from it. Rerun the script when a winget upgrade
-adds codes:
+`src/WingetNudge.Core/Packages/WingetErrorCodes.cs` comes from the installed winget's own error
+table, and the failure text on a package card comes from it. The script formats the file with the
+CSharpier `dotnet-tools.json` pins, and the analyzers check it like any other source, so it carries
+no generated-code marker. Rerun the script when a winget upgrade adds codes:
 
 ```powershell
 ./tools/Update-WingetErrorCodes.ps1

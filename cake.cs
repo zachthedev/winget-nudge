@@ -105,20 +105,16 @@ string[] csharpierExtensions =
     ".xml",
 ];
 
-// The one pattern the held .csharpierignore carries, so the format row leaves out what CSharpier
-// would drop from its count. CSharpier matches the pattern in exact case, and so does the row.
-const string csharpierIgnoredSuffix = ".g.cs";
-
 // CSharpier handed a directory reads every .gitignore and nested .csharpierignore above each file,
 // and a root ignore line of * checks nothing and exits 0. So the row names each file TreeFiles finds
-// with an extension CSharpier formats, less those the held .csharpierignore leaves out, and names
-// the held config and ignore file too, so CSharpier reads no other. The config path is absolute,
-// because CSharpier anchors a config's overrides to its directory, and a relative path leaves them
-// matching nothing where an editor's CSharpier applies them. --include-generated checks a file whose
-// header calls it generated, which CSharpier otherwise counts and skips. Windows caps a command line
-// at 32,767 characters, and dotnet starts CSharpier with the same arguments again, so the row names
-// the files in batches of at most csharpierBatchCharacters. Each batch fails unless CSharpier reports
-// checking exactly as many files as the batch named, and a batch names at least one.
+// with an extension CSharpier formats, and names the held config and the held, empty ignore file
+// too, so CSharpier reads no other. The config path is absolute, because CSharpier anchors a config's
+// overrides to its directory, and a relative path leaves them matching nothing where an editor's
+// CSharpier applies them. --include-generated checks a file whose header calls it generated, which
+// CSharpier otherwise counts and skips. Windows caps a command line at 32,767 characters, and dotnet
+// starts CSharpier with the same arguments again, so the row names the files in batches of at most
+// csharpierBatchCharacters. Each batch fails unless CSharpier reports checking exactly as many files
+// as the batch named, and a batch names at least one.
 Task("format")
     .Description("C# and XML formatting, through CSharpier, over every such file in the tree, each named to CSharpier")
     .Does(() =>
@@ -131,7 +127,6 @@ Task("format")
             .. TreeFiles(buildOutput: false)
                 .Where(file =>
                     csharpierExtensions.Contains(System.IO.Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)
-                    && !file.EndsWith(csharpierIgnoredSuffix, StringComparison.Ordinal)
                 )
                 .Order(StringComparer.Ordinal),
         ];
@@ -353,14 +348,19 @@ Task("toml")
 
 // Both configurations: everything ships from Release, and the demo inventory behind #if DEBUG
 // compiles only in Debug, so a Release-only gate would never analyze or even parse it. The tests and
-// the installer run Release, so they reuse this build.
+// the installer run Release, so they reuse this build. Before each configuration,
+// RequireJustificationRuleFatal reads every project's warning settings, and after it,
+// RequireWaiverLogs reads the SARIF log every compile wrote.
 Task("build")
-    .Description("Every project in Release and Debug, analyzer warnings as errors, lock files honored")
+    .Description(
+        "Every project in Release and Debug, analyzer warnings as errors, lock files honored, no project setting that softens the justification rule, and from each compile's SARIF log, every waiver justified and the rule run as an error"
+    )
     .Does(() =>
     {
         FilePath dotnet = Dotnet();
         foreach (string configuration in (string[])["Release", "Debug"])
         {
+            RequireJustificationRuleFatal(dotnet, configuration);
             DotNetBuild(
                 "WingetNudge.slnx",
                 new DotNetBuildSettings
@@ -370,6 +370,7 @@ Task("build")
                     ToolPath = dotnet,
                 }
             );
+            RequireWaiverLogs(configuration);
         }
     });
 
@@ -453,11 +454,15 @@ Task("tests")
 // An empty global property outranks the thumbprint Directory.Signing.props imports, so the package
 // builds unsigned on every machine. cd.yml builds the release MSI through this task, so a release
 // ships unsigned too. A signed local build runs the installer project directly, as docs/dev.md
-// shows.
+// shows. The package publishes the app and builds the custom action again, which compiles both
+// afresh, and the MSI carries those compiles, so their waiver logs are read again after it.
 Task("installer")
-    .Description("The MSI links, built unsigned whatever Directory.Signing.props says")
+    .Description(
+        "The MSI links, built unsigned whatever Directory.Signing.props says, from compiles whose waiver logs pass as the build row's do"
+    )
     .IsDependentOn("build")
     .Does(() =>
+    {
         DotNetBuild(
             "installer/WingetNudge.Installer.wixproj",
             new DotNetBuildSettings
@@ -466,8 +471,9 @@ Task("installer")
                 Configuration = "Release",
                 MSBuildSettings = RootNamed(noAutoResponse: true).WithProperty("SigningCertificateThumbprint", ""),
             }
-        )
-    );
+        );
+        RequireWaiverLogs("Release");
+    });
 
 Task("code")
     .Description("Everything in the gate but the workflow linters")
@@ -655,8 +661,9 @@ const string csharpierConfig = """
 
     """;
 
-// .csharpierignore, byte for byte. The format row names it with --ignore-path.
-const string csharpierIgnore = "*" + csharpierIgnoredSuffix + "\n";
+// .csharpierignore, byte for byte, and empty. The format row names it with --ignore-path, so CSharpier
+// reads no other ignore file, and a line here would take files out of the row.
+const string csharpierIgnore = "";
 
 // lefthook.yml, byte for byte. lefthook runs each job's command as written, and an extends or remotes
 // key there pulls in more config.
@@ -701,6 +708,58 @@ const string testsEditorConfig = """
 
     """;
 
+// The StyleCop rule that holds a SuppressMessage to a Justification. The waiver refusals read this
+// file too and refuse the rule's name spelled whole in C#, so it is spelled here in two parts.
+const string justificationRule = "SA" + "1404";
+
+// The root .editorconfig, byte for byte. It holds the style rules every C# file follows, keeps the
+// justification rule on as a warning, which TreatWarningsAsErrors makes fatal, and turns every other
+// StyleCop rule off. A severity or a generated_code key there reaches every file in the tree.
+const string rootEditorConfig = $$"""
+    # http://editorconfig.org
+    root = true
+
+    [*]
+    indent_style = space
+    indent_size = 2
+    end_of_line = lf
+    charset = utf-8
+    trim_trailing_whitespace = true
+    insert_final_newline = true
+
+    # The handbook base above, plus what this repository adds. CSharpier writes C# and the project XML
+    # at .csharpierrc's indentSize. PowerShell and nuget.config are indented by hand at the same width.
+    # Prettier reads the 2 above for everything it formats.
+    [*.{cs,csproj,props,targets,xaml,slnx,ps1,config}]
+    indent_size = 4
+
+    [*.cs]
+    csharp_style_var_for_built_in_types = false
+    csharp_style_var_when_type_is_apparent = false
+    csharp_style_var_elsewhere = false
+    dotnet_diagnostic.IDE0008.severity = warning
+    csharp_style_namespace_declarations = file_scoped:warning
+    dotnet_diagnostic.IDE0290.severity = warning
+    dotnet_diagnostic.IDE0300.severity = warning
+    dotnet_diagnostic.IDE0330.severity = warning
+    dotnet_diagnostic.IDE0370.severity = warning
+
+    # StyleCop.Analyzers reports one rule: a SuppressMessage has to carry a Justification. Every other
+    # StyleCop rule is off by category, which silences it and still runs it. SA0001 reports with no
+    # source location, so no category key reaches it, and it is off by its own key.
+    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.DocumentationRules.severity = none
+    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.LayoutRules.severity = none
+    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.MaintainabilityRules.severity = none
+    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.NamingRules.severity = none
+    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.OrderingRules.severity = none
+    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.ReadabilityRules.severity = none
+    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.SpacingRules.severity = none
+    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.SpecialRules.severity = none
+    dotnet_diagnostic.{{justificationRule}}.severity = warning
+    dotnet_diagnostic.SA0001.severity = none
+
+    """;
+
 // The two mise data files, before anything installs from them. A lockfile that disagrees with its
 // pin is the likeliest fault after a bump, and an address in it is what an install fetches, so both
 // are read before the install rather than after. bunfig.toml, the config files the other rows read
@@ -709,7 +768,7 @@ const string testsEditorConfig = """
 // mise, so the task needs none on the machine, and check runs it ahead of every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, bunfig.toml and every config file a row reads as cake.cs holds them, and no other config file a tool the gate starts searches for"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, bunfig.toml and every config file a row reads as cake.cs holds them, no other config file a tool the gate starts searches for, and no inline waiver no analyzer checks"
     )
     .Does(() => RequireLockfile());
 
@@ -1222,7 +1281,8 @@ FilePath Bunx()
 }
 
 // Every check on the tree's config files, run before each tool the gate starts: the tracked-path
-// refusals, bunfig.toml, the held files, the tool manifest, and every other name a tool searches for.
+// refusals, bunfig.toml, the held files, the tool manifest, every other name a tool searches for, and the
+// inline waivers no analyzer checks.
 void RequireConfigFiles()
 {
     RequireNoRefusedTrackedPaths();
@@ -1230,6 +1290,7 @@ void RequireConfigFiles()
     RequireHeldFiles();
     RequireToolManifest();
     RequireNoConfigElsewhere();
+    RequireNoInlineWaivers();
 }
 
 // Files named like a program some step starts by name, at the root or anywhere under tools. Cake's
@@ -1702,12 +1763,12 @@ void RequireBunfig()
     }
 }
 
-// The nine config files below, each held byte for byte against the text cake.cs holds for it.
+// The ten config files below, each held byte for byte against the text cake.cs holds for it.
 // prettier runs the modules .prettierrc names, and a line in .prettierignore takes files out of the
 // prettier row. .taplo.toml's exclude takes files out of the toml row, and a rule in
 // .github/zizmor.yml can disable an audit or ignore a finding. An override in .csharpierrc and a line
 // in .csharpierignore do the same to the format row. lefthook.yml holds the commands the hooks run,
-// and a severity in either .editorconfig below the root can turn an analyzer finding off. So any
+// and a severity in any of the three .editorconfig files can turn an analyzer finding off. So any
 // change to one of these texts is refused rather than read, and the finding names the constant and
 // the first line that differs. .github/actionlint.yaml, in either extension, is refused outright:
 // its paths block ignores actionlint's errors by pattern, and the repository carries none.
@@ -1741,6 +1802,12 @@ void RequireHeldFiles()
             nameof(lefthookConfig),
             lefthookConfig,
             "lefthook runs the commands there, and an extends or remotes key pulls in more config"
+        ),
+        (
+            ".editorconfig",
+            nameof(rootEditorConfig),
+            rootEditorConfig,
+            "a severity or a generated_code key there reaches every file in the tree"
         ),
         (
             "src/WingetNudge/.editorconfig",
@@ -2107,6 +2174,732 @@ void RequireToolManifest()
     {
         throw new CakeException($"{path} does not read as JSON: {Quoted(error.Message)}. Restore it.");
     }
+}
+
+// ///// Inline waivers /////
+
+// Every inline waiver in the tree that no analyzer holds to a named rule and a reason, refused with its
+// file and line. The walk is TreeFiles without the build output: the files the SDK compiles, and none
+// of what the XAML compiler writes into obj, which carries its own directives and markers. Every
+// pattern matches without regard to case, so a spelling the compiler rejects is refused too.
+//
+// - A warning pragma, a nullable disable and a line directive of any form, in every spelling the
+//   compiler honors. A line directive hides the findings below it or moves them to another file, where
+//   the SARIF audit reads no waiver. A directive starts a line, C# ends a line at a carriage return, a
+//   line feed, U+0085, U+2028 or U+2029, and it reads U+FEFF and U+001A as blanks beside the Unicode
+//   spaces. So the match runs over the whole text with those sets rather than line by line. A directive
+//   keyword takes no Unicode escape, so the text is matched as written. The match also refuses a
+//   directive-shaped line in a comment, a string or an inactive #if region, which the compiler would
+//   ignore.
+// - The generated-code attribute and the unconditional waiver anywhere in C#, and the justification
+//   rule's name anywhere in C#. An identifier takes Unicode escapes, and the compiler drops every
+//   format character from it, so these match the text with every \u and \U escape decoded and every
+//   invisible character removed.
+// - Roslyn's generated-code comment marker anywhere in a .cs file, and its generated file names:
+//   TemporaryGeneratedFile_ at the start, or .designer, .generated, .g or .g.i before the extension.
+// - A .cs file whose bytes the compiler would read in the machine's code page, and a .cs path holding a
+//   %, which a SARIF log decodes into another path.
+// - CSharpier's ignore comments, in C# and in XML, in every file the format row names.
+void RequireNoInlineWaivers()
+{
+    const System.Text.RegularExpressions.RegexOptions options =
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        | System.Text.RegularExpressions.RegexOptions.CultureInvariant;
+    const string blank = @"[\s\uFEFF\u001A]";
+    System.Text.RegularExpressions.Regex directive = new(
+        $@"(?:\A|[\r\n\u0085\u2028\u2029]){blank}*(?<hash>#){blank}*(?<form>pragma{blank}+warning|nullable{blank}+disable|line(?!\w))",
+        options
+    );
+    string generatedAttribute = "Generated" + "Code";
+    string unconditionalWaiver = "Unconditional" + "SuppressMessage";
+    System.Text.RegularExpressions.Regex name = new(
+        string.Join(
+            "|",
+            ((string[])[generatedAttribute, unconditionalWaiver, justificationRule]).Select(
+                System.Text.RegularExpressions.Regex.Escape
+            )
+        ),
+        options
+    );
+    System.Text.RegularExpressions.Regex marker = new("<auto-?generated", options);
+    System.Text.RegularExpressions.Regex formatterIgnore = new(
+        @"//[ \t]*csharpier-ignore|<!--\s*csharpier-ignore",
+        options
+    );
+    string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+
+    List<(string Path, int Line, string What)> found = [];
+    foreach (string relative in TreeFiles(buildOutput: false))
+    {
+        string extension = System.IO.Path.GetExtension(relative);
+        bool csharp = extension.Equals(".cs", StringComparison.OrdinalIgnoreCase);
+        if (!csharp && !csharpierExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        string path = System.IO.Path.Combine(root, relative);
+        string? source = csharp ? SourceText(System.IO.File.ReadAllBytes(path)) : System.IO.File.ReadAllText(path);
+        if (source is not string text)
+        {
+            found.Add(
+                (
+                    relative,
+                    0,
+                    "bytes that are not UTF-8, nor UTF-16 after a byte-order mark, which the compiler reads in the machine's code page, so the gate cannot read what it compiles. Save it as UTF-8"
+                )
+            );
+            continue;
+        }
+
+        foreach (System.Text.RegularExpressions.Match ignore in formatterIgnore.Matches(text))
+        {
+            found.Add(
+                (
+                    relative,
+                    LineOf(text, ignore.Index),
+                    "a CSharpier ignore comment, which leaves what follows it unformatted"
+                )
+            );
+        }
+
+        if (!csharp)
+        {
+            continue;
+        }
+
+        if (IsGeneratedFileName(relative))
+        {
+            found.Add(
+                (relative, 0, "a file name Roslyn reads as generated, so no analyzer runs over the file. Rename it")
+            );
+        }
+
+        if (relative.Contains('%', StringComparison.Ordinal))
+        {
+            found.Add(
+                (
+                    relative,
+                    0,
+                    "a % in the path, which a SARIF log reads as an escape, so the audit would place the file's waivers elsewhere. Rename it"
+                )
+            );
+        }
+
+        foreach (System.Text.RegularExpressions.Match match in directive.Matches(text))
+        {
+            string form = match.Groups["form"].Value.ToLowerInvariant();
+            string what =
+                form.StartsWith("pragma", StringComparison.Ordinal)
+                    ? "a warning pragma, which silences findings with no rule checked and no reason"
+                : form.StartsWith("nullable", StringComparison.Ordinal)
+                    ? "a nullable disable, which turns nullable analysis off below it"
+                : "a line directive, which hides the findings below it or moves them out of the tree";
+            found.Add((relative, LineOf(text, match.Groups["hash"].Index), what));
+        }
+
+        string decoded = DecodeUnicodeEscapes(text);
+        string visible = WithoutInvisible(decoded);
+        foreach (System.Text.RegularExpressions.Match match in name.Matches(visible))
+        {
+            string what =
+                match.Value.Equals(generatedAttribute, StringComparison.OrdinalIgnoreCase)
+                    ? "the generated-code attribute, which turns every analyzer off for what it marks"
+                : match.Value.Equals(unconditionalWaiver, StringComparison.OrdinalIgnoreCase)
+                    ? "an unconditional waiver, which the justification rule does not read"
+                : $"the name {justificationRule}: a waiver of the justification rule switches it off for its scope, up to a whole project";
+            found.Add((relative, LineOf(visible, match.Index), what));
+        }
+
+        foreach (System.Text.RegularExpressions.Match match in marker.Matches(decoded))
+        {
+            found.Add(
+                (
+                    relative,
+                    LineOf(decoded, match.Index),
+                    "an auto-generated marker, which makes Roslyn run no analyzer over the file"
+                )
+            );
+        }
+    }
+
+    if (found.Count > 0)
+    {
+        throw new CakeException(
+            $"The tree holds inline waivers the gate refuses: {string.Join("; ", found.OrderBy(entry => entry.Path, StringComparer.Ordinal).ThenBy(entry => entry.Line).Select(entry => $"{Quoted(entry.Path)}{(entry.Line > 0 ? $" line {entry.Line}" : "")}, {entry.What}"))}. "
+                + $"Fix the finding, or waive it with [SuppressMessage] naming its rule and a Justification, which {justificationRule} checks."
+        );
+    }
+}
+
+// Whether Roslyn reads a file as generated from its name alone: TemporaryGeneratedFile_ at the start,
+// or .designer, .generated, .g or .g.i before the last extension, in any case.
+static bool IsGeneratedFileName(string relative)
+{
+    string file = System.IO.Path.GetFileName(relative);
+    string stem = System.IO.Path.GetFileNameWithoutExtension(file);
+    return file.StartsWith("TemporaryGeneratedFile_", StringComparison.OrdinalIgnoreCase)
+        || ((string[])[".designer", ".generated", ".g", ".g.i"]).Any(suffix =>
+            stem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        );
+}
+
+// The text with every C# Unicode escape replaced by the character it names: \u and four hex digits,
+// or \U and eight. An escape naming no Unicode scalar stays as written, since the compiler rejects it.
+static string DecodeUnicodeEscapes(string text) =>
+    System.Text.RegularExpressions.Regex.Replace(
+        text,
+        @"\\(?:u(?<short>[0-9A-Fa-f]{4})|U(?<long>[0-9A-Fa-f]{8}))",
+        match =>
+        {
+            bool isShort = match.Groups["short"].Success;
+            long value = long.Parse(
+                isShort ? match.Groups["short"].Value : match.Groups["long"].Value,
+                System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture
+            );
+            return isShort ? ((char)value).ToString()
+                : value <= 0x10FFFF && value is not (>= 0xD800 and <= 0xDFFF) ? char.ConvertFromUtf32((int)value)
+                : match.Value;
+        }
+    );
+
+// The text without the characters nobody sees: every format character (Unicode category Cf), which
+// the compiler drops from an identifier before it binds a name, and every default-ignorable code point,
+// which renders as nothing. Neither set holds the other: U+0600 is a format character that renders,
+// and U+034F renders as nothing without being one. A character the text cannot pair stays.
+static string WithoutInvisible(string text)
+{
+    (int First, int Last)[] defaultIgnorable =
+    [
+        (0x00AD, 0x00AD),
+        (0x034F, 0x034F),
+        (0x061C, 0x061C),
+        (0x115F, 0x1160),
+        (0x17B4, 0x17B5),
+        (0x180B, 0x180F),
+        (0x200B, 0x200F),
+        (0x202A, 0x202E),
+        (0x2060, 0x206F),
+        (0x3164, 0x3164),
+        (0xFE00, 0xFE0F),
+        (0xFEFF, 0xFEFF),
+        (0xFFA0, 0xFFA0),
+        (0xFFF0, 0xFFF8),
+        (0x1BCA0, 0x1BCA3),
+        (0x1D173, 0x1D17A),
+        (0xE0000, 0xE0FFF),
+    ];
+    System.Text.StringBuilder kept = new(text.Length);
+    for (int index = 0; index < text.Length; )
+    {
+        // Neither set holds a character below U+00AD.
+        if (text[index] < 0x00AD)
+        {
+            kept.Append(text[index]);
+            index++;
+            continue;
+        }
+
+        if (
+            System.Text.Rune.DecodeFromUtf16(text.AsSpan(index), out System.Text.Rune rune, out int used)
+            is not System.Buffers.OperationStatus.Done
+        )
+        {
+            kept.Append(text[index]);
+            index++;
+            continue;
+        }
+
+        bool invisible =
+            System.Text.Rune.GetUnicodeCategory(rune) == System.Globalization.UnicodeCategory.Format
+            || defaultIgnorable.Any(range => rune.Value >= range.First && rune.Value <= range.Last);
+        if (!invisible)
+        {
+            kept.Append(text, index, used);
+        }
+
+        index += used;
+    }
+
+    return kept.ToString();
+}
+
+// A C# source file's text as the compiler reads it, or null when the compiler would read it in the
+// machine's code page instead. The compiler takes a UTF-8 or UTF-16 byte-order mark, and without one
+// reads the bytes as UTF-8 when all of them decode. A UTF-32 mark is refused: FF FE 00 00 also opens a
+// UTF-16 file whose first character is U+0000, so the two readings differ.
+static string? SourceText(byte[] bytes)
+{
+    System.Text.Encoding? encoding = bytes switch
+    {
+        [0xFF, 0xFE, 0x00, 0x00, ..] or [0x00, 0x00, 0xFE, 0xFF, ..] => null,
+        [0xEF, 0xBB, 0xBF, ..] => new System.Text.UTF8Encoding(true, true),
+        [0xFF, 0xFE, ..] => new System.Text.UnicodeEncoding(false, true, true),
+        [0xFE, 0xFF, ..] => new System.Text.UnicodeEncoding(true, true, true),
+        _ => new System.Text.UTF8Encoding(false, true),
+    };
+    if (encoding is null)
+    {
+        return null;
+    }
+
+    int mark = encoding.Preamble.Length;
+    try
+    {
+        return encoding.GetString(bytes, mark, bytes.Length - mark);
+    }
+    catch (System.Text.DecoderFallbackException)
+    {
+        return null;
+    }
+}
+
+// The one-based line of a position in a text, counting a line where C# counts one: at a carriage
+// return, a line feed, a carriage return and line feed together, U+0085, U+2028 or U+2029.
+static int LineOf(string text, int index)
+{
+    int line = 1;
+    for (int position = 0; position < index; position++)
+    {
+        char character = text[position];
+        if (character == '\r' && position + 1 < index && text[position + 1] == '\n')
+        {
+            position++;
+        }
+
+        if (character is '\r' or '\n' or '\u0085' or '\u2028' or '\u2029')
+        {
+            line++;
+        }
+    }
+
+    return line;
+}
+
+// ///// Build logs /////
+
+// Every C# project WingetNudge.slnx names, relative to the root with forward slashes. The build row
+// builds that solution, so these are the compiles whose logs it reads.
+string[] SolutionProjects()
+{
+    const string solution = "WingetNudge.slnx";
+    try
+    {
+        string[] projects =
+        [
+            .. System
+                .Xml.Linq.XDocument.Load(solution)
+                .Descendants("Project")
+                .Select(element => (string?)element.Attribute("Path"))
+                .OfType<string>()
+                .Where(path => path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+                .Select(path => path.Replace('\\', '/'))
+                .Order(StringComparer.Ordinal),
+        ];
+        return projects.Length > 0
+            ? projects
+            : throw new CakeException(
+                $"{solution} names no .csproj, so the build row has no compile to read a log from."
+            );
+    }
+    catch (Exception error) when (error is System.Xml.XmlException or System.IO.IOException)
+    {
+        throw new CakeException($"{solution} does not read as XML: {Quoted(error.Message)}. Restore it.");
+    }
+}
+
+// Before the build of one configuration, the warning settings each project of the solution evaluates
+// to. The SARIF log records the severity .editorconfig gives the justification rule, and records
+// neither NoWarn nor WarningsNotAsErrors, each of which lets the rule's finding through. So every
+// project has to evaluate with TreatWarningsAsErrors true, the rule in WarningsAsErrors, which the
+// canary in RequireWaiverLogs rests on, no NoWarn or WarningsNotAsErrors entry naming the rule, a
+// WarningLevel of at least 1, no CodeAnalysisRuleSet, whose actions set any rule's severity, and
+// neither RunAnalyzers nor RunAnalyzersDuringBuild false. The compiler splits a warning list at a
+// semicolon, a comma or any whitespace, and so does Names. MSBuild evaluates each project with the
+// properties RootNamed passes, so these are the values the build reads, however a project file spells
+// or computes them. The evaluation reads these properties alone, under the build row's properties.
+// CONTRIBUTING lists what it does not see, which review of the project files covers: a compile input,
+// a Using item, an analyzer config item or a response file the project file adds, a condition on a
+// property the evaluation does not pass, and a target that changes a setting or adds an item.
+void RequireJustificationRuleFatal(FilePath dotnet, string configuration)
+{
+    string[] names =
+    [
+        "TreatWarningsAsErrors",
+        "WarningsAsErrors",
+        "NoWarn",
+        "WarningsNotAsErrors",
+        "WarningLevel",
+        "CodeAnalysisRuleSet",
+        "RunAnalyzers",
+        "RunAnalyzersDuringBuild",
+    ];
+    DotNetMSBuildSettings named = RootNamed(noAutoResponse: true);
+    List<string> problems = [];
+    string[] projects = SolutionProjects();
+    bool Names(string list) =>
+        System
+            .Text.RegularExpressions.Regex.Split(list, @"[;,\s]+")
+            .Contains(justificationRule, StringComparer.OrdinalIgnoreCase);
+    foreach (string project in projects)
+    {
+        ProcessArgumentBuilder arguments = new ProcessArgumentBuilder()
+            .Append("msbuild")
+            .AppendQuoted(project)
+            .Append("-nologo")
+            .Append("-noAutoResponse")
+            .Append($"-p:Configuration={configuration}");
+        foreach (KeyValuePair<string, ICollection<string>> property in named.Properties)
+        {
+            arguments.AppendQuoted($"-p:{property.Key}={string.Join(";", property.Value)}");
+        }
+
+        foreach (string name in names)
+        {
+            arguments.Append($"-getProperty:{name}");
+        }
+
+        // A CI runner's console can wrap a process's output in color codes. The file holds only
+        // what MSBuild wrote.
+        FilePath result = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            $"warning-settings-{Guid.NewGuid():N}.json"
+        );
+        arguments.AppendQuoted($"-getResultOutputFile:{result.FullPath}");
+        Dictionary<string, string> values = new(StringComparer.Ordinal);
+        try
+        {
+            int exit = StartProcess(
+                dotnet,
+                new ProcessSettings
+                {
+                    Arguments = arguments,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                },
+                out IEnumerable<string> output,
+                out IEnumerable<string> errors
+            );
+            if (exit != 0)
+            {
+                throw new CakeException(
+                    $"dotnet msbuild exited {exit} evaluating {Quoted(project)} for its warning settings: {Quoted(string.Join(" ", errors.Concat(output).Select(Plain)))}."
+                );
+            }
+
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText(result.FullPath));
+                foreach (string name in names)
+                {
+                    values[name] = document.RootElement.GetProperty("Properties").GetProperty(name).GetString() ?? "";
+                }
+            }
+            catch (Exception error)
+                when (error
+                        is JsonException
+                            or InvalidOperationException
+                            or KeyNotFoundException
+                            or System.IO.IOException
+                )
+            {
+                throw new CakeException(
+                    $"dotnet msbuild evaluated {Quoted(project)} and wrote no property list the gate can read at {Quoted(result.FullPath)}: {Quoted(error.Message)}."
+                );
+            }
+        }
+        finally
+        {
+            System.IO.File.Delete(result.FullPath);
+        }
+
+        string shown = Quoted(project);
+        if (!values["TreatWarningsAsErrors"].Equals("true", StringComparison.OrdinalIgnoreCase))
+        {
+            problems.Add($"{shown} sets TreatWarningsAsErrors to {Quoted(values["TreatWarningsAsErrors"])}");
+        }
+
+        foreach (string list in (string[])["NoWarn", "WarningsNotAsErrors"])
+        {
+            if (Names(values[list]))
+            {
+                problems.Add($"{shown} names {justificationRule} in {list}");
+            }
+        }
+
+        if (!Names(values["WarningsAsErrors"]))
+        {
+            problems.Add(
+                $"{shown} leaves {justificationRule} out of WarningsAsErrors, which gives a source generator's output the rule as an error"
+            );
+        }
+
+        if (
+            int.TryParse(
+                values["WarningLevel"],
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out int level
+            )
+            && level < 1
+        )
+        {
+            problems.Add($"{shown} sets WarningLevel to {level}, which drops every warning");
+        }
+
+        if (values["CodeAnalysisRuleSet"].Length > 0)
+        {
+            problems.Add($"{shown} names the ruleset {Quoted(values["CodeAnalysisRuleSet"])}");
+        }
+
+        foreach (string switched in (string[])["RunAnalyzers", "RunAnalyzersDuringBuild"])
+        {
+            if (values[switched].Equals("false", StringComparison.OrdinalIgnoreCase))
+            {
+                problems.Add($"{shown} sets {switched} to false");
+            }
+        }
+    }
+
+    if (problems.Count > 0)
+    {
+        throw new CakeException(
+            $"The {configuration} build would let {justificationRule} through: {string.Join("; ", problems)}. "
+                + $"{justificationRule} holds every waiver to a Justification, and TreatWarningsAsErrors makes its finding fatal, so no project setting may soften it."
+        );
+    }
+
+    Information(
+        "{0}: {1} projects evaluate with TreatWarningsAsErrors and no setting that lets {2} through.",
+        configuration,
+        projects.Length,
+        justificationRule
+    );
+}
+
+// After the build of one configuration, the SARIF log each compile of the solution wrote at the path
+// ErrorLog in Directory.Build.props names, read for two things.
+//
+// The waivers: the log records every finding a waiver suppressed in source, with the waiver's
+// justification. A SuppressMessage records its Justification, and a pragma or an unconditional waiver
+// records none. So an in-source suppression whose justification is empty or blank, once invisible
+// characters are removed, is refused, and so is any suppression of the justification rule, whatever
+// spelled it. A finding in the project's obj, such as the XAML compiler's output or a source
+// generator's, is the tool's own. A finding anywhere else outside the tree is refused, since a line
+// directive puts it there, and so does a %-escape the log decodes.
+//
+// The canary: the log lists every rule the compile loaded, with one entry for each severity the rule
+// takes across the compile's files. WarningsAsErrors gives a source generator's output the
+// justification rule as an error, so each entry has to say error: a project whose analyzers are off,
+// which loads no StyleCop, or which lowers the rule for any file, fails. A file Roslyn reads as
+// generated is not analyzed and adds no entry. RequireJustificationRuleFatal reads the settings the
+// log does not record.
+//
+// An incremental build that skips a compile leaves the log that compile wrote last, which matches the
+// unchanged inputs. A log older than its project's intermediate assembly came from an earlier compile,
+// so it is refused as stale, as is a missing or unreadable log. The XAML compiler's first pass runs on
+// every build and rewrites its own assembly under intermediatexaml, so that one dates nothing.
+void RequireWaiverLogs(string configuration)
+{
+    string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+    HashSet<string> treeFiles = new(TreeFiles(buildOutput: false), StringComparer.OrdinalIgnoreCase);
+    List<string> problems = [];
+    List<string> canaries = [];
+    int audited = 0;
+    foreach (string project in SolutionProjects())
+    {
+        string directory =
+            System.IO.Path.GetDirectoryName(System.IO.Path.Combine(root, project))
+            ?? throw new CakeException($"{Quoted(project)} names no directory.");
+        string log = System.IO.Path.Combine(directory, "obj", configuration, "waivers.sarif");
+        string shown = Quoted(System.IO.Path.GetRelativePath(root, log).Replace('\\', '/'));
+        string buildOutput =
+            System.IO.Path.GetRelativePath(root, System.IO.Path.Combine(directory, "obj")).Replace('\\', '/') + "/";
+        if (!System.IO.File.Exists(log))
+        {
+            problems.Add($"{Quoted(project)} wrote no log at {shown}");
+            continue;
+        }
+
+        string assembly = $"{System.IO.Path.GetFileNameWithoutExtension(project)}.dll";
+        string intermediate = System.IO.Path.Combine(directory, "obj", configuration);
+        DateTime[] built =
+        [
+            .. (
+                System.IO.Directory.Exists(intermediate)
+                    ? System.IO.Directory.EnumerateFiles(intermediate, assembly, System.IO.SearchOption.AllDirectories)
+                    : []
+            )
+                .Where(file =>
+                    !file.Split('\\', '/').Any(segment => segment is "ref" or "refint" or "intermediatexaml")
+                )
+                .Select(System.IO.File.GetLastWriteTimeUtc),
+        ];
+        if (built.Length == 0)
+        {
+            problems.Add($"{Quoted(project)} left no {assembly} under obj/{configuration} to date its log by");
+            continue;
+        }
+
+        if (System.IO.File.GetLastWriteTimeUtc(log) < built.Max())
+        {
+            problems.Add($"{shown} is older than {Quoted(project)}'s {assembly}, so it came from an earlier compile");
+            continue;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText(log));
+            JsonElement[] runs = [.. document.RootElement.GetProperty("runs").EnumerateArray()];
+            if (runs.Length != 1)
+            {
+                problems.Add($"{shown} holds {runs.Length} runs, and a compile writes one");
+                continue;
+            }
+
+            JsonElement run = runs[0];
+            // A compile with its analyzers off writes a log with no rules at all.
+            bool loaded =
+                run.GetProperty("tool").GetProperty("driver").TryGetProperty("rules", out JsonElement rules)
+                && rules.EnumerateArray().Any(rule => rule.GetProperty("id").GetString() == justificationRule);
+            // One entry per severity the rule takes across the compile's files.
+            string[] levels =
+            [
+                .. (
+                    run.TryGetProperty("invocations", out JsonElement invocations)
+                        ? (IEnumerable<JsonElement>)invocations.EnumerateArray()
+                        : []
+                )
+                    .SelectMany(invocation =>
+                        invocation.TryGetProperty("ruleConfigurationOverrides", out JsonElement overrides)
+                            ? overrides.EnumerateArray()
+                            : []
+                    )
+                    .Where(entry => entry.GetProperty("descriptor").GetProperty("id").GetString() == justificationRule)
+                    .Select(entry => entry.GetProperty("configuration"))
+                    .Select(configuration =>
+                        configuration.TryGetProperty("enabled", out JsonElement enabled)
+                        && enabled.ValueKind == JsonValueKind.False
+                            ? "off"
+                        : configuration.TryGetProperty("level", out JsonElement level) ? level.GetString() ?? "none"
+                        : "its default, a warning"
+                    )
+                    .Distinct(StringComparer.Ordinal),
+            ];
+            if (!loaded)
+            {
+                problems.Add(
+                    $"{Quoted(project)}'s compile loaded no {justificationRule}, so StyleCop.Analyzers did not run there"
+                );
+            }
+            else if (levels.Length == 0 || levels.Any(level => level != "error"))
+            {
+                problems.Add(
+                    $"{Quoted(project)}'s compile ran {justificationRule} at {(levels.Length == 0 ? "its default, a warning" : string.Join(" and ", levels))} across its files, and the gate takes an error for every file"
+                );
+            }
+            else
+            {
+                canaries.Add(project);
+            }
+
+            if (!run.TryGetProperty("results", out JsonElement results))
+            {
+                continue;
+            }
+
+            foreach (JsonElement result in results.EnumerateArray())
+            {
+                if (!result.TryGetProperty("suppressions", out JsonElement suppressions))
+                {
+                    continue;
+                }
+
+                string rule = result.TryGetProperty("ruleId", out JsonElement id) ? id.GetString() ?? "" : "";
+                (string? file, int line) = SarifLocation(result, root);
+                if (file is not null && !treeFiles.Contains(file))
+                {
+                    if (!file.StartsWith(buildOutput, StringComparison.OrdinalIgnoreCase))
+                    {
+                        problems.Add(
+                            $"{Quoted(project)}'s log places a suppression of {Quoted(rule)} at {Quoted(file)}, outside the tree and the project's obj, where the audit reads no waiver"
+                        );
+                    }
+
+                    continue;
+                }
+
+                foreach (JsonElement suppression in suppressions.EnumerateArray())
+                {
+                    audited++;
+                    string kind = suppression.TryGetProperty("kind", out JsonElement kindValue)
+                        ? kindValue.GetString() ?? ""
+                        : "";
+                    string? justification = suppression.TryGetProperty("justification", out JsonElement reason)
+                        ? reason.GetString()
+                        : null;
+                    string where = file is null
+                        ? $"{Quoted(project)}, with no location"
+                        : $"{Quoted(file)} line {line}";
+                    if (rule == justificationRule)
+                    {
+                        problems.Add($"{where} waives {justificationRule} itself");
+                    }
+                    else if (kind == "inSource" && string.IsNullOrWhiteSpace(WithoutInvisible(justification ?? "")))
+                    {
+                        problems.Add($"{where} waives {Quoted(rule)} with no justification");
+                    }
+                }
+            }
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            problems.Add($"{shown} does not read as a SARIF log: {Quoted(error.Message)}");
+        }
+    }
+
+    if (problems.Count > 0)
+    {
+        throw new CakeException(
+            $"The {configuration} build's waiver logs fail: {string.Join("; ", problems)}. "
+                + $"A waiver names its rule and gives a reason with [SuppressMessage] and a Justification, which {justificationRule} checks. "
+                + "ErrorLog in Directory.Build.props writes each log, and a rebuild writes it afresh."
+        );
+    }
+
+    Information(
+        "{0}: {1} ran as an error in every compile ({2}), and the logs hold {3} in-source suppressions, each with a justification.",
+        configuration,
+        justificationRule,
+        string.Join(", ", canaries),
+        audited
+    );
+}
+
+// Where a SARIF result sits: its first location's file, relative to the root with forward slashes, and
+// its start line, or no file when the result has no file location.
+static (string? File, int Line) SarifLocation(JsonElement result, string root)
+{
+    if (
+        !result.TryGetProperty("locations", out JsonElement locations)
+        || locations.GetArrayLength() == 0
+        || !locations[0].TryGetProperty("physicalLocation", out JsonElement physical)
+        || !physical.TryGetProperty("artifactLocation", out JsonElement artifact)
+        || !artifact.TryGetProperty("uri", out JsonElement uri)
+        || !Uri.TryCreate(uri.GetString(), UriKind.Absolute, out Uri? address)
+        || !address.IsFile
+    )
+    {
+        return (null, 0);
+    }
+
+    int line =
+        physical.TryGetProperty("region", out JsonElement region)
+        && region.TryGetProperty("startLine", out JsonElement start)
+            ? start.GetInt32()
+            : 0;
+    return (System.IO.Path.GetRelativePath(root, address.LocalPath).Replace('\\', '/'), line);
 }
 
 // Every file in the tree, relative to the root with forward slashes, for the refusals and rows that

@@ -18,8 +18,8 @@
       "enabled": false
     },
     {
-      "description": "cake.cs restores in locked mode, and Renovate regenerates a packages.lock.json only beside a cs, vb or fs project. cake.packages.lock.json is neither, so a pull request moving what it pins stays red until somebody runs the command below. Spectre.Console reaches it through Cake.Cli, and central transitive pinning records the Directory.Packages.props version there. YamlDotNet is the app's and cake.cs's both.",
-      "matchDepNames": ["Cake.Sdk", "Tomlyn", "YamlDotNet", "Spectre.Console"],
+      "description": "cake.cs restores in locked mode, and Renovate regenerates a packages.lock.json only beside a cs, vb or fs project. cake.packages.lock.json is neither, so a pull request moving what it pins stays red until somebody runs the command below. Spectre.Console reaches it through Cake.Cli, and central transitive pinning records the Directory.Packages.props version there. YamlDotNet is the app's and cake.cs's both. StyleCop.Analyzers is a global package reference, so cake.cs takes it too.",
+      "matchDepNames": ["Cake.Sdk", "Tomlyn", "YamlDotNet", "Spectre.Console", "StyleCop.Analyzers"],
       "prBodyNotes": [
         "`cake.packages.lock.json` does not regenerate itself. Run `dotnet restore cake.cs --force-evaluate` and commit the result into this pull request, or the gate stays red."
       ]

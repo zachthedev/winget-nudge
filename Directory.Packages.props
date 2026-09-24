@@ -29,4 +29,18 @@
         <!-- The TOML reader cake.cs uses for mise.toml and mise.lock. -->
         <PackageVersion Include="Tomlyn" Version="2.10.1" />
     </ItemGroup>
+    <ItemGroup>
+        <!--
+            The analyzer behind the justification rule .editorconfig keeps on, in every C# project and
+            cake.cs. A wixproj compiles no C#, so it takes none. The build row's canary fails a
+            solution compile that loads no SA1404. cake.cs writes no log, so review of this line and
+            cake.packages.lock.json keeps the analyzer there, and keeps this line the one place its
+            version lives.
+        -->
+        <GlobalPackageReference
+            Include="StyleCop.Analyzers"
+            Version="1.2.0-beta.556"
+            Condition="'$(MSBuildProjectExtension)' == '.csproj'"
+        />
+    </ItemGroup>
 </Project>

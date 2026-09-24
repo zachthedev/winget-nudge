@@ -24,11 +24,26 @@
             reports every finding. TreatWarningsAsErrors stays for every other warning.
         -->
         <WarningsNotAsErrors>NU1900;NU1901;NU1902;NU1903;NU1904;NU1905</WarningsNotAsErrors>
+        <!--
+            The justification rule as an error for the whole compile. .editorconfig sets it for the
+            files it names, and a source generator's output records it as disabled without this line.
+            With it, every file the compile analyzes records the rule as an error, so the gate's
+            canary can refuse a file that records anything else.
+        -->
+        <WarningsAsErrors>SA1404</WarningsAsErrors>
         <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
         <!-- Renovate regenerates the lock files from Linux, where a Windows target needs this. -->
         <EnableWindowsTargeting>true</EnableWindowsTargeting>
         <AnalysisLevel>latest-Recommended</AnalysisLevel>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <!--
+            Every compile of a project writes a SARIF 2.1 log naming each finding a waiver suppressed,
+            with its justification, and how each rule was configured, at this path from the project
+            directory. The gate's build row reads it after each configuration. A file-based program such
+            as cake.cs writes none.
+        -->
+        <WaiverLog Condition="'$(FileBasedProgram)' != 'true'">obj\$(Configuration)\waivers.sarif</WaiverLog>
+        <ErrorLog Condition="'$(WaiverLog)' != ''">$(WaiverLog),version=2.1</ErrorLog>
         <Authors>ZachTheDev</Authors>
         <Product>Winget Nudge</Product>
         <!-- release-please rewrites the version between these markers in each release pull request. -->
@@ -44,4 +59,20 @@
         -->
         <AcceptEula>wix7</AcceptEula>
     </PropertyGroup>
+
+    <!--
+        The XAML compiler's first pass runs the compiler with the same settings and no analyzers, on
+        every build, including one that skips the full compile, so its log would stand in for the full
+        compile's. It writes a log of its own instead, and the full compile writes WaiverLog.
+    -->
+    <Target Name="LogXamlPreCompileApart" BeforeTargets="XamlPreCompile">
+        <PropertyGroup>
+            <ErrorLog>obj\$(Configuration)\xaml-first-pass.sarif,version=2.1</ErrorLog>
+        </PropertyGroup>
+    </Target>
+    <Target Name="LogCompileAtWaiverLog" AfterTargets="XamlPreCompile">
+        <PropertyGroup>
+            <ErrorLog Condition="'$(WaiverLog)' != ''">$(WaiverLog),version=2.1</ErrorLog>
+        </PropertyGroup>
+    </Target>
 </Project>
