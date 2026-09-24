@@ -1,4 +1,5 @@
 using WingetNudge.Core.Preferences;
+using WingetNudge.Core.Storage;
 using WingetNudge.Core.Tools;
 using WingetNudge.Core.Tracking;
 
@@ -135,20 +136,28 @@ public sealed record PackagePartition(
 /// Availability data the scan resolved. A re-section needs it to measure the cooldown, and it
 /// travels with the scan so no service rebuilt in the meantime can hand back an empty copy.
 /// </param>
+/// <param name="WriteFailures">
+/// Bookkeeping writes that failed while the scan carried on. <c>diagnostics.log</c> records each.
+/// </param>
 public sealed record PackageScan(
     IReadOnlyList<PackageInfo> All,
     PackagePartition Partition,
-    Dictionary<string, Dictionary<string, VersionObservation>> Tracking
+    Dictionary<string, Dictionary<string, VersionObservation>> Tracking,
+    IReadOnlyList<StateWriteFailure> WriteFailures
 );
 
 /// <summary>What the check found.</summary>
 /// <param name="All">Full winget inventory.</param>
 /// <param name="Partition">Updatable packages split by section.</param>
 /// <param name="Tools">Manual tools with an update.</param>
+/// <param name="WriteFailures">
+/// Bookkeeping writes that failed while the check carried on. <c>diagnostics.log</c> records each.
+/// </param>
 public sealed record UpdateCheckResult(
     IReadOnlyList<PackageInfo> All,
     PackagePartition Partition,
-    IReadOnlyList<ToolStatus> Tools
+    IReadOnlyList<ToolStatus> Tools,
+    IReadOnlyList<StateWriteFailure> WriteFailures
 )
 {
     /// <summary>Packages offered for the notification and Update All.</summary>
@@ -197,11 +206,13 @@ public sealed class UpdateCheck(
     public async Task<UpdateCheckResult> RunAsync(CancellationToken cancellationToken)
     {
         // Tool probes run their own processes and HTTP calls, which share nothing with the
-        // winget query; starting them first overlaps the two waits.
-        Task<IReadOnlyList<ToolStatus>> probes = RunToolsAsync(cancellationToken);
+        // winget query; starting them first overlaps the two waits. Each keeps its own list of
+        // failed writes, since the two run at once.
+        List<StateWriteFailure> toolFailures = [];
+        Task<IReadOnlyList<ToolStatus>> probes = RunToolsAsync(toolFailures, cancellationToken);
         PackageScan scan = await RunPackagesAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<ToolStatus> statuses = await probes.ConfigureAwait(false);
-        return new UpdateCheckResult(scan.All, scan.Partition, statuses);
+        return new UpdateCheckResult(scan.All, scan.Partition, statuses, [.. scan.WriteFailures, .. toolFailures]);
     }
 
     /// <summary>
@@ -209,24 +220,34 @@ public sealed class UpdateCheck(
     /// show it before the tool probes finish.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Inventory and partition.</returns>
+    /// <returns>Inventory, partition and the bookkeeping writes that failed.</returns>
     public async Task<PackageScan> RunPackagesAsync(CancellationToken cancellationToken)
     {
         IReadOnlyList<PackageInfo> all = await source.GetInstalledAsync(cancellationToken).ConfigureAwait(false);
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking = await ResolveTrackingAsync(
-                all,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        return new PackageScan(all, Repartition(all, tracking), tracking);
+        List<StateWriteFailure> failures = [];
+        (Dictionary<string, Dictionary<string, VersionObservation>> tracking, PreferenceSnapshot snapshot) =
+            await ResolveTrackingAsync(all, failures, cancellationToken).ConfigureAwait(false);
+        return new PackageScan(all, Repartition(all, tracking, snapshot), tracking, failures);
     }
 
     /// <summary>Probes the manual tools on their own.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Only the tools with an update available.</returns>
-    public async Task<IReadOnlyList<ToolStatus>> RunToolsAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<ToolStatus>> RunToolsAsync(CancellationToken cancellationToken) =>
+        RunToolsAsync([], cancellationToken);
+
+    /// <summary>Probes the manual tools on their own.</summary>
+    /// <param name="failures">Receives each cache write that failed, which <c>diagnostics.log</c> also records.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Only the tools with an update available.</returns>
+    public async Task<IReadOnlyList<ToolStatus>> RunToolsAsync(
+        ICollection<StateWriteFailure> failures,
+        CancellationToken cancellationToken
+    )
     {
-        IReadOnlyList<ToolStatus> statuses = await tools.GetStatusesAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ToolStatus> statuses = await tools
+            .GetStatusesAsync(failures, cancellationToken)
+            .ConfigureAwait(false);
         return statuses.Where(static status => status.UpdateAvailable).ToArray();
     }
 
@@ -242,26 +263,34 @@ public sealed class UpdateCheck(
         CancellationToken cancellationToken
     )
     {
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking = await ResolveTrackingAsync(
-                all,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        return Repartition(all, tracking);
+        // A failed bookkeeping write reaches diagnostics.log alone here, since the partition has no
+        // place to carry it.
+        (Dictionary<string, Dictionary<string, VersionObservation>> tracking, PreferenceSnapshot snapshot) =
+            await ResolveTrackingAsync(all, [], cancellationToken).ConfigureAwait(false);
+        return Repartition(all, tracking, snapshot);
     }
 
-    private async Task<Dictionary<string, Dictionary<string, VersionObservation>>> ResolveTrackingAsync(
+    // Every write here is bookkeeping: tracking, pruning and stale skips. A failed one joins the
+    // failures rather than ending the scan, so one write cannot cost a notification or a picker list.
+    // The snapshot returned is the scan's one preference load, so a prune that fails is attempted and
+    // logged once per scan. It leaves out the stale skips the scan cleared, as the file does.
+    private async Task<(
+        Dictionary<string, Dictionary<string, VersionObservation>> Tracking,
+        PreferenceSnapshot Snapshot
+    )> ResolveTrackingAsync(
         IReadOnlyList<PackageInfo> all,
+        ICollection<StateWriteFailure> failures,
         CancellationToken cancellationToken
     )
     {
-        tracker.Reconcile(all);
+        Dictionary<string, Dictionary<string, VersionObservation>> reconciled = tracker.Reconcile(all, failures);
         PackageInfo[] updatable = all.Where(static package => package.IsUpdateAvailable).ToArray();
         Dictionary<string, Dictionary<string, VersionObservation>> tracking = await tracker
-            .ResolvePublishDatesAsync(updatable, releaseDates, cancellationToken)
+            .ResolvePublishDatesAsync(updatable, releaseDates, reconciled, failures, cancellationToken)
             .ConfigureAwait(false);
 
-        PreferenceSnapshot snapshot = preferences.Load();
+        PreferenceSnapshot snapshot = preferences.Load(failures);
+        HashSet<string> stale = new(StringComparer.Ordinal);
         foreach (PackageInfo package in updatable)
         {
             if (
@@ -269,11 +298,15 @@ public sealed class UpdateCheck(
                 && !snapshot.IsSuppressed(package.Id, package.AvailableVersion)
             )
             {
-                preferences.Clear(package.Id);
+                preferences.Clear(package.Id, failures);
+                stale.Add(package.Id);
             }
         }
 
-        return tracking;
+        Dictionary<string, PreferenceEntry> kept = snapshot
+            .All.Where(pair => !stale.Contains(pair.Key))
+            .ToDictionary(StringComparer.Ordinal);
+        return (tracking, new PreferenceSnapshot(kept));
     }
 
     /// <summary>
@@ -286,10 +319,15 @@ public sealed class UpdateCheck(
     public PackagePartition Repartition(
         IReadOnlyList<PackageInfo> all,
         Dictionary<string, Dictionary<string, VersionObservation>> tracking
+    ) => Repartition(all, tracking, preferences.Load());
+
+    private PackagePartition Repartition(
+        IReadOnlyList<PackageInfo> all,
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking,
+        PreferenceSnapshot snapshot
     )
     {
         PackageInfo[] updatable = all.Where(static package => package.IsUpdateAvailable).ToArray();
-        PreferenceSnapshot snapshot = preferences.Load();
         IReadOnlyDictionary<string, CoolingInfo> cooling = tracker.GetCooling(updatable, tracking);
         IReadOnlyDictionary<string, WingetPin> pinned = (pins ?? new WingetPinReader()).Load();
         HeldBackPackage[] heldBack = all.Where(static package => package.IsHeldBack)

@@ -52,6 +52,14 @@ and a crash frees it the same way.
 moves aside as `<file>.<time>-<id>.corrupt`. The newest three copies of each file stay, and older ones
 go. Any other state file that fails to parse is deleted, and the app rebuilds it.
 
+Deleting `version-tracking.json` by hand does not start a fresh first run. Its lock file stays, so
+versions on offer still wait out the cooldown, while installed versions are recorded as before.
+
+`diagnostics.log` gets one timestamped line for each bookkeeping write a check or the picker carried on
+without, such as a stale skip it could not clear. `check` and `list` print the same lines, and the picker
+shows them in its message bar. Each new line drops the lines older than the update log's retention window,
+then the oldest lines past 1 MiB.
+
 On first run, the app copies state from the older PowerShell version's
 `%LOCALAPPDATA%\WingetUpdater` folder if it exists, so muted packages, tracking history and
 registered tools carry over.

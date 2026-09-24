@@ -83,7 +83,31 @@ public sealed partial class ToolRegistry(DataPaths paths)
     /// <summary>Writes one cache entry.</summary>
     /// <param name="id">Tool id.</param>
     /// <param name="entry">Probe result.</param>
-    public void SaveCache(string id, ToolCacheEntry entry) =>
+    public void SaveCache(string id, ToolCacheEntry entry) => SaveCache(id, entry, TimeProvider.System, null);
+
+    /// <summary>Writes one cache entry, reporting a failed write rather than throwing it.</summary>
+    /// <param name="id">Tool id.</param>
+    /// <param name="entry">Probe result.</param>
+    /// <param name="clock">Time source for the diagnostics line.</param>
+    /// <param name="failures">
+    /// Receives a failed write, which <c>diagnostics.log</c> also records, or <c>null</c> to let it throw.
+    /// </param>
+    internal void SaveCache(
+        string id,
+        ToolCacheEntry entry,
+        TimeProvider clock,
+        ICollection<StateWriteFailure>? failures
+    ) =>
+        DiagnosticsLog.Attempt(
+            paths,
+            clock,
+            failures,
+            paths.ToolCache,
+            $"cache the latest version of {id}",
+            () => WriteCache(id, entry)
+        );
+
+    private void WriteCache(string id, ToolCacheEntry entry) =>
         JsonFile.Update<Dictionary<string, ToolCacheEntry>>(
             paths.ToolCache,
             deleteIfCorrupt: true,

@@ -118,6 +118,8 @@ public static class Commands
                 UpdateCheckResult result = await services.UpdateCheck.RunAsync(cancellationToken);
                 IReadOnlyList<string> keys = result.Keys;
 
+                PrintWriteFailures(result.WriteFailures);
+
                 if (quiet && !services.Settings.NotifyOnNewUpdates)
                 {
                     AnsiConsole.MarkupLineInterpolated(
@@ -241,10 +243,20 @@ public static class Commands
                     CultureInfo.InvariantCulture,
                     $"[grey]{check.Partition.Total} updatable of {check.All.Count} tracked by winget, {check.Tools.Count} tools[/]"
                 );
+                PrintWriteFailures(check.WriteFailures);
                 return 0;
             }
         );
         return command;
+    }
+
+    // The scan carried on past each of these, and diagnostics.log records them too.
+    private static void PrintWriteFailures(IReadOnlyList<StateWriteFailure> failures)
+    {
+        foreach (StateWriteFailure failure in failures)
+        {
+            AnsiConsole.MarkupLineInterpolated(CultureInfo.InvariantCulture, $"[yellow]![/] {failure.Summary}");
+        }
     }
 
     private static void Row(Table table, string section, UpdateCandidate candidate, string note) =>

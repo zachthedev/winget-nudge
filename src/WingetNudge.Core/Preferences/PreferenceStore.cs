@@ -74,8 +74,14 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
     /// Loads preferences, pruning failed entries past their expiry and writing the file back
     /// when anything was pruned.
     /// </summary>
+    /// <remarks>
+    /// The prune write is bookkeeping, so a failed one never fails the load. The snapshot leaves the
+    /// expired entries out either way, the file keeps them until a later write succeeds, and
+    /// <c>diagnostics.log</c> records the failure.
+    /// </remarks>
+    /// <param name="failures">Receives a failed prune write, for a caller that reports it.</param>
     /// <returns>The current preference snapshot.</returns>
-    public PreferenceSnapshot Load()
+    public PreferenceSnapshot Load(ICollection<StateWriteFailure>? failures = null)
     {
         Dictionary<string, PreferenceEntry> entries = ReadFile();
         DateTimeOffset cutoff = clock.GetUtcNow().AddDays(-ExpiryDays);
@@ -84,22 +90,32 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
             return new PreferenceSnapshot(entries);
         }
 
-        return new PreferenceSnapshot(
-            Update(current =>
-            {
-                int removed = 0;
-                foreach (string id in current.Keys.ToArray())
+        Dictionary<string, PreferenceEntry> pruned = entries
+            .Where(pair => !IsExpired(pair.Value, cutoff))
+            .ToDictionary(StringComparer.Ordinal);
+        DiagnosticsLog.Attempt(
+            paths,
+            clock,
+            failures ?? [],
+            paths.Preferences,
+            "drop expired failed entries",
+            () =>
+                pruned = Update(current =>
                 {
-                    if (IsExpired(current[id], cutoff))
+                    int removed = 0;
+                    foreach (string id in current.Keys.ToArray())
                     {
-                        current.Remove(id);
-                        removed++;
+                        if (IsExpired(current[id], cutoff))
+                        {
+                            current.Remove(id);
+                            removed++;
+                        }
                     }
-                }
 
-                return removed > 0;
-            })
+                    return removed > 0;
+                })
         );
+        return new PreferenceSnapshot(pruned);
     }
 
     /// <summary>Marks a package muted or failed.</summary>
@@ -131,7 +147,18 @@ public sealed class PreferenceStore(DataPaths paths, TimeProvider clock, int? ex
 
     /// <summary>Removes a package's entry so it is offered again.</summary>
     /// <param name="packageId">Winget package id.</param>
-    public void Clear(string packageId) => Update(current => current.Remove(packageId));
+    /// <param name="failures">
+    /// Receives a failed write, which <c>diagnostics.log</c> also records, or <c>null</c> to let it throw.
+    /// </param>
+    public void Clear(string packageId, ICollection<StateWriteFailure>? failures = null) =>
+        DiagnosticsLog.Attempt(
+            paths,
+            clock,
+            failures,
+            paths.Preferences,
+            $"clear the entry for {packageId}",
+            () => Update(current => current.Remove(packageId))
+        );
 
     private static bool IsExpired(PreferenceEntry entry, DateTimeOffset cutoff) =>
         entry.State == PreferenceState.Failed && entry.Since <= cutoff;

@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Time.Testing;
 using WingetNudge.Core.Packages;
 using WingetNudge.Core.Preferences;
+using WingetNudge.Core.Storage;
 using WingetNudge.Core.Tests.Support;
 using WingetNudge.Core.Tools;
 using WingetNudge.Core.Tracking;
@@ -167,6 +168,138 @@ public sealed class UpdateCheckTests : IDisposable
         result.Partition.Normal.Should().BeEmpty();
         result.Partition.Cooling.Should().ContainSingle().Which.Cooling.RemainingHours.Should().Be(21);
         result.Names.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenEveryBookkeepingWriteFails_CarriesOnAndReportsEach()
+    {
+        ToolRegistry registry = new(_data.Paths);
+        registry.Register("bun", ToolRegistryTests.Bun());
+        using HttpClient http = new FakeHttpHandler()
+            .Map("oven-sh/bun/releases/latest", """{ "tag_name": "bun-v1.4.2" }""")
+            .CreateClient();
+        ToolProber prober = new(registry, new FakeProcessRunner(), http, _clock);
+        UpdateCheck check = new(
+            new FakePackageSource([Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")]),
+            _preferences,
+            _tracker,
+            _releaseDates,
+            prober,
+            _clock
+        );
+        await check.RunAsync(CancellationToken.None);
+
+        // Each of the five writes now has work to do: an expired failure to prune, a stale skip to
+        // clear, a reconcile and a publish date to save, and a tool cache past its lifetime.
+        _preferences.Set("Old.App", PreferenceState.Failed, "boom");
+        _preferences.SkipVersion("Git.Git", "2.48.0");
+        _clock.Advance(TimeSpan.FromDays(8));
+        _releaseDates.Map("Git.Git", "2.48.1", new ResolvedDate(Now, PublishSource.WingetPkgs));
+        string[] refusing = [_data.Paths.Preferences, _data.Paths.VersionTracking, _data.Paths.ToolCache];
+        foreach (string file in refusing)
+        {
+            File.SetAttributes(file, FileAttributes.ReadOnly);
+        }
+
+        try
+        {
+            Func<Task<UpdateCheckResult>> run = () => check.RunAsync(CancellationToken.None);
+            UpdateCheckResult result = (
+                await run.Should().NotThrowAsync("a bookkeeping write never ends a check")
+            ).Subject;
+
+            result.Partition.Normal.Select(static candidate => candidate.Id).Should().Equal("Git.Git");
+            result
+                .WriteFailures.Select(static failure => $"{failure.File}: {failure.Action}")
+                .Should()
+                .Equal(
+                    "version-tracking.json: save the reconciled version tracking",
+                    "version-tracking.json: save the resolved publish dates",
+                    "preferences.json: drop expired failed entries",
+                    "preferences.json: clear the entry for Git.Git",
+                    "manual-registry-cache.json: cache the latest version of bun"
+                );
+            string log = File.ReadAllText(_data.Paths.DiagnosticsLog);
+            foreach (StateWriteFailure failure in result.WriteFailures)
+            {
+                log.Should().Contain(failure.Summary);
+            }
+        }
+        finally
+        {
+            foreach (string file in refusing)
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RunPackagesAsync_WhenTrackingNeverSaves_HoldsANewVersionInTheCooldown()
+    {
+        // A directory in the lock file's place refuses every tracking write, so the file never exists
+        // and every scan finds what a first run finds.
+        Directory.CreateDirectory(_data.Paths.VersionTracking + JsonFile.LockSuffix);
+        await Build(Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")).RunPackagesAsync(CancellationToken.None);
+        _clock.Advance(TimeSpan.FromHours(1));
+
+        PackageScan scan = await Build(Fixture.Updatable("Git.Git", "2.47.0", "2.49.0"))
+            .RunPackagesAsync(CancellationToken.None);
+
+        File.Exists(_data.Paths.VersionTracking).Should().BeFalse();
+        scan.WriteFailures.Select(static failure => failure.Action)
+            .Should()
+            .Contain("save the reconciled version tracking", "the scan reports the save it carried on without");
+        scan.Partition.Normal.Should().BeEmpty("a version first seen now is no older for a save that failed");
+        scan.Partition.Cooling.Should().ContainSingle().Which.Candidate.Package.AvailableVersion.Should().Be("2.49.0");
+    }
+
+    [Fact]
+    public async Task RunPackagesAsync_AfterTrackingIsLostAndItsSaveFails_SeedsNoFirstRun()
+    {
+        // A corrupt tracking file is deleted under its lock, and a save that then fails leaves no file.
+        // A directory in the tracking file's place stands in for both: no file to read, and a save that
+        // cannot land. The lock file the first scan created is what remains of the earlier runs.
+        await Build(Fixture.Updatable("Git.Git", "2.47.0", "2.48.1")).RunPackagesAsync(CancellationToken.None);
+        File.Delete(_data.Paths.VersionTracking);
+        Directory.CreateDirectory(_data.Paths.VersionTracking);
+        _clock.Advance(TimeSpan.FromHours(1));
+        PackageScan failed = await Build(Fixture.Updatable("Git.Git", "2.47.0", "2.49.0"))
+            .RunPackagesAsync(CancellationToken.None);
+        Directory.Delete(_data.Paths.VersionTracking);
+        _clock.Advance(TimeSpan.FromHours(1));
+
+        PackageScan scan = await Build(Fixture.Updatable("Git.Git", "2.47.0", "2.49.0"))
+            .RunPackagesAsync(CancellationToken.None);
+
+        failed.WriteFailures.Should().NotBeEmpty("the setup must make the save fail");
+        File.Exists(_data.Paths.VersionTracking).Should().BeTrue("the second save lands");
+        scan.Partition.Normal.Should().BeEmpty("a tracking file that went missing is not a fresh install");
+        scan.Partition.Cooling.Should().ContainSingle().Which.Candidate.Package.AvailableVersion.Should().Be("2.49.0");
+    }
+
+    [Fact]
+    public async Task RunPackagesAsync_WhenThePruneFails_AttemptsAndLogsItOnce()
+    {
+        _preferences.Set("Old.App", PreferenceState.Failed, "boom");
+        _clock.Advance(TimeSpan.FromDays(8));
+        File.SetAttributes(_data.Paths.Preferences, FileAttributes.ReadOnly);
+
+        try
+        {
+            PackageScan scan = await Build(Fixture.Updatable("Git.Git", "2.47.0", "2.48.1"))
+                .RunPackagesAsync(CancellationToken.None);
+
+            scan.WriteFailures.Should().ContainSingle().Which.Action.Should().Be("drop expired failed entries");
+            File.ReadAllLines(_data.Paths.DiagnosticsLog)
+                .Where(static line => line.Contains("drop expired failed entries", StringComparison.Ordinal))
+                .Should()
+                .ContainSingle("one scan loads preferences, and so attempts the prune, once");
+        }
+        finally
+        {
+            File.SetAttributes(_data.Paths.Preferences, FileAttributes.Normal);
+        }
     }
 
     private static PreferenceSnapshot Snapshot(params (string Id, PreferenceEntry Entry)[] entries) =>

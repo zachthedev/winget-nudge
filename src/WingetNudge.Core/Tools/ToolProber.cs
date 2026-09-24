@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using WingetNudge.Core.Storage;
 
 namespace WingetNudge.Core.Tools;
 
@@ -59,10 +60,20 @@ public sealed class ToolProber(
     /// <param name="force">Bypass the cache and refetch.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The version, or <c>null</c> on any failure.</returns>
-    public async Task<string?> GetLatestAsync(
+    public Task<string?> GetLatestAsync(
         string id,
         ToolDefinition tool,
         bool force,
+        CancellationToken cancellationToken
+    ) => GetLatestAsync(id, tool, force, [], cancellationToken);
+
+    // The cache only saves a request, so a failed cache write never fails the lookup. It joins the
+    // failures and diagnostics.log instead.
+    private async Task<string?> GetLatestAsync(
+        string id,
+        ToolDefinition tool,
+        bool force,
+        ICollection<StateWriteFailure> failures,
         CancellationToken cancellationToken
     )
     {
@@ -124,21 +135,32 @@ public sealed class ToolProber(
             return null;
         }
 
-        registry.SaveCache(id, new ToolCacheEntry(latest, now));
+        registry.SaveCache(id, new ToolCacheEntry(latest, now), clock, failures);
         return latest;
     }
 
     /// <summary>Probes every registered tool, sorted by id.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>One status per tool. A failing probe yields a null version, never an exception.</returns>
-    public async Task<IReadOnlyList<ToolStatus>> GetStatusesAsync(CancellationToken cancellationToken)
+    public Task<IReadOnlyList<ToolStatus>> GetStatusesAsync(CancellationToken cancellationToken) =>
+        GetStatusesAsync([], cancellationToken);
+
+    /// <summary>Probes every registered tool, sorted by id.</summary>
+    /// <param name="failures">Receives each cache write that failed, which <c>diagnostics.log</c> also records.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One status per tool. A failing probe yields a null version, never an exception.</returns>
+    public async Task<IReadOnlyList<ToolStatus>> GetStatusesAsync(
+        ICollection<StateWriteFailure> failures,
+        CancellationToken cancellationToken
+    )
     {
         Dictionary<string, ToolDefinition> tools = registry.Load();
         List<ToolStatus> statuses = [];
         foreach ((string id, ToolDefinition tool) in tools.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
         {
             string? current = await GetCurrentAsync(tool, cancellationToken).ConfigureAwait(false);
-            string? latest = await GetLatestAsync(id, tool, force: false, cancellationToken).ConfigureAwait(false);
+            string? latest = await GetLatestAsync(id, tool, force: false, failures, cancellationToken)
+                .ConfigureAwait(false);
             statuses.Add(new ToolStatus(id, tool, current, latest));
         }
 

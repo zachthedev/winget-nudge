@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using WingetNudge.Core.Packages;
+using WingetNudge.Core.Storage;
 using WingetNudge.Core.Tools;
 using WingetNudge.Core.Tracking;
 using WingetNudge.Services;
@@ -82,8 +83,9 @@ public sealed partial class PickerWindow : Window
         UpdateCheck check = AppServices.Current.UpdateCheck;
 
         // Tool probes share nothing with the winget query, so they run alongside it and land
-        // in their own section whenever they are ready.
-        Task<IReadOnlyList<ToolStatus>> tools = Task.Run(() => check.RunToolsAsync(token), token);
+        // in their own section whenever they are ready. Only the probes write to this list.
+        List<StateWriteFailure> toolFailures = [];
+        Task<IReadOnlyList<ToolStatus>> tools = Task.Run(() => check.RunToolsAsync(toolFailures, token), token);
         Task<PackageScan> packages = Task.Run(() => check.RunPackagesAsync(token), token);
 
         PackageScan scan;
@@ -110,6 +112,7 @@ public sealed partial class PickerWindow : Window
         _tools = [];
         Render(scan.Partition);
         await FillToolsAsync(tools, token);
+        ShowWriteFailures([.. scan.WriteFailures, .. toolFailures]);
         await FillChangelogsAsync(scan.Partition, token);
     }
 
@@ -870,6 +873,25 @@ public sealed partial class PickerWindow : Window
     {
         MessageBar.Severity = InfoBarSeverity.Error;
         MessageBar.Message = message;
+        MessageBar.IsOpen = true;
+    }
+
+    /// <summary>
+    /// Names the bookkeeping writes the scan carried on past. An error already on the bar stays,
+    /// since it matters more.
+    /// </summary>
+    private void ShowWriteFailures(IReadOnlyList<StateWriteFailure> failures)
+    {
+        if (failures.Count == 0 || MessageBar is { IsOpen: true, Severity: InfoBarSeverity.Error })
+        {
+            return;
+        }
+
+        MessageBar.Severity = InfoBarSeverity.Warning;
+        MessageBar.Message =
+            "Part of the app's state was not saved, so something here may show again next time. "
+            + $"diagnostics.log in the data folder keeps the details.{Environment.NewLine}"
+            + string.Join(Environment.NewLine, failures.Select(static failure => failure.Summary));
         MessageBar.IsOpen = true;
     }
 }

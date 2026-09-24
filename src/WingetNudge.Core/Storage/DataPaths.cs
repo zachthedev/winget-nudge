@@ -38,6 +38,9 @@ public sealed record DataPaths(string Directory)
     /// <summary>What the last notification announced, so a quiet check repeats nothing.</summary>
     public string NotificationState => Path.Combine(Directory, "notification-state.json");
 
+    /// <summary>One line per state write that failed while the app carried on without it.</summary>
+    public string DiagnosticsLog => Path.Combine(Directory, "diagnostics.log");
+
     /// <summary>
     /// File one run holds an exclusive handle on, so a second process of the same kind stands
     /// down. It stays empty; the handle is the lock.

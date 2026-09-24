@@ -68,28 +68,71 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
     /// Entries matching neither a package's installed version nor its available upgrade are
     /// dropped. New pairs are added: installed versions are seeded one hour past the cooldown
     /// threshold, since the user already has them on disk; newly observed upgrade versions get
-    /// the current time. On a true first run every entry is seeded.
+    /// the current time. On a true first run every entry is seeded, when the reconcile saves.
     /// </remarks>
     /// <param name="packages">The unfiltered inventory so installed versions are recorded too.</param>
+    /// <param name="failures">
+    /// Receives a failed save, which <c>diagnostics.log</c> also records, or <c>null</c> to let it throw.
+    /// A failed save still returns the reconciled data, with no first-run seeding.
+    /// </param>
     /// <returns>The reconciled tracking data.</returns>
-    public Dictionary<string, Dictionary<string, VersionObservation>> Reconcile(IReadOnlyList<PackageInfo> packages)
+    public Dictionary<string, Dictionary<string, VersionObservation>> Reconcile(
+        IReadOnlyList<PackageInfo> packages,
+        ICollection<StateWriteFailure>? failures = null
+    )
     {
         int cooldownHours = Settings.Load(paths).CooldownHours;
         DateTimeOffset now = clock.GetUtcNow();
+        Dictionary<string, Dictionary<string, VersionObservation>>? saved = null;
+
+        // A lock file proves an earlier run: every reconcile that took the lock created it, and nothing
+        // deletes it. A tracking file can vanish without a trace, when a corrupt one is deleted and its
+        // replacement fails to save. A directory in the lock file's place proves nothing, since no
+        // reconcile can take the lock through it.
+        bool ranBefore = File.Exists(paths.VersionTracking + JsonFile.LockSuffix);
 
         // The tracking file carries a legacy shape that JsonFile.Read cannot parse, so the reconcile
         // takes the file's write lock directly and reads it afresh inside.
-        return JsonFile.Locked(paths.VersionTracking, () => ReconcileLocked(packages, cooldownHours, now));
+        DiagnosticsLog.Attempt(
+            paths,
+            clock,
+            failures,
+            paths.VersionTracking,
+            "save the reconciled version tracking",
+            () =>
+                saved = JsonFile.Locked(
+                    paths.VersionTracking,
+                    () =>
+                    {
+                        Dictionary<string, Dictionary<string, VersionObservation>> tracking = Reconciled(
+                            packages,
+                            cooldownHours,
+                            now,
+                            holdsLock: true,
+                            mayBeFirstRun: !ranBefore
+                        );
+                        Save(tracking);
+                        return tracking;
+                    }
+                )
+        );
+        return saved ?? Reconciled(packages, cooldownHours, now, holdsLock: false, mayBeFirstRun: false);
     }
 
-    private Dictionary<string, Dictionary<string, VersionObservation>> ReconcileLocked(
+    // Only a reconcile under the write lock, with no trace of an earlier run, seeds a first run, and
+    // only it saves what it seeded. A tracking file that never saves would read as a first run on every
+    // scan, and seed each newly offered version past the cooldown. Otherwise a version not on disk gets
+    // the current time, so every doubt holds a version back rather than letting it through.
+    private Dictionary<string, Dictionary<string, VersionObservation>> Reconciled(
         IReadOnlyList<PackageInfo> packages,
         int cooldownHours,
-        DateTimeOffset now
+        DateTimeOffset now,
+        bool holdsLock,
+        bool mayBeFirstRun
     )
     {
-        bool firstRun = !File.Exists(paths.VersionTracking);
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load(holdsLock: true);
+        bool firstRun = mayBeFirstRun && !File.Exists(paths.VersionTracking);
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load(holdsLock);
         DateTimeOffset seed = now.AddHours(-(cooldownHours + 1));
 
         // ///// Current snapshot: id -> version -> installed? /////
@@ -158,7 +201,6 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
             }
         }
 
-        Save(tracking);
         return tracking;
     }
 
@@ -170,13 +212,36 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
     /// <param name="resolver">Publish date lookup.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The updated tracking data.</returns>
-    public async Task<Dictionary<string, Dictionary<string, VersionObservation>>> ResolvePublishDatesAsync(
+    public Task<Dictionary<string, Dictionary<string, VersionObservation>>> ResolvePublishDatesAsync(
         IReadOnlyList<PackageInfo> packages,
         IReleaseDateResolver resolver,
         CancellationToken cancellationToken
+    ) => ResolvePublishDatesAsync(packages, resolver, Load(), null, cancellationToken);
+
+    /// <summary>
+    /// Fills in publish dates on tracking data a caller already holds, and saves them to a fresh
+    /// read of the file.
+    /// </summary>
+    /// <remarks>
+    /// The caller's copy is what it partitions on, so it gets the dates whether or not the save
+    /// lands. A scan whose own reconcile failed to save still gates on the versions it just saw.
+    /// </remarks>
+    /// <param name="packages">Packages with an available upgrade.</param>
+    /// <param name="resolver">Publish date lookup.</param>
+    /// <param name="tracking">The caller's tracking data, which receives the dates.</param>
+    /// <param name="failures">
+    /// Receives a failed save, which <c>diagnostics.log</c> also records, or <c>null</c> to let it throw.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The caller's tracking data with the dates filled in.</returns>
+    internal async Task<Dictionary<string, Dictionary<string, VersionObservation>>> ResolvePublishDatesAsync(
+        IReadOnlyList<PackageInfo> packages,
+        IReleaseDateResolver resolver,
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking,
+        ICollection<StateWriteFailure>? failures,
+        CancellationToken cancellationToken
     )
     {
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load();
         List<(string Id, string Version, ResolvedDate Resolved)> dates = [];
 
         foreach (PackageInfo package in packages)
@@ -205,16 +270,39 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
             return tracking;
         }
 
+        ApplyDates(tracking, dates);
+
         // The lookups take seconds, and no lock waits across them, so the dates land on a fresh read
         // rather than on the copy loaded before the first lookup.
-        return JsonFile.Locked(paths.VersionTracking, () => ApplyDates(dates));
+        DiagnosticsLog.Attempt(
+            paths,
+            clock,
+            failures,
+            paths.VersionTracking,
+            "save the resolved publish dates",
+            () =>
+                JsonFile.Locked(
+                    paths.VersionTracking,
+                    () =>
+                    {
+                        Dictionary<string, Dictionary<string, VersionObservation>> fresh = Load(holdsLock: true);
+                        if (ApplyDates(fresh, dates))
+                        {
+                            Save(fresh);
+                        }
+
+                        return fresh;
+                    }
+                )
+        );
+        return tracking;
     }
 
-    private Dictionary<string, Dictionary<string, VersionObservation>> ApplyDates(
+    private static bool ApplyDates(
+        Dictionary<string, Dictionary<string, VersionObservation>> tracking,
         List<(string Id, string Version, ResolvedDate Resolved)> dates
     )
     {
-        Dictionary<string, Dictionary<string, VersionObservation>> tracking = Load(holdsLock: true);
         bool changed = false;
         foreach ((string id, string version, ResolvedDate resolved) in dates)
         {
@@ -229,12 +317,7 @@ public sealed class VersionTracker(DataPaths paths, TimeProvider clock)
             }
         }
 
-        if (changed)
-        {
-            Save(tracking);
-        }
-
-        return tracking;
+        return changed;
     }
 
     /// <summary>
