@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using AwesomeAssertions;
 using Microsoft.Extensions.Time.Testing;
 using WingetNudge.Core.Packages;
@@ -193,6 +194,28 @@ public sealed class SettingsTests : IDisposable
             .GetFiles(Path.GetDirectoryName(_data.Paths.Settings) ?? "", "settings.json*.corrupt")
             .Should()
             .ContainSingle("user choices are worth repairing by hand");
+    }
+
+    [Theory]
+    [InlineData("utf-16")]
+    [InlineData("utf-8")]
+    public void Load_OfAFileWithItsByteOrderMark_ReadsItAndKeepsIt(string encodingName)
+    {
+        // The first run copies the PowerShell version's files over. Windows PowerShell's Out-File writes UTF-16
+        // with a byte order mark, and its Set-Content -Encoding UTF8 writes UTF-8 with one.
+        Encoding encoding = Encoding.GetEncoding(encodingName);
+        Directory.CreateDirectory(_data.Paths.Directory);
+        File.WriteAllText(_data.Paths.Settings, """{ "cooldownHours": 30 }""", encoding);
+        byte[] mark = encoding.GetPreamble();
+        mark.Should().NotBeEmpty("the case is about a file that carries its byte order mark");
+        File.ReadAllBytes(_data.Paths.Settings).Should().StartWith(mark, "the write puts the mark first");
+
+        Settings.Load(_data.Paths).CooldownHours.Should().Be(30, "a byte order mark names the file's encoding");
+        File.Exists(_data.Paths.Settings).Should().BeTrue("a file that reads stays where it is");
+        Directory
+            .GetFiles(_data.Paths.Directory, "settings.json.*.corrupt")
+            .Should()
+            .BeEmpty("a file that reads is never set aside");
     }
 
     [Fact]

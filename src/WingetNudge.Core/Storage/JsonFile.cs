@@ -81,8 +81,7 @@ public static class JsonFile
 
         try
         {
-            using FileStream stream = OpenRead(path, holdsLock);
-            return JsonSerializer.Deserialize<T>(stream, Options);
+            return JsonSerializer.Deserialize<T>(ReadText(path, holdsLock), Options);
         }
         catch (FileNotFoundException)
         {
@@ -112,18 +111,29 @@ public static class JsonFile
     }
 
     /// <summary>
-    /// Opens a state file for reading, retrying while another handle refuses the open: for 0.62 to 0.65 s,
-    /// or for about 0.17 s under the file's write lock. Every read of a JSON state file opens it here.
+    /// Reads a state file's text, decoding by any byte order mark and as UTF-8 without one. Every read of
+    /// a JSON state file decodes here, so a file written as UTF-16 or UTF-32 parses as well as UTF-8 does.
     /// </summary>
-    /// <param name="path">File to open.</param>
+    /// <param name="path">File to read.</param>
     /// <param name="holdsLock">Whether the caller holds the file's write lock.</param>
-    /// <returns>The open file, positioned at its start.</returns>
+    /// <returns>The file's whole text.</returns>
     /// <exception cref="FileNotFoundException">The file is missing.</exception>
-    /// <exception cref="IOException">Another handle still refuses the open once the retries run out.</exception>
+    /// <exception cref="IOException">
+    /// Another handle still refuses the open once the retries run out, or the file could not be read.
+    /// </exception>
     /// <exception cref="UnauthorizedAccessException">
     /// A directory stands at the path, or the file system still denies the read once the retries run out.
     /// </exception>
-    internal static FileStream OpenRead(string path, bool holdsLock) =>
+    internal static string ReadText(string path, bool holdsLock)
+    {
+        using FileStream stream = OpenRead(path, holdsLock);
+        using StreamReader reader = new(stream);
+        return reader.ReadToEnd();
+    }
+
+    // Opens a state file for reading, retrying while another handle refuses the open: for 0.62 to 0.65 s,
+    // or for about 0.17 s under the file's write lock.
+    private static FileStream OpenRead(string path, bool holdsLock) =>
         // A rename holds the file it moves with delete access until it finishes, and a read that does not
         // share delete is refused for that long. Another program that shares nothing gets the wait a
         // writer gives it, or a shorter one under the lock.
