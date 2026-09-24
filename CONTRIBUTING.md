@@ -62,7 +62,9 @@ each workflow file to actionlint, and zizmor logs each file it completes and fai
 none. The `tests` row reads the test run summary and fails unless the total is above zero, every
 test succeeded and none was skipped, or when it cannot read the summary: a filter the test
 application reads reports each test it leaves out as skipped, and `dotnet test` still exits 0. It
-sets `DOTNET_CLI_UI_LANGUAGE=en`, since `dotnet test` localizes the summary's labels. The
+sets `DOTNET_CLI_UI_LANGUAGE=en`, since `dotnet test` localizes the summary's labels, and passes
+`--no-ansi`. Every row that reads a tool's output runs the tool with `NO_COLOR=1` and strips escape
+sequences before it reads, since `dotnet test` colors its summary on GitHub's runner. The
 `format`, `toml` and `workflows` rows take their lists from one walk of the tree. It skips `.git`
 at any depth, `node_modules`, `.claude/worktrees` and `.vs` at the root, and the `bin` and `obj`
 beside a project file, where the SDK writes, so no row names a file under one of those. It enters a

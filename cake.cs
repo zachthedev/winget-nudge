@@ -173,11 +173,12 @@ Task("format")
                     Arguments = arguments,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
+                    EnvironmentVariables = Uncolored(),
                 },
                 out IEnumerable<string> output,
                 out IEnumerable<string> errors
             );
-            string[] logged = [.. output.Concat(errors)];
+            string[] logged = [.. output.Concat(errors).Select(Plain)];
             foreach (string line in logged)
             {
                 Information("{0}", line);
@@ -237,6 +238,7 @@ Task("prettier")
                 Arguments = $"{options} --debug-check .",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                EnvironmentVariables = Uncolored(),
             },
             out IEnumerable<string> listed,
             out IEnumerable<string> errors
@@ -251,7 +253,7 @@ Task("prettier")
             throw new CakeException($"prettier --debug-check exited {exit} listing the files the row checks.");
         }
 
-        RequireChecked("prettier", [.. listed.Select(line => line.Trim()).Where(line => line.Length > 0)]);
+        RequireChecked("prettier", [.. listed.Select(line => Plain(line).Trim()).Where(line => line.Length > 0)]);
         Command(
             ["bunx", "bunx.exe"],
             $"{options} --check .",
@@ -300,12 +302,12 @@ Task("toml")
                 Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal) { ["RUST_LOG"] = "info" },
+                EnvironmentVariables = Uncolored(("RUST_LOG", "info")),
             },
             out IEnumerable<string> output,
             out IEnumerable<string> errors
         );
-        string[] logged = [.. errors.Concat(output)];
+        string[] logged = [.. errors.Concat(output).Select(Plain)];
         foreach (string line in logged)
         {
             Information("{0}", line);
@@ -377,6 +379,7 @@ Task("build")
 // still exits 0, so the row reads the test run summary and fails unless every test ran and
 // succeeded. A summary it cannot read fails the row too, whatever the exit code says. dotnet test
 // localizes the summary's labels, so the row sets DOTNET_CLI_UI_LANGUAGE=en over the shell's value.
+// It colors them on GitHub's runner, so the row passes --no-ansi and reads each line through Plain.
 Task("tests")
     .Description(
         "The Core suite, and the versions docs/install.md restates from Directory.Packages.props, every test run and succeeded"
@@ -394,10 +397,8 @@ Task("tests")
                 Configuration = "Release",
                 NoBuild = true,
                 MSBuildSettings = RootNamed(noAutoResponse: false),
-                EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["DOTNET_CLI_UI_LANGUAGE"] = "en",
-                },
+                EnvironmentVariables = Uncolored(("DOTNET_CLI_UI_LANGUAGE", "en")),
+                ArgumentCustomization = arguments => arguments.Append("--no-ansi"),
                 SetupProcessSettings = process =>
                 {
                     process.RedirectStandardOutput = true;
@@ -405,7 +406,7 @@ Task("tests")
                 },
                 PostAction = process =>
                 {
-                    said.AddRange(process.GetStandardOutput().Concat(process.GetStandardError()));
+                    said.AddRange(process.GetStandardOutput().Concat(process.GetStandardError()).Select(Plain));
                     foreach (string line in said)
                     {
                         Information("{0}", line);
@@ -1328,6 +1329,10 @@ int RunMise(FilePath mise, string[] arguments, List<string>? output = null)
     start.Environment["MISE_ENV"] = "";
     start.Environment["MISE_AUTO_ENV"] = "false";
     start.Environment["MISE_TRUSTED_CONFIG_PATHS"] = root;
+    foreach ((string name, string value) in Uncolored())
+    {
+        start.Environment[name] = value;
+    }
 
     using System.Diagnostics.Process process =
         System.Diagnostics.Process.Start(start)
@@ -1336,7 +1341,7 @@ int RunMise(FilePath mise, string[] arguments, List<string>? output = null)
     {
         while (process.StandardOutput.ReadLine() is string line)
         {
-            output.Add(line);
+            output.Add(Plain(line));
         }
     }
 
@@ -1611,10 +1616,15 @@ void RequireNoRefusedTrackedPaths()
             start.Environment.Remove(name);
         }
 
+        foreach ((string name, string value) in Uncolored())
+        {
+            start.Environment[name] = value;
+        }
+
         using System.Diagnostics.Process process =
             System.Diagnostics.Process.Start(start)
             ?? throw new CakeException($"git did not start from {Quoted(git.FullPath)}.");
-        string output = process.StandardOutput.ReadToEnd();
+        string output = Plain(process.StandardOutput.ReadToEnd());
         process.WaitForExit();
         return (process.ExitCode, output);
     }
@@ -2221,6 +2231,31 @@ static string Quoted(string value) =>
     )
     + (value.Length > 200 ? "\"..." : "\"");
 
+// A line of a child process's output with its CSI and OSC escape sequences removed, as every parse
+// here reads one. A tool colors its output where it judges the reader able to show color, and
+// dotnet test does on GitHub's runner with its output redirected, so a label there reads
+// "ESC[32mTest run summary:". Uncolored asks each such child for no color, and this holds for a
+// tool that ignores the request.
+static string Plain(string line) =>
+    System.Text.RegularExpressions.Regex.Replace(
+        line,
+        @"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)",
+        ""
+    );
+
+// The environment of every child process whose output the gate parses: NO_COLOR=1, which asks a tool
+// for no escape sequences, and any variable given.
+static Dictionary<string, string> Uncolored(params (string Name, string Value)[] more)
+{
+    Dictionary<string, string> environment = new(StringComparer.Ordinal) { ["NO_COLOR"] = "1" };
+    foreach ((string name, string value) in more)
+    {
+        environment[name] = value;
+    }
+
+    return environment;
+}
+
 // What mise.lock has to say about one pinned tool before anything installs from it. Every branch
 // here reads the two data files alone, so a bump that left the lockfile behind is reported by
 // name on a machine with no mise at all.
@@ -2456,10 +2491,11 @@ string? GitHubToken(out string why)
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             Silent = true,
+            EnvironmentVariables = Uncolored(),
         },
         out IEnumerable<string> printed
     );
-    string token = string.Join("", printed).Trim();
+    string token = string.Join("", printed.Select(Plain)).Trim();
     if (exit != 0 || token.Length == 0)
     {
         why = $"gh auth token exited {exit} without a token";
@@ -2488,6 +2524,7 @@ void RequireInheritCallees(FilePath zizmor, string[] workflows)
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             Silent = true,
+            EnvironmentVariables = Uncolored(),
         },
         out IEnumerable<string> output,
         out IEnumerable<string> errors
@@ -2502,7 +2539,7 @@ void RequireInheritCallees(FilePath zizmor, string[] workflows)
     List<string> callees = [];
     try
     {
-        using JsonDocument document = JsonDocument.Parse(string.Join("\n", output));
+        using JsonDocument document = JsonDocument.Parse(string.Join("\n", output.Select(Plain)));
         foreach (JsonElement finding in document.RootElement.EnumerateArray())
         {
             if (finding.GetProperty("ident").GetString() != "secrets-inherit")
@@ -2601,15 +2638,12 @@ string ProvenAnalyzers(FilePath actionlint, FilePath shellcheck)
                     Arguments = $"{analyzers} \"{canary.FullPath}\"",
                     RedirectStandardOutput = true,
                     Silent = true,
-                    EnvironmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
-                    {
-                        [shellCheckOptions] = "",
-                    },
+                    EnvironmentVariables = Uncolored((shellCheckOptions, "")),
                 },
                 out IEnumerable<string> reported
             );
 
-            string said = string.Join('\n', reported).Trim();
+            string said = string.Join('\n', reported.Select(Plain)).Trim();
             if (!said.Contains(expected, StringComparison.Ordinal))
             {
                 throw new CakeException(
