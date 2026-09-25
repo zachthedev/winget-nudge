@@ -1651,11 +1651,15 @@ void RequireNoConfigElsewhere(IReadOnlyCollection<string> tree)
 // each tool's own search list at the version the gate pins: MSBuild's Directory files, response
 // file, project .user files and obj imports, NuGet's config, the analyzers' .editorconfig and
 // .globalconfig, Bun's tsconfig.json and jsconfig.json, Cake's cake.config, commitlint 21.2.2 over
-// cosmiconfig 9.0.2, lefthook 2.1.14, actionlint 1.7.12's .github/actionlint.yaml, and the test
-// platform's testconfig.json and xUnit's xunit.runner.json. A name is refused at every depth the
-// tool, or an editor running it, searches. package.yaml is refused whole, since the gate does not
-// read its keys. In obj, MSBuild imports <project file>.*.props and .targets by wildcard, and NuGet
-// writes the nuget.g pair there on every restore, so that pair alone passes.
+// cosmiconfig 9.0.2, lefthook 2.1.14, actionlint 1.7.12's .github/actionlint.yaml, the test
+// platform's testconfig.json and xUnit's xunit.runner.json, and Renovate's config names at the root.
+// A name is refused at every depth the tool, or an editor running it, searches. package.yaml is
+// refused whole, since the gate does not read its keys. In obj, MSBuild imports
+// <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on every
+// restore, so that pair alone passes. Renovate takes the first config it finds: a root
+// renovate.json, .jsonc or .json5 comes ahead of .github/renovate.json, and .renovaterc or
+// .renovaterc.json, .jsonc or .json5 after it. Each would stand in for the one Renovate config the
+// gate reads.
 static string? SearchedConfig(string relative)
 {
     string[] commitlintFiles =
@@ -1717,6 +1721,16 @@ static string? SearchedConfig(string relative)
         _ when name is "tsconfig.json" or "jsconfig.json" =>
             "Bun reads its paths and jsx settings for the modules prettier and commitlint load",
         _ when atRoot && name == "cake.config" => "Cake reads its settings before any task runs",
+        _ when atRoot
+                && name
+                    is "renovate.json"
+                        or "renovate.jsonc"
+                        or "renovate.json5"
+                        or ".renovaterc"
+                        or ".renovaterc.json"
+                        or ".renovaterc.jsonc"
+                        or ".renovaterc.json5" =>
+            "Renovate reads it as its config in place of .github/renovate.json, the one Renovate config the gate reads, when it comes first in Renovate's search or that file is gone",
         _ when atRoot && commitlintFiles.Contains(name) && relative != "commitlint.config.js" =>
             "commitlint reads it as config when run without --config, as the shared commits job runs it",
         _ when atRoot && (lefthookFiles.Contains(name) || name.StartsWith(".lefthook.", StringComparison.Ordinal)) =>

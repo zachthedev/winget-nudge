@@ -576,7 +576,11 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   depth, which cosmiconfig reads; `lefthook.yaml`, `.json`, `.jsonc` and `.toml`, and any
   `.lefthook.*`, at the root; and a root `cake.config`, which Cake reads before any task runs. It
   refuses a `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules
-  prettier and commitlint load, and the repository has no TypeScript.
+  prettier and commitlint load, and the repository has no TypeScript. It refuses a root
+  `renovate.json`, `.jsonc` or `.json5`, and a root `.renovaterc`, `.renovaterc.json`, `.jsonc` or
+  `.json5`: Renovate takes the first config it finds, reads the first three ahead of
+  `.github/renovate.json` and the rest when that file is gone, and `.github/renovate.json` is the
+  one Renovate config here.
 - A `package.json` with a top-level `commitlint`, `cosmiconfig` or `patchedDependencies` key is
   refused. `bun install` applies a root `patchedDependencies` entry to the package it names, under
   a frozen lockfile too and with no `bun.lock` change, so a patch would change what prettier or
