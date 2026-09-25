@@ -8,25 +8,26 @@ namespace WingetNudge.Core.Storage;
 /// <summary>Reads and writes the app's JSON state files with one shared serializer configuration.</summary>
 public static class JsonFile
 {
-    // A holder keeps a write lock for one read, change and write: a few milliseconds, or 1.4 to 1.7 s
-    // measured when another program holds up the read, the set-aside and the replace in turn. Two seconds
-    // leaves a waiter about a third of a second to spare in that worst case.
+    // A holder keeps a write lock for one read, change and write: a few milliseconds, or, when another program
+    // holds up the read, the set-aside and the replace in turn, the locked read's 150 ms of waits and the writers'
+    // 511 ms twice. Two seconds is longer than those waits added up, even with each rounded up to the next timer
+    // tick.
     private static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromSeconds(2);
 
     // A thread holds at most one write lock, so no two updates can wait on each other.
     [ThreadStatic]
     private static bool _holdsWriteLock;
 
-    // Waits between attempts at a plain read's open, a replace or a set-aside: 511 ms in all, and 0.62 to
-    // 0.65 s measured once each sleep rounds up to the ~15 ms timer tick. A replace fails with access denied
+    // Waits between attempts at a plain read's open, a replace or a set-aside: 511 ms in all, and more once each
+    // sleep rounds up to the next timer tick, 15.625 ms by default on Windows. A replace fails with access denied
     // while any other handle is open on the target, whatever its share mode. It fails with a sharing
     // violation while a handle without delete sharing is open on the temporary. An open fails with a sharing
     // violation while another program holds the file without sharing it. A real-time scanner holds a freshly
     // written file open for a few milliseconds.
     private static readonly int[] HeldBackoffMilliseconds = [1, 2, 4, 8, 16, 32, 64, 128, 256];
 
-    // Waits between attempts at a read's open under the write lock: 150 ms in all, and about 0.17 s
-    // measured. The save that read belongs to may still wait out a holder at its set-aside and at its replace,
+    // Waits between attempts at a read's open under the write lock: 150 ms in all, plus the same rounding.
+    // The save that read belongs to may still wait out a holder at its set-aside and at its replace,
     // and a second save waits on the lock through all three, so this read gives up sooner than a plain one.
     private static readonly int[] LockedReadBackoffMilliseconds = [50, 100];
 
@@ -72,7 +73,7 @@ public static class JsonFile
     /// </remarks>
     /// <returns>The parsed value, or <c>null</c> when the file is missing or corrupt.</returns>
     /// <exception cref="IOException">
-    /// Another handle refused the open for the whole wait of 0.62 to 0.65 s, or the file could not be read.
+    /// Another handle refused the open through the whole of the writers' wait, or the file could not be read.
     /// </exception>
     /// <exception cref="UnauthorizedAccessException">
     /// The file system still denies the read once that wait runs out, or a directory took the file's place
@@ -141,8 +142,8 @@ public static class JsonFile
         return reader.ReadToEnd();
     }
 
-    // Opens a state file for reading, retrying while another handle refuses the open: for 0.62 to 0.65 s,
-    // or for about 0.17 s under the file's write lock.
+    // Opens a state file for reading, retrying while another handle refuses the open, on the writers' table,
+    // or on the short one under the file's write lock.
     private static FileStream OpenRead(string path, bool holdsLock) =>
         // A rename holds the file it moves with delete access until it finishes, and a read that does not
         // share delete is refused for that long. Another program that shares nothing gets the wait a
@@ -182,9 +183,9 @@ public static class JsonFile
     /// <summary>
     /// Serializes a value to a file, creating the parent directory when missing. The content
     /// goes to a temporary file first and replaces the target in one move, so a reader never
-    /// sees a half-written file. A move that another handle refuses is retried for about 0.6 s, except
-    /// over a read-only target or a directory, which fail at once. A failed write leaves the target's
-    /// previous content in place.
+    /// sees a half-written file. A move that another handle refuses is retried through the writers' 511 ms of
+    /// waits, except over a read-only target or a directory, which fail at once. A failed write leaves the
+    /// target's previous content in place.
     /// </summary>
     /// <remarks>
     /// Every caller holds the file's write lock, as <see cref="Update"/> does, so a reader's set-aside
@@ -352,8 +353,9 @@ public static class JsonFile
                 );
             }
 
-            // Sleep(1) waits one timer tick, about 15 ms. A fixed short wait gives every waiter the same
-            // chance at a lock that another process takes and drops in quick succession.
+            // Sleep(1) waits one timer tick, 15.625 ms by default, since Windows ticks its clock 64 times a second.
+            // A fixed short wait gives every waiter the same chance at a lock that another process takes and drops
+            // in quick succession.
             Thread.Sleep(1);
         }
     }
