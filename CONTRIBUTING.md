@@ -28,6 +28,10 @@ winget install --id jdx.mise --exact
 The app needs the Windows App Runtime at run time.
 [docs/install.md](docs/install.md#requirements) names the version and where it comes from.
 
+The tests need Developer Mode, which lets a process create a symbolic link without elevation.
+Several tests create one to prove the app refuses to follow it. Turn it on under **For developers**
+in Settings, which `Start-Process ms-settings:developers` opens.
+
 ### First run
 
 ```powershell
