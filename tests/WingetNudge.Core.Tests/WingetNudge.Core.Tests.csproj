@@ -4,6 +4,8 @@
         <IsPackable>false</IsPackable>
         <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
         <RootNamespace>WingetNudge.Core.Tests</RootNamespace>
+        <!-- LibraryImport generates unsafe marshaling code, and Support/Junction.cs declares its calls with it. -->
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="xunit.v3" />

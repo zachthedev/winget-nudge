@@ -779,6 +779,36 @@ public sealed class RunLockTests : IDisposable
         Directory.EnumerateFileSystemEntries(elsewhere).Should().BeEmpty("nothing is written through the link");
     }
 
+    [Fact]
+    public void Acquire_ThroughAJunction_RefusesItAsAReparsePoint()
+    {
+        string file = _data.Paths.RunLockFile(RunLock.Upgrade);
+        string elsewhere = Path.Combine(_data.Root, "elsewhere");
+        Directory.CreateDirectory(elsewhere);
+        Junction.Create(_data.Paths.Directory, elsewhere);
+
+        try
+        {
+            RunLock
+                .Acquire(_data.Paths, RunLock.Upgrade)
+                .Should()
+                .BeOfType<RunLockAttempt.Unavailable>(
+                    "any user process can plant a junction, with no privilege, where the elevated process writes"
+                )
+                .Which.Reason.Should()
+                .Contain(file, "the caller shows the reason to someone who has to fix it")
+                .And.Contain(SafePath.ReparsePointCause, "a junction is refused as the link it is");
+        }
+        finally
+        {
+            // The data directory is deleted after the case, and a recursive delete fails on a junction without
+            // elevation. Removing the junction alone leaves its target's contents untouched.
+            Directory.Delete(_data.Paths.Directory);
+        }
+
+        Directory.EnumerateFileSystemEntries(elsewhere).Should().BeEmpty("nothing is written through the junction");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("Upgrade")]
