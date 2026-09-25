@@ -231,7 +231,7 @@ public sealed class JsonFileUpdateTests : IDisposable
         Action update = () =>
             JsonFile.Update<Dictionary<string, string>>(DataFile, false, current => With(current, "value", "new"));
 
-        update.Should().Throw<IOException>().WithMessage("*reparse point*");
+        update.Should().Throw<IOException>().WithMessage($"*{SafePath.ReparsePointCause}*");
         RunLock
             .Acquire(_data.Paths, RunLock.Check)
             .Should()
@@ -256,13 +256,13 @@ public sealed class JsonFileUpdateTests : IDisposable
         update
             .Should()
             .Throw<IOException>()
-            .WithMessage("*reparse point*", "diagnostics.log names the link rather than a denied open");
+            .WithMessage($"*{SafePath.ReparsePointCause}*", "diagnostics.log names the link rather than a denied open");
         RunLock
             .Acquire(_data.Paths, RunLock.Check)
             .Should()
             .BeOfType<RunLockAttempt.Unavailable>()
             .Which.Reason.Should()
-            .Contain("reparse point");
+            .Contain(SafePath.ReparsePointCause);
         Directory.GetFileSystemEntries(existing).Should().BeEmpty("nothing may land where the link points");
         Path.Exists(missing).Should().BeFalse("a dangling link's target is never created");
         File.Exists(DataFile).Should().BeFalse("an update that took no lock writes nothing");

@@ -13,6 +13,12 @@ namespace WingetNudge.Core.Storage;
 /// </summary>
 public static class SafePath
 {
+    /// <summary>
+    /// The words every refusal of a reparse point carries, which tell a caller the link is the cause rather than a
+    /// denied open.
+    /// </summary>
+    internal const string ReparsePointCause = "is a reparse point";
+
     /// <summary>Whether the path exists and is a symbolic link, junction or other reparse point.</summary>
     /// <param name="path">File or directory.</param>
     /// <returns><c>true</c> when the entry redirects elsewhere.</returns>
@@ -43,7 +49,7 @@ public static class SafePath
         {
             if (IsReparsePoint(current))
             {
-                throw new IOException($"'{current}' is a reparse point; refusing to write through it.");
+                throw new IOException($"'{current}' {ReparsePointCause}; refusing to write through it.");
             }
 
             if (Path.GetPathRoot(current) is string root && root.Equals(current, StringComparison.OrdinalIgnoreCase))
@@ -128,7 +134,7 @@ public static class SafePath
     }
 
     private static IOException ReparseRefusal(string path) =>
-        new($"'{path}' is a reparse point; refusing to open through it.");
+        new($"'{path}' {ReparsePointCause}; refusing to open through it.");
 
     // The exception types FileStream raises for the same errors, which every caller already catches.
     private static Exception OpenFailure(string path, int error)
