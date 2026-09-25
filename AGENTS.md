@@ -4,8 +4,13 @@ A `csharp-installer` repository. [README.md](README.md) says what the app is.
 
 ## Read first
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/dev.md](docs/dev.md) before changing anything. They
-bind an agent as they bind a person.
+Read these before changing anything, in order. They bind an agent as they bind a person.
+
+1. [README.md](README.md)
+2. [CONTRIBUTING.md](CONTRIBUTING.md), whole
+3. [SECURITY.md](SECURITY.md)
+4. [docs/install.md](docs/install.md)
+5. [docs/usage.md](docs/usage.md)
 
 ## Verify
 
@@ -31,8 +36,7 @@ bind an agent as they bind a person.
 
 ## Deviations
 
-A comment beside a line that names the handbook records a deliberate deviation. It is a decision, not
-a defect.
+A comment beside a deviating line records a deliberate deviation. It is a decision, not a defect.
 
 ## Where the rest is
 

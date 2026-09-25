@@ -48,18 +48,17 @@ upgrade and an uninstall do.
 
 ## Documentation
 
-| File                               | Holds                                                                |
-| ---------------------------------- | -------------------------------------------------------------------- |
-| [docs/install.md](docs/install.md) | Requirements, installing, checking the download, upgrade, uninstall  |
-| [docs/usage.md](docs/usage.md)     | The command line, settings and data, what the app contacts           |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | The gate, commits, tests, dependencies, releases, what never happens |
-| [docs/dev.md](docs/dev.md)         | Prerequisites, the first run, running the app, the MSI and signing   |
-| [SECURITY.md](SECURITY.md)         | What counts as a vulnerability, and how to report one                |
+| File                               | Holds                                                                                                                                           |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| [docs/install.md](docs/install.md) | Requirements, installing, checking the download, upgrade, uninstall                                                                             |
+| [docs/usage.md](docs/usage.md)     | The command line, settings and data, what the app contacts                                                                                      |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, safety, running it, where code goes, code, tests, the gate, commit messages, dependencies, releases, troubleshooting, what never happens |
+| [SECURITY.md](SECURITY.md)         | What counts as a vulnerability, and how to report one                                                                                           |
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) has the rules, `dotnet cake.cs` is the gate every change passes
-before it leaves the machine, and [docs/dev.md](docs/dev.md) takes a fresh clone to a running app.
+[CONTRIBUTING.md](CONTRIBUTING.md) takes a fresh clone to a running app and has the rules, and
+`dotnet cake.cs` is the gate every change passes before it leaves the machine.
 Report security problems privately, as [SECURITY.md](SECURITY.md) describes.
 
 Winget Nudge is not affiliated with or endorsed by Microsoft.

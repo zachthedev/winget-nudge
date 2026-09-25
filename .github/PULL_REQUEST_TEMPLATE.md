@@ -26,5 +26,5 @@ Paste the summary table `dotnet cake.cs` prints.
 
 ## If this changes the UI
 
-- [ ] Screenshots in light and dark, before and after. `docs/dev.md` has the demo inventory the
-      README's own screenshots come from.
+- [ ] Screenshots in light and dark, before and after. The Screenshots part of `CONTRIBUTING.md` has
+      the demo inventory the README's own screenshots come from.

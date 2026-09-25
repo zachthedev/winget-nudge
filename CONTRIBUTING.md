@@ -1,15 +1,79 @@
 # Contributing
 
-[docs/dev.md](docs/dev.md) takes a fresh clone to a running app and a green gate. This file holds
-the rules that apply to every change.
+This file takes a fresh clone to a running app and a green gate, and holds the rules that apply to
+every change. Read it top to bottom the first time.
 
 ## Setup
 
-[docs/dev.md](docs/dev.md#prerequisites) names the toolchain and the pin file each tool's version
-lives in. Install it before the first commit: `bun install` runs `lefthook install`, which writes
-the git hooks, and `mise trust` then `mise install` put the workflow linters and taplo on disk.
-[Safety](#safety) says why the hooks are no control, and [Troubleshooting](#troubleshooting) says
-when to install again.
+Windows 11 on x64, with the winget release [docs/install.md](docs/install.md#requirements) names.
+The app is WinUI 3 and the installer is an MSI, so neither builds anywhere else. The toolchain
+installs with winget; open a new terminal afterwards, so `PATH` includes what it added.
+
+```powershell
+winget install --id Oven-sh.Bun --exact
+winget install --id Microsoft.PowerShell --exact
+winget install --id jdx.mise --exact
+```
+
+- The .NET SDK, at the version `global.json` names. [First run](#first-run) installs it, because
+  that version comes from the clone. `global.json` also pins Cake.Sdk, which runs the gate.
+- [Bun](https://bun.sh), at the version `package.json` names in `packageManager`. It runs
+  commitlint, prettier and lefthook.
+- PowerShell 7, for the scripts under `tools` and the commands in this document.
+- [mise](https://mise.jdx.dev), at any current version. mise installs actionlint, zizmor,
+  ShellCheck and taplo: `mise.toml` pins the version of each one, `mise.lock` records the artifact
+  that version resolved to, and continuous integration installs from the same two files. The gate
+  names the `winget install` command when mise is missing.
+
+The app needs the Windows App Runtime at run time.
+[docs/install.md](docs/install.md#requirements) names the version and where it comes from.
+
+### First run
+
+```powershell
+git clone https://github.com/zachthedev/winget-nudge.git
+Set-Location winget-nudge
+$version = (Get-Content -Path global.json -Raw | ConvertFrom-Json).sdk.version
+winget install --id Microsoft.DotNet.SDK.10 --version $version --exact
+```
+
+The SDK install reads the exact version `global.json` pins. Open a new terminal in the clone
+afterwards, so `PATH` includes the SDK. [Troubleshooting](#troubleshooting) says what `dotnet`
+prints without it. Then run the rest, before the first commit:
+
+```powershell
+bun install
+dotnet tool restore
+mise trust
+mise install
+dotnet cake.cs
+```
+
+`bun install` runs `lefthook install`, which writes the git hooks. `dotnet tool restore` installs
+CSharpier at the version `dotnet-tools.json` pins. `mise trust` marks this repository's `mise.toml`
+as one mise may read, and `mise install` puts the linters and taplo on disk from the artifacts
+`mise.lock` records. `dotnet cake.cs` runs the whole gate, which a pre-push hook runs again before
+anything leaves the machine.
+
+The gate resolves each mise tool with `mise which` and runs the path it gets back. `mise install` is
+the step that needs the network; the gate itself reaches it only for zizmor's online audits, when
+`gh auth token` answers.
+
+The first build downloads the `Microsoft.WinGet.Client` package from the PowerShell Gallery and
+checks its hash. It is the only source of `winrtact.dll`, the winget hook that lets an unpackaged
+process marshal winget's COM objects.
+
+[Safety](#safety) says what to read before running any of this on a branch you did not write, which
+variables to keep unset in the shell you run it from, and why the hooks are no control.
+
+### Worktrees
+
+A git worktree has no `node_modules` of its own, and `.worktreeinclude` copies none in. So a
+worktree under the main checkout runs the main checkout's copy. A new clone takes the plain
+`bun install` above, which writes the hooks. Run `bun install --frozen-lockfile --ignore-scripts`
+in each new worktree, and again after `bun.lock` changes. [Safety](#safety) says what to read
+before that install. Keep the scripts off there: `prepare` and lefthook's postinstall each run
+`lefthook install`, which rewrites the shared hooks to name that worktree's lefthook.
 
 ## Safety
 
@@ -62,6 +126,170 @@ Two things reach the JS tools from your own environment:
 before `PATH`. A dependency declaring its own `bun` bin would win there, and it would arrive as a
 change to `bun.lock` that review reads.
 
+A token the shell exports reaches every process the gate starts but mise, because mise is the one
+process whose environment the gate builds from nothing. A `mise install` run by hand reads the
+shell's environment, where `MISE_BACKENDS_<TOOL>` overrides a tool's backend and no setting reports
+it. Keep it unset in the shell you run `mise install` from.
+
+## Running it
+
+```powershell
+dotnet build src/WingetNudge
+$app = 'src/WingetNudge/bin/Debug/net10.0-windows10.0.26100.0/win-x64/WingetNudge.exe'
+& $app
+& $app check
+```
+
+The first opens the picker, and the second runs a verb from the table in
+[docs/usage.md](docs/usage.md#command-line). The executable is a GUI process, so a verb's output
+reaches the terminal only when the terminal launched it directly. `dotnet run` starts it through
+another process, and the output never arrives.
+
+State lives in `%LOCALAPPDATA%\WingetNudge` for a source build and an installed copy alike. A crash
+the app survives is written to `crash.log` there. Deleting a file there resets what it holds.
+
+Running `register` from a build output points both scheduled tasks and the notification registration
+at that build. Run `unregister` from the same build before deleting it, or install the MSI again,
+which registers the installed copy.
+
+### Generated files
+
+`src/WingetNudge.Core/Packages/WingetErrorCodes.cs` comes from the installed winget's own error
+table, and the failure text on a package card comes from it. The script formats the file with the
+CSharpier `dotnet-tools.json` pins, and the analyzers check it like any other source, so it carries
+no generated-code marker. Rerun the script when a winget upgrade adds codes:
+
+```powershell
+./tools/Update-WingetErrorCodes.ps1
+```
+
+### Screenshots
+
+The README's screenshots come from `src/WingetNudge/Services/DemoInventory.cs`, a fixed inventory
+that only a Debug build carries:
+
+```powershell
+$env:WINGETNUDGE_DEMO = '1'
+& $app
+```
+
+It lists well-known packages and tools that are not this machine's, keeps its state in
+`%TEMP%\WingetNudge-demo` rather than the real data directory, answers every web request with a 404,
+and shows the default Windows blue rather than this machine's accent. Update selected, the run
+button and the log links start nothing while it runs, and saving Settings schedules nothing. Every
+verb is refused with exit code 2, because each one acts on this machine rather than on the
+inventory: it opens the picker and nothing else.
+
+`docs/images/picker-light.png` and `docs/images/picker-dark.png` are captures of it, one per theme.
+
+### Building the MSI
+
+```powershell
+dotnet cake.cs --target=installer
+```
+
+The package lands at `installer/bin/Release/WingetNudge.msi`: a per-user install under
+`%LOCALAPPDATA%\Programs\Winget Nudge` with no administrator prompt. It runs `register` at the end
+of setup and `unregister` at the start of an uninstall. A failed `register` fails setup and rolls it
+back, and a failed `unregister` never stops an uninstall. When a first install rolls back, setup runs
+`unregister` before it removes the files, so no registration outlives them.
+
+Before a first install changes anything, the custom action in `installer/CustomActions` lists the
+Windows App Runtime framework packages registered for the installing user. Setup refuses when none of
+them reaches the version the app's bootstrapper requires. Repair, uninstall and an upgrade's removal
+of the previous version skip the check. The installer project asks the app project for
+that package name and version, which come from the `Microsoft.WindowsAppSDK.Runtime` package it
+resolved.
+
+Installing the MSI on this machine points its scheduled checks and notification at the build. Windows
+Sandbox starts from a clean copy of Windows, so try setup there instead: map `installer/bin/Release`
+into it read-only and run `msiexec /i <folder>\WingetNudge.msi /l*v <log>`. Installing a runtime
+there from the downloads page tries the other side of the check.
+
+The gate builds it unsigned on every machine. To sign a local build, put a code-signing
+certificate's thumbprint from the current user's store in `Directory.Signing.props` at the
+repository root, which `.gitignore` keeps out of commits:
+
+```xml
+<Project>
+    <PropertyGroup>
+        <SigningCertificateThumbprint>...</SigningCertificateThumbprint>
+    </PropertyGroup>
+</Project>
+```
+
+Then build the installer directly:
+
+```powershell
+dotnet build installer/WingetNudge.Installer.wixproj --configuration Release
+```
+
+That signs `WingetNudge.exe`, the app assemblies and the MSI with the Windows SDK's signtool and a
+DigiCert timestamp. A self-signed certificate verifies only on a machine that trusts it.
+
+## Where code goes
+
+- `src/WingetNudge.Core`: everything that is not UI. Winget access, tracking and the cooldown gate,
+  preferences, manual tools, release notes, the upgrade engine, registration.
+- `src/WingetNudge`: the WinUI 3 app, its windows, the notification and the command-line verbs.
+- `tests/WingetNudge.Core.Tests`: the xUnit v3 suite over Core, and `RequirementsTests`, which binds
+  `docs/install.md` to `Directory.Packages.props`. `RuntimeRequirementTests` covers the installer's
+  runtime check, whose decision logic the suite compiles in from `installer/CustomActions`.
+- `installer`: the WiX project for the per-user MSI.
+- `installer/CustomActions`: the custom action setup runs before it changes anything. It finds the
+  Windows App Runtime the app needs among the packages registered for the installing user. It
+  targets .NET Framework 4.7.2, because WiX's DTF host runs a managed custom action in the .NET
+  Framework.
+- `tools`: build-time scripts. `Update-WingetErrorCodes.ps1` regenerates
+  `src/WingetNudge.Core/Packages/WingetErrorCodes.cs` from `winget error --output`
+  ([Generated files](#generated-files)).
+
+## Code
+
+- CSharpier formats C# and prettier formats everything else it understands, from the settings in
+  `.csharpierrc` and `.prettierrc`.
+- Analyzer warnings fail the build. `.editorconfig` sets the style rules, including explicit types
+  over `var`.
+- A finding is fixed, or waived with `[SuppressMessage]` naming its rule and a `Justification`.
+  StyleCop.Analyzers' SA1404 fails the build on a waiver whose `Justification` is missing, empty,
+  blank or `<Pending>`. `.editorconfig` turns every other StyleCop rule off by category, and SA0001
+  by its own key, because it reports with no source location and no category key reaches it. A
+  compiler warning (`CSxxxx`) has no inline waiver: `[SuppressMessage]` cannot suppress one.
+- No analyzer checks any other inline waiver for a rule or a reason, so the gate refuses each one,
+  in any case: `#pragma warning` in any form, `#nullable disable` in any form, `#line` in any form,
+  which hides the findings below it or moves them to another file, `[GeneratedCode]`,
+  `[UnconditionalSuppressMessage]`, and any C# naming SA1404, since a waiver of that rule switches
+  it off for its scope. Roslyn reads a file as generated, and runs no analyzer over it, from a
+  `<auto-generated>` or `<autogenerated>` comment or from its name, so the gate refuses the comment
+  in a `.cs` file and a `.cs` file named `TemporaryGeneratedFile_*`, `*.designer.cs`,
+  `*.generated.cs`, `*.g.cs` or `*.g.i.cs`. It refuses CSharpier's ignore comments in every file the
+  `format` row checks.
+- The directive match runs over the whole file, because C# ends a line at U+0085, U+2028 and U+2029
+  as well as at a carriage return or line feed, and reads U+FEFF and U+001A as blanks. So it also
+  refuses a directive-shaped line inside a comment, a string or an inactive `#if` region. The name
+  match runs with every `\u` and `\U` escape decoded, and with every format character (Unicode
+  category Cf) and every default-ignorable code point removed. An identifier takes escapes, and the
+  compiler drops every format character from it, so `Generated­Code` binds to `[GeneratedCode]`.
+- The gate reads a `.cs` file as the compiler does, and refuses one it cannot: bytes that are not
+  UTF-8, nor UTF-16 after a byte-order mark, which the compiler reads in the machine's code page
+  instead. It refuses a `%` in a `.cs` path, which a SARIF log reads as an escape.
+- `.editorconfig` is lint configuration, and CODEOWNERS holds it to review. A `generated_code` key,
+  and any `dotnet_diagnostic.*.severity` below `warning`, are waivers a reviewer refuses: each
+  silences findings for the files it names, with no reason given. The gate sees SA1404 lowered for
+  any file, and a waiver that silences a finding, but not a `generated_code` key.
+- An icon glyph is a `\uXXXX` escape in the source, never the raw character, so a reviewer can read
+  which glyph it is.
+
+## Tests
+
+A test states what the code is supposed to do. Derive the assertion from the requirement, then run
+it; never paste in whatever the code returned.
+
+Winget, the Restart Manager, Task Scheduler and notifications sit behind seams, and a test passes a
+substitute for each one it could reach. No test needs a real one. Nothing in the suite may upgrade a
+package, close an app, show a notification, or touch a scheduled task this machine relies on. Files
+go in a temporary directory the test owns.
+
 ## The gate
 
 One command, and the only one:
@@ -72,7 +300,8 @@ dotnet cake.cs
 
 [Cake](https://cakebuild.net) runs every task in `cake.cs`, each after the tasks it depends on. It
 stops at the first failure and prints a summary table. `dotnet cake.cs --description` lists every
-task and what it checks, and `dotnet cake.cs --tree` prints the order they run in.
+task and what it checks, and `dotnet cake.cs --tree` prints the order they run in. When a local run
+fails or disagrees with continuous integration, [Troubleshooting](#troubleshooting) says why.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
 `workflows`. `lockfile` reads `mise.toml`, `mise.lock`, `bunfig.toml` and every config file another
@@ -110,9 +339,8 @@ answer to zizmor alone, which then runs its online audits. With no answer, zizmo
 `--offline`. On continuous integration, where GitHub Actions sets `CI`, the gate never starts gh and
 runs zizmor with `--offline`, and the shared `workflows` job runs the online audits. The row prints
 which mode zizmor runs in and why, and never the token. gh reads `GH_TOKEN` before its keyring, so a
-fine-grained read-only token there is the least a local run can hand zizmor. A token the shell
-exports reaches every process the gate starts but mise, because mise is the one process whose
-environment the gate builds from nothing.
+fine-grained read-only token there is the least a local run can hand zizmor. [Safety](#safety) says
+what else a token the shell exports reaches.
 
 `tools` depends on `lockfile` and then runs `mise install`, so the lockfile is asserted before
 anything installs from it. An address in `mise.lock` is what an install fetches, and an entry naming
@@ -195,73 +423,7 @@ tag. That view lists every commit in the release, hidden types included.
 `git log --oneline <previous tag>..<tag>` lists the same commits locally.
 
 The ruleset on `main` requires one approving review from a code owner, and `CODEOWNERS` names the
-owner alone. GitHub does not count an author's approval of their own pull request, so `gh pr merge`
-on the owner's pull request is refused with `the base branch policy prohibits the merge`.
-`gh pr merge --admin` is the way through: it merges on the owner's bypass of the ruleset rather than
-on a review. Wait for green checks before running it, because a bypass enforces nothing.
-
-## Where code goes
-
-- `src/WingetNudge.Core`: everything that is not UI. Winget access, tracking and the cooldown gate,
-  preferences, manual tools, release notes, the upgrade engine, registration.
-- `src/WingetNudge`: the WinUI 3 app, its windows, the notification and the command-line verbs.
-- `tests/WingetNudge.Core.Tests`: the xUnit v3 suite over Core, and `RequirementsTests`, which binds
-  `docs/install.md` to `Directory.Packages.props`. `RuntimeRequirementTests` covers the installer's
-  runtime check, whose decision logic the suite compiles in from `installer/CustomActions`.
-- `installer`: the WiX project for the per-user MSI.
-- `installer/CustomActions`: the custom action setup runs before it changes anything. It finds the
-  Windows App Runtime the app needs among the packages registered for the installing user. It
-  targets .NET Framework 4.7.2, because WiX's DTF host runs a managed custom action in the .NET
-  Framework.
-- `tools`: build-time scripts. `Update-WingetErrorCodes.ps1` regenerates
-  `src/WingetNudge.Core/Packages/WingetErrorCodes.cs` from `winget error --output`, and formats it
-  with the pinned CSharpier.
-
-## Tests
-
-A test states what the code is supposed to do. Derive the assertion from the requirement, then run
-it; never paste in whatever the code returned.
-
-Winget, the Restart Manager, Task Scheduler and notifications sit behind seams, and a test passes a
-substitute for each one it could reach. Nothing in the suite may upgrade a package, close an app,
-show a notification, or touch a scheduled task this machine relies on. Files go in a temporary
-directory the test owns.
-
-## Code
-
-- CSharpier formats C# and prettier formats everything else it understands, from the settings in
-  `.csharpierrc` and `.prettierrc`.
-- Analyzer warnings fail the build. `.editorconfig` sets the style rules, including explicit types
-  over `var`.
-- A finding is fixed, or waived with `[SuppressMessage]` naming its rule and a `Justification`.
-  StyleCop.Analyzers' SA1404 fails the build on a waiver whose `Justification` is missing, empty,
-  blank or `<Pending>`. `.editorconfig` turns every other StyleCop rule off by category, and SA0001
-  by its own key, because it reports with no source location and no category key reaches it. A
-  compiler warning (`CSxxxx`) has no inline waiver: `[SuppressMessage]` cannot suppress one.
-- No analyzer checks any other inline waiver for a rule or a reason, so the gate refuses each one,
-  in any case: `#pragma warning` in any form, `#nullable disable` in any form, `#line` in any form,
-  which hides the findings below it or moves them to another file, `[GeneratedCode]`,
-  `[UnconditionalSuppressMessage]`, and any C# naming SA1404, since a waiver of that rule switches
-  it off for its scope. Roslyn reads a file as generated, and runs no analyzer over it, from a
-  `<auto-generated>` or `<autogenerated>` comment or from its name, so the gate refuses the comment
-  in a `.cs` file and a `.cs` file named `TemporaryGeneratedFile_*`, `*.designer.cs`,
-  `*.generated.cs`, `*.g.cs` or `*.g.i.cs`. It refuses CSharpier's ignore comments in every file the
-  `format` row checks.
-- The directive match runs over the whole file, because C# ends a line at U+0085, U+2028 and U+2029
-  as well as at a carriage return or line feed, and reads U+FEFF and U+001A as blanks. So it also
-  refuses a directive-shaped line inside a comment, a string or an inactive `#if` region. The name
-  match runs with every `\u` and `\U` escape decoded, and with every format character (Unicode
-  category Cf) and every default-ignorable code point removed. An identifier takes escapes, and the
-  compiler drops every format character from it, so `Generated­Code` binds to `[GeneratedCode]`.
-- The gate reads a `.cs` file as the compiler does, and refuses one it cannot: bytes that are not
-  UTF-8, nor UTF-16 after a byte-order mark, which the compiler reads in the machine's code page
-  instead. It refuses a `%` in a `.cs` path, which a SARIF log reads as an escape.
-- `.editorconfig` is lint configuration, and CODEOWNERS holds it to review. A `generated_code` key,
-  and any `dotnet_diagnostic.*.severity` below `warning`, are waivers a reviewer refuses: each
-  silences findings for the files it names, with no reason given. The gate sees SA1404 lowered for
-  any file, and a waiver that silences a finding, but not a `generated_code` key.
-- An icon glyph is a `\uXXXX` escape in the source, never the raw character, so a reviewer can read
-  which glyph it is.
+owner alone.
 
 ## Dependencies
 
@@ -272,7 +434,7 @@ directory the test owns.
   self-contained, so the MSI carries the runtime of the SDK that builds it. Continuous integration
   installs the pinned SDK and builds with it. A contributor on a later patch in the same feature
   band still runs the gate. The pin is always the SDK carrying the newest runtime past the
-  cooldown. Without a matching SDK, `dotnet` prints the install command `errorMessage` names.
+  cooldown.
 - Restore audits every package, transitive ones included, against nuget.org's advisory database,
   and every finding warns. The weekly `audit` workflow in `.github/workflows/audit.yml` lists every
   advisory against the locked graph, whatever its severity, in the run's summary.
@@ -302,7 +464,19 @@ directory the test owns.
 - `WinGetVersion` and `WinGetModuleSha256` in `Directory.Packages.props` move together, by hand. The
   first is the winget release the COM projection comes from. The second is the SHA-256 of the
   `Microsoft.WinGet.Client` package of the same version on the PowerShell Gallery, the only source
-  of `winrtact.dll`. Renovate holds the projection for that reason.
+  of `winrtact.dll`. Renovate holds the projection for that reason. Change both in one commit. Set
+  `WinGetVersion` first. The commands below read it back from that file and print the hash
+  `WinGetModuleSha256` takes:
+
+  ```powershell
+  $version = (Select-Xml -Path Directory.Packages.props -XPath '//WinGetVersion').Node.InnerText
+  Invoke-WebRequest -Uri "https://www.powershellgallery.com/api/v2/package/Microsoft.WinGet.Client/$version" -OutFile "$env:TEMP\winget-client.nupkg"
+  (Get-FileHash -Path "$env:TEMP\winget-client.nupkg" -Algorithm SHA256).Hash
+  ```
+
+  Then restore with `dotnet restore --force-evaluate` so the lock files pick up the new projection,
+  and run the gate.
+
 - `docs/install.md` restates the winget and Windows App Runtime versions a user needs, because a user
   has no clone to read `Directory.Packages.props` from. `RequirementsTests` binds each to its pin:
   `WinGetVersion` at major.minor, and the `Microsoft.WindowsAppSDK` version whole, because the app's
@@ -353,8 +527,8 @@ directory the test owns.
   `.miserc.toml`, the `mise.<env>.toml` and `.mise.<env>.toml` env files, the `mise.windows.toml`
   platform files, the `.local` variants, and the `mise` and `.mise` directories. The `.config`
   directory, where mise reads `.config/miserc.toml` and `.config/mise`, is refused whole. Both
-  checks read the file system rather than git, because mise reads an untracked file too, so keep
-  local mise settings in mise's global config. Every mise call the gate makes also runs with
+  checks read the file system rather than git, because mise reads an untracked file too. Every mise
+  call the gate makes also runs with
   `MISE_OVERRIDE_CONFIG_FILENAMES=mise.toml`, `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none`,
   `MISE_ENV` empty and `MISE_AUTO_ENV=false`, which leave mise reading `mise.toml` alone even when a
   refused file is present.
@@ -566,8 +740,8 @@ directory the test owns.
   entry carries, so a bare `mise lock` writes both legs and the gate refuses an entry for a
   platform the list does not name. mise also reads a nested `[tools.<tool>.platforms.<name>]`
   table for any platform, and `mise lock` writes the quoted `platforms.<name>` form alone, so the
-  gate refuses an entry carrying the nested one. One gap no setting reports:
-  `MISE_BACKENDS_<TOOL>` overrides a tool's backend from the environment.
+  gate refuses an entry carrying the nested one. [Safety](#safety) names the environment variable
+  that overrides a tool's backend, which no setting reports.
 - ShellCheck is a pinned dependency of this repository on both legs. The `rhysd/actionlint` image
   bundles a ShellCheck copied out of `koalaman/shellcheck-alpine:stable` when that image is built,
   so a run through the image has no pin on the ShellCheck it executes. One `mise.toml` entry drives
@@ -616,22 +790,22 @@ opens that bump without waiting for the schedule, and merging it cuts the releas
 release-please owns the version in `Directory.Build.props` and the whole of `CHANGELOG.md`.
 
 Release MSIs are unsigned for now. A local build signs when `Directory.Signing.props` names a
-certificate; [docs/dev.md](docs/dev.md) shows how.
+certificate; [Building the MSI](#building-the-msi) shows how.
 
 ## Troubleshooting
 
+- Without a matching SDK, `dotnet` prints the install command the `errorMessage` in `global.json`
+  names. [Dependencies](#dependencies) says which SDK matches.
+- `lockfile` refuses a mise config file of your own at the root, such as a `mise.local.toml`,
+  whether git tracks it or not ([Dependencies](#dependencies)). Keep local mise settings in mise's
+  global config.
 - A local run that disagrees with continuous integration may have run another copy of a tool. The
   prettier row and the commit-msg hook start theirs with `bunx --bun --no-install`, which runs
   `node_modules/.bin/<tool>` in the checkout and never downloads. With no install there, bunx runs
   the first copy it finds in a parent directory's `node_modules/.bin`, then on `PATH`, then in Bun's
   cache, and says nothing about which. With an install older than `bun.lock`, it runs that older
-  copy. The `gate` job's `bun install` is fresh, so neither happens there.
-- A git worktree has no `node_modules` of its own, and `.worktreeinclude` copies none in. So a
-  worktree under the main checkout runs the main checkout's copy. A new clone takes Setup's plain
-  `bun install`, which writes the hooks. Run `bun install --frozen-lockfile --ignore-scripts` in each
-  new worktree, and again after `bun.lock` changes. [Safety](#safety) says what to read before that
-  install. Keep the scripts off there: `prepare` and lefthook's postinstall each run
-  `lefthook install`, which rewrites the shared hooks to name that worktree's lefthook.
+  copy. The `gate` job's `bun install` is fresh, so neither happens there. [Worktrees](#worktrees)
+  says how each worktree gets an install of its own.
 - A personal `.env` reaches a local run and never continuous integration. `PRETTIER_EXPERIMENTAL_CLI`
   set there turns the prettier row red, since that CLI refuses `--config`. A Bun variable in your
   shell changes every Bun start the same way, and [Safety](#safety) lists them.

@@ -453,7 +453,7 @@ Task("tests")
 
 // An empty global property outranks the thumbprint Directory.Signing.props imports, so the package
 // builds unsigned on every machine. cd.yml builds the release MSI through this task, so a release
-// ships unsigned too. A signed local build runs the installer project directly, as docs/dev.md
+// ships unsigned too. A signed local build runs the installer project directly, as CONTRIBUTING.md
 // shows. The package publishes the app and builds the custom action again, which compiles both
 // afresh, and the MSI carries those compiles, so their waiver logs are read again after it.
 Task("installer")

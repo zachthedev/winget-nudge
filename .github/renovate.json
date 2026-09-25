@@ -13,7 +13,7 @@
       "semanticCommitType": "chore"
     },
     {
-      "description": "Its version is the MSBuild property WinGetVersion, which also pins WinGetModuleSha256, the hash of the PowerShell module winrtact.dll comes from. The two move together by hand, as docs/dev.md describes.",
+      "description": "Its version is the MSBuild property WinGetVersion, which also pins WinGetModuleSha256, the hash of the PowerShell module winrtact.dll comes from. The two move together by hand, as CONTRIBUTING.md describes.",
       "matchDepNames": ["Microsoft.WindowsPackageManager.ComInterop"],
       "enabled": false
     },
