@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using WingetNudge.Core.Tests.Support;
 using WingetNudge.Core.Upgrade;
 
 namespace WingetNudge.Core.Tests;
@@ -147,6 +148,37 @@ public sealed class WingetDiagnosticsTests : IDisposable
         finally
         {
             Directory.Delete(link);
+            Directory.Delete(real, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Collect_WhenTheDirectoryBecomesAJunctionAfterItsCheck_ReadsNothingThroughIt()
+    {
+        string root = Directory.CreateDirectory(Path.Combine(_directory, "diag")).FullName;
+        string real = Directory.CreateTempSubdirectory("winget-diag-real").FullName;
+        string secret = Path.Combine(real, "Planted.Package-26-09-10.log");
+        File.WriteAllText(secret, "the operation was aborted for a secret reason");
+        File.SetLastWriteTimeUtc(secret, (AttemptStart + TimeSpan.FromSeconds(5)).UtcDateTime);
+
+        try
+        {
+            WingetDiagnostics found;
+            IReadOnlyList<string> tail;
+            using (JunctionAfterCheck swap = new(root, real))
+            {
+                found = new WingetDiagnosticsReader(root).Collect(AttemptStart);
+                tail = WingetDiagnosticsReader.Tail(Path.Combine(root, Path.GetFileName(secret)));
+                swap.Converted.Should().BeTrue("the empty directory became a junction once its check passed");
+            }
+
+            found
+                .Should()
+                .Be(WingetDiagnostics.None, "an elevated read neither lists nor reads through a redirected directory");
+            tail.Should().BeEmpty("the tail copied into the user's installer log reads nothing through the junction");
+        }
+        finally
+        {
             Directory.Delete(real, recursive: true);
         }
     }
