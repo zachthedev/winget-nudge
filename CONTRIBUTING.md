@@ -118,9 +118,10 @@ Two things reach the JS tools from your own environment:
 - The Bun variables. Bun reads command-line flags from `BUN_OPTIONS`, so a `--preload` there runs a
   module in every Bun process, and an `--env-file` there loads that file. Bun preloads the module
   `BUN_INSPECT_PRELOAD` names, and reads `BUN_INSPECT` and `BUN_INSPECT_CONNECT_TO` for its
-  inspector. The gate and the hooks leave all four in place, in any letter case. Keep
-  `BUN_OPTIONS`, `BUN_INSPECT`, `BUN_INSPECT_CONNECT_TO` and `BUN_INSPECT_PRELOAD` unset in the
-  shell you commit from and run the gate from.
+  inspector. The gate removes `BUN_OPTIONS` from its own environment as it starts, in any letter
+  case, so no process it starts gets it, and leaves the other three in place. The hooks leave all
+  four. Keep `BUN_OPTIONS`, `BUN_INSPECT`, `BUN_INSPECT_CONNECT_TO` and `BUN_INSPECT_PRELOAD` unset
+  in the shell you commit from and run the gate from.
 
 `prepare` starts `bun` by name, and a `package.json` script finds it in every `node_modules/.bin`
 before `PATH`. A dependency declaring its own `bun` bin would win there, and it would arrive as a
@@ -722,8 +723,8 @@ owner alone.
   and every fold joined. The stand-in refuses any line holding `#`, then `shellcheck` and a blank,
   in any case, as an error finding, because ShellCheck honors every such directive inside a `run:`
   script and nothing holds a waiver for one. No line check over the file sees through an escape or
-  a fold. Otherwise the stand-in runs the pinned ShellCheck over the same bytes, with
-  `SHELLCHECK_OPTS` removed, and passes its output and exit code through. It adds about a quarter
+  a fold. Otherwise the stand-in runs the pinned ShellCheck over the same bytes and passes its
+  output and exit code through. It adds about a quarter
   of a second per script. The paths in the command go single-quoted with forward slashes, since
   actionlint drops an unquoted backslash and turns ShellCheck off without a word.
 - The row also refuses a `shell:` on a step or under `defaults.run`, for the workflow or a job,
@@ -748,9 +749,9 @@ owner alone.
   bundles a ShellCheck copied out of `koalaman/shellcheck-alpine:stable` when that image is built,
   so a run through the image has no pin on the ShellCheck it executes. One `mise.toml` entry drives
   the binary both legs run.
-- actionlint and its two canaries run with `SHELLCHECK_OPTS` empty, and the stand-in removes it
-  again. ShellCheck reads that variable as extra arguments past actionlint's `--norc`, so an `-e`
-  there drops a finding.
+- The gate removes `SHELLCHECK_OPTS` from its own environment as it starts, in any letter case, so
+  actionlint, its two canaries and the stand-in's ShellCheck never get it. ShellCheck reads that
+  variable as extra arguments past actionlint's `--norc`, so an `-e` there drops a finding.
 - The `gate` job pins mise itself on its `jdx/mise-action` line in `.github/workflows/ci.yml`. The
   shared `workflows` job pins its own on the same action's line in the reusable workflow `ci.yml`
   calls. The action verifies its download against the release's minisign-signed `SHASUMS256.txt`,

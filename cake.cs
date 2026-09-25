@@ -19,6 +19,27 @@ using YamlDotNet.RepresentationModel;
 // installs from it, and then the check target. The release build in cd.yml runs the installer
 // target.
 
+// Bun reads BUN_OPTIONS as extra arguments on every start, a --preload among them. ShellCheck
+// 0.11.0 reads SHELLCHECK_OPTS as extra arguments past the --norc actionlint passes, so an -e there
+// drops a finding, and it is the one variable ShellCheck reads that changes one. The gate removes
+// both from its own environment before anything else runs, so no process it starts inherits either,
+// and neither does the ShellCheck the stand-in below starts. Windows reads a name in any case, and a
+// POSIX shell can hand a process two spellings of one, so every spelling goes. RunMise builds mise's
+// environment from nothing.
+foreach (
+    string spelling in Environment
+        .GetEnvironmentVariables()
+        .Keys.OfType<string>()
+        .Where(key =>
+            key.Equals("BUN_OPTIONS", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("SHELLCHECK_OPTS", StringComparison.OrdinalIgnoreCase)
+        )
+        .ToArray()
+)
+{
+    Environment.SetEnvironmentVariable(spelling, null);
+}
+
 // actionlint starts this program again as its ShellCheck, through the -shellcheck value
 // ShellCheckStandIn builds. The branch runs before any Cake alias, so Cake never reads the
 // arguments actionlint hands ShellCheck.
@@ -523,11 +544,6 @@ const string shellCheckDirectiveRefusal = "The gate refuses a ShellCheck directi
 // word, so shell: /bin/bash runs bash with no ShellCheck, and every other value is refused.
 string[] shellCheckedShells = ["bash", "sh", "pwsh"];
 
-// ShellCheck 0.11.0 reads this variable as extra arguments on every run, past the --norc actionlint
-// passes, so an -e there drops a finding. It is the one variable ShellCheck reads that changes one,
-// and actionlint and its canaries run with it empty. The stand-in removes it again.
-const string shellCheckOptions = "SHELLCHECK_OPTS";
-
 // The one place whose reusable workflows a job may call with secrets: inherit, which hands the called
 // workflow every secret its caller can read.
 const string inheritCallee = "zachthedev/.github/.github/workflows/";
@@ -643,8 +659,7 @@ Task("workflows")
         Command(
             ["actionlint", "actionlint.exe"],
             $"{ProvenAnalyzers(actionlint, Verified(resolved, "shellcheck"))} {string.Join(" ", workflows.Select(file => $"\"{file}\""))}",
-            settingsCustomization: settings =>
-                settings.WithToolPath(actionlint).WithEnvironmentVariable(shellCheckOptions, "")
+            settingsCustomization: settings => settings.WithToolPath(actionlint)
         );
 
         // --strict-collection fails on a file zizmor cannot parse. Without it the file is dropped
@@ -663,7 +678,7 @@ Task("workflows")
         // job runs the online audits. Locally, the token gh holds goes into zizmor's process
         // settings alone, so no other process the gate starts receives it from the gate. A token
         // the shell exports reaches every process through the inherited environment, and the gate
-        // clears nothing. The row prints which mode zizmor runs in and why, never the token, so a
+        // clears no token. The row prints which mode zizmor runs in and why, never the token, so a
         // log shows the mode rather than leaving it to be read from this file.
         string why = "CI is set, so the gate starts no gh, and the shared workflows job runs the online audits";
         string? token = OnContinuousIntegration() ? null : GitHubToken(out why);
@@ -2995,7 +3010,7 @@ string ProvenAnalyzers(FilePath actionlint, FilePath shellcheck)
                     Arguments = $"{analyzers} \"{canary.FullPath}\"",
                     RedirectStandardOutput = true,
                     Silent = true,
-                    EnvironmentVariables = Uncolored((shellCheckOptions, "")),
+                    EnvironmentVariables = Uncolored(),
                 },
                 out IEnumerable<string> reported
             );
@@ -3146,9 +3161,10 @@ string ShellCheckStandIn(FilePath shellcheck)
 // ShellCheck reads to stdin, with every YAML escape decoded and every fold joined, so a directive no
 // line of a workflow shows arrives here as a line. A line holding # then shellcheck and a blank, in
 // any case, comes back as an error finding in ShellCheck's JSON form, and actionlint prints it and
-// fails. ShellCheck honors every such directive, and no file the gate holds names one. Otherwise the
-// pinned ShellCheck runs over the same bytes, with SHELLCHECK_OPTS removed, and its output and exit
-// code pass through. An error here exits 2 with nothing on stdout, which actionlint fails on.
+// fails. ShellCheck honors every such directive, and it waives a finding no config records.
+// Otherwise the pinned ShellCheck runs over the same bytes, with SHELLCHECK_OPTS removed at this
+// program's start, and its output and exit code pass through. An error here exits 2 with nothing on
+// stdout, which actionlint fails on.
 static int RunShellCheckStandIn(string shellCheck, string[] arguments)
 {
     try
@@ -3190,7 +3206,7 @@ static int RunShellCheckStandIn(string shellCheck, string[] arguments)
                 json.WriteNumber("code", 0);
                 json.WriteString(
                     "message",
-                    $"{shellCheckDirectiveRefusal}, since ShellCheck honors it and no file the gate holds names it: {line.Trim()}"
+                    $"{shellCheckDirectiveRefusal}, since ShellCheck honors it and it waives a finding no config records: {line.Trim()}"
                 );
                 json.WriteNull("fix");
                 json.WriteEndObject();
@@ -3210,7 +3226,6 @@ static int RunShellCheckStandIn(string shellCheck, string[] arguments)
             start.ArgumentList.Add(argument);
         }
 
-        start.Environment.Remove(shellCheckOptions);
         using System.Diagnostics.Process process =
             System.Diagnostics.Process.Start(start)
             ?? throw new InvalidOperationException($"{shellCheck} did not start.");
