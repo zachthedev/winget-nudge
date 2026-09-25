@@ -764,14 +764,7 @@ public sealed class RunLockTests : IDisposable
     {
         string elsewhere = Path.Combine(_data.Root, "elsewhere");
         Directory.CreateDirectory(elsewhere);
-        try
-        {
-            Directory.CreateSymbolicLink(_data.Paths.Directory, elsewhere);
-        }
-        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
-        {
-            Assert.Skip("a directory link needs Developer Mode or SeCreateSymbolicLinkPrivilege");
-        }
+        Directory.CreateSymbolicLink(_data.Paths.Directory, elsewhere);
 
         RunLock
             .Acquire(_data.Paths, RunLock.Upgrade)
