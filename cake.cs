@@ -106,15 +106,15 @@ string[] csharpierExtensions =
 ];
 
 // CSharpier handed a directory reads every .gitignore and nested .csharpierignore above each file,
-// and a root ignore line of * checks nothing and exits 0. So the row names each file TreeFiles finds
-// with an extension CSharpier formats, and names the held config and the held, empty ignore file
-// too, so CSharpier reads no other. The config path is absolute, because CSharpier anchors a config's
+// and a root ignore line of * checks nothing and exits 0. So the row names each file TreeFiles
+// finds with an extension CSharpier formats, and names the config and the ignore file too, so
+// CSharpier reads no other. The config path is absolute, because CSharpier anchors a config's
 // overrides to its directory, and a relative path leaves them matching nothing where an editor's
 // CSharpier applies them. --include-generated checks a file whose header calls it generated, which
-// CSharpier otherwise counts and skips. Windows caps a command line at 32,767 characters, and dotnet
-// starts CSharpier with the same arguments again, so the row names the files in batches of at most
-// csharpierBatchCharacters. Each batch fails unless CSharpier reports checking exactly as many files
-// as the batch named, and a batch names at least one.
+// CSharpier otherwise counts and skips. Windows caps a command line at 32,767 characters, and
+// dotnet starts CSharpier with the same arguments again, so the row names the files in batches of
+// at most csharpierBatchCharacters. Each batch fails unless CSharpier reports checking exactly as
+// many files as the batch named, and a batch names at least one.
 Task("format")
     .Description("C# and XML formatting, through CSharpier, over every such file in the tree, each named to CSharpier")
     .Does(() =>
@@ -565,210 +565,19 @@ static TomlTable ExpectedSettings() =>
 
 static TomlTable ExpectedToolConfig() => new() { ["locked"] = true };
 
-// The one setting bunfig.toml carries: three days, in seconds, before Bun resolves a newly published
-// version. The file itself says why it is committed.
-const long bunMinimumReleaseAge = 259200;
-
-static TomlTable ExpectedBunInstall() => new() { ["minimumReleaseAge"] = bunMinimumReleaseAge };
-
-// .prettierrc, byte for byte, the same in every repository. The prettier row names the file with
-// --config, and the gate refuses every other file prettier would read as config.
-const string prettierConfig = "{\n  \"singleQuote\": true,\n  \"printWidth\": 120\n}\n";
-
-// .prettierignore, byte for byte. The prettier row names it with --ignore-path, which replaces
-// prettier's default pair, so .gitignore takes nothing out of the row.
-const string prettierIgnore = """
-    # C# is formatted by CSharpier, and prettier never sees it.
-
-    # Build output and repository tooling.
-    bin/
-    obj/
-    node_modules/
-    TestResults/
-
-    # Written by tools that own their format. NuGet regenerates the lock files, and release-please
-    # rewrites the changelog and its manifest on every release.
-    *packages.lock.json
-    CHANGELOG.md
-    .release-please-manifest.json
-
-    # Prettier reads .wxs as WeChat's script language and fails on WiX's XML.
-    *.wxs
-
-    # The gate's prettier row passes --ignore-path .prettierignore and reads no .gitignore, and holds
-    # this file to the text cake.cs names. These are the local paths .gitignore keeps out that prettier
-    # would read: the copies the Claude Code CLI checks out, a contributor's own Claude Code settings,
-    # and Visual Studio's folder.
-    .claude/worktrees/
-    .claude/settings.local.json
-    .vs/
-
-    """;
-
-// .taplo.toml, byte for byte. The toml row names every file itself, and taplo still drops a named
-// file this file's exclude matches.
-const string taploConfig = """
-    # Every TOML file this repository authors, formatted by `taplo fmt`. The gate's toml row names each
-    # .toml file in the tree to `taplo fmt --check` with this file, and holds this file to the text
-    # cake.cs names. mise.lock is written by `mise lock` and carries no .toml extension, so the pattern
-    # leaves it alone. A run that names no file walks every directory whatever .gitignore says, so the
-    # two that hold TOML files this repository does not author are excluded by name: node_modules, and
-    # the worktrees the Claude Code CLI checks out under .claude/worktrees.
-    include = ["**/*.toml"]
-    exclude = [".claude/worktrees/**", "node_modules/**"]
-
-    """;
-
-// .github/zizmor.yml, byte for byte. A rule there can disable an audit or ignore a finding.
-const string zizmorConfig = """
-    # zizmor's settings for this repository. Every audit not named here runs at zizmor's defaults. The
-    # gate holds this file to the text cake.cs names, since a rule here can disable an audit.
-    rules:
-      # Every action is pinned to a commit, including the ones GitHub publishes. A tag can be
-      # retargeted by its owner with no pull request and no cooldown, and this is what refuses one.
-      unpinned-uses:
-        config:
-          policies:
-            '*': hash-pin
-      # zizmor asks for seven days by default. The project standard is three, which is the window that
-      # catches almost every package published and then pulled while still letting a legitimate release
-      # land in the same week. A shorter cooldown still fails. A cooldown block removed entirely passes
-      # this audit.
-      dependabot-cooldown:
-        config:
-          days: 3
-      # cd.yml's release-pr job and deps.yml's deps job each call a job that names an environment, and
-      # run in none themselves, so secrets: inherit is the one form that passes that environment's
-      # secret. The gate refuses an inline ignore comment, so both waivers sit here, one per file. A
-      # waiver binds a file, never the workflow a job calls, so the workflows row also runs zizmor with
-      # no config and fails unless every job passing secrets: inherit calls a zachthedev/.github workflow.
-      secrets-inherit:
-        ignore:
-          - cd.yml
-          - deps.yml
-
-    """;
-
-// .csharpierrc, byte for byte. The format row names it with --config-path, and the gate refuses every
-// other name CSharpier searches for.
-const string csharpierConfig = """
-    {
-      "printWidth": 120,
-      "indentSize": 4,
-      "useTabs": false,
-      "endOfLine": "lf"
-    }
-
-    """;
-
-// .csharpierignore, byte for byte, and empty. The format row names it with --ignore-path, so CSharpier
-// reads no other ignore file, and a line here would take files out of the row.
-const string csharpierIgnore = "";
-
-// lefthook.yml, byte for byte. lefthook runs each job's command as written, and an extends or remotes
-// key there pulls in more config.
-const string lefthookConfig = """
-    # Git hooks. `bun install` runs `lefthook install`, which writes the hooks into .git/hooks.
-
-    # cosmiconfig runs a module from .config at the root before commitlint reads --config, so the first
-    # job refuses the directory, and piped stops the hook at the first job that fails.
-    # --bun runs commitlint under the Bun that runs this hook, rather than whichever node PATH names.
-    # --config names the one commitlint config, so commitlint searches for no other.
-    commit-msg:
-      piped: true
-      jobs:
-        - name: no .config
-          run: test ! -e .config || { echo 'cosmiconfig runs modules from .config, so remove it' >&2; exit 1; }
-        - name: commitlint
-          run: bunx --bun --no-install commitlint --config commitlint.config.js --edit {1}
-
-    # The gate, run before anything leaves this machine. `dotnet cake.cs --description` lists its steps.
-    pre-push:
-      jobs:
-        - name: gate
-          run: dotnet cake.cs
-
-    """;
-
-// The two .editorconfig files below the root, byte for byte. The analyzers read every .editorconfig
-// above each source file, and a severity there can turn a finding off.
-const string appEditorConfig = """
-    [*.xaml.cs]
-    # XAML wires event handlers to instance methods
-    dotnet_diagnostic.CA1822.severity = none
-
-    """;
-
-const string testsEditorConfig = """
-    [*.cs]
-    # Test names use Method_Scenario_Expectation
-    dotnet_diagnostic.CA1707.severity = none
-    # Tests are the documentation
-    dotnet_diagnostic.CS1591.severity = none
-
-    """;
-
 // The StyleCop rule that holds a SuppressMessage to a Justification. The waiver refusals read this
 // file too and refuse the rule's name spelled whole in C#, so it is spelled here in two parts.
 const string justificationRule = "SA" + "1404";
 
-// The root .editorconfig, byte for byte. It holds the style rules every C# file follows, keeps the
-// justification rule on as a warning, which TreatWarningsAsErrors makes fatal, and turns every other
-// StyleCop rule off. A severity or a generated_code key there reaches every file in the tree.
-const string rootEditorConfig = $$"""
-    # http://editorconfig.org
-    root = true
-
-    [*]
-    indent_style = space
-    indent_size = 2
-    end_of_line = lf
-    charset = utf-8
-    trim_trailing_whitespace = true
-    insert_final_newline = true
-
-    # The handbook base above, plus what this repository adds. CSharpier writes C# and the project XML
-    # at .csharpierrc's indentSize. PowerShell and nuget.config are indented by hand at the same width.
-    # Prettier reads the 2 above for everything it formats.
-    [*.{cs,csproj,props,targets,xaml,slnx,ps1,config}]
-    indent_size = 4
-
-    [*.cs]
-    csharp_style_var_for_built_in_types = false
-    csharp_style_var_when_type_is_apparent = false
-    csharp_style_var_elsewhere = false
-    dotnet_diagnostic.IDE0008.severity = warning
-    csharp_style_namespace_declarations = file_scoped:warning
-    dotnet_diagnostic.IDE0290.severity = warning
-    dotnet_diagnostic.IDE0300.severity = warning
-    dotnet_diagnostic.IDE0330.severity = warning
-    dotnet_diagnostic.IDE0370.severity = warning
-
-    # StyleCop.Analyzers reports one rule: a SuppressMessage has to carry a Justification. Every other
-    # StyleCop rule is off by category, which silences it and still runs it. SA0001 reports with no
-    # source location, so no category key reaches it, and it is off by its own key.
-    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.DocumentationRules.severity = none
-    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.LayoutRules.severity = none
-    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.MaintainabilityRules.severity = none
-    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.NamingRules.severity = none
-    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.OrderingRules.severity = none
-    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.ReadabilityRules.severity = none
-    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.SpacingRules.severity = none
-    dotnet_analyzer_diagnostic.category-StyleCop.CSharp.SpecialRules.severity = none
-    dotnet_diagnostic.{{justificationRule}}.severity = warning
-    dotnet_diagnostic.SA0001.severity = none
-
-    """;
-
 // The two mise data files, before anything installs from them. A lockfile that disagrees with its
 // pin is the likeliest fault after a bump, and an address in it is what an install fetches, so both
-// are read before the install rather than after. bunfig.toml, the config files the other rows read
-// and the tree's other config files are read here as well, so a pull request that changes one fails
-// the first row. The one process it starts is git, to list the tracked paths. Nothing here resolves
-// mise, so the task needs none on the machine, and check runs it ahead of every other task.
+// are read before the install rather than after. bunfig.toml's keys and the tree's other config
+// files are read here as well, so a pull request that adds a refused one fails the first row. The
+// one process it starts is git, to list the tracked paths. Nothing here resolves mise, so the task
+// needs none on the machine, and check runs it ahead of every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, bunfig.toml and every config file a row reads as cake.cs holds them, no other config file a tool the gate starts searches for, and no inline waiver no analyzer checks"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, no bunfig.toml key but the cooldown, no other config file a tool the gate starts searches for, and no inline waiver no analyzer checks"
     )
     .Does(() => RequireLockfile());
 
@@ -1281,13 +1090,12 @@ FilePath Bunx()
 }
 
 // Every check on the tree's config files, run before each tool the gate starts: the tracked-path
-// refusals, bunfig.toml, the held files, the tool manifest, every other name a tool searches for, and the
-// inline waivers no analyzer checks.
+// refusals, bunfig.toml, the tool manifest, every other name a tool searches for, and the inline
+// waivers no analyzer checks.
 void RequireConfigFiles()
 {
     RequireNoRefusedTrackedPaths();
     RequireBunfig();
-    RequireHeldFiles();
     RequireToolManifest();
     RequireNoConfigElsewhere();
     RequireNoInlineWaivers();
@@ -1648,8 +1456,8 @@ void RequireNoRefusedTrackedPaths()
     {
         throw new CakeException(
             $"The repository tracks a zizmor: ignore[ comment at {string.Join(", ", waivers)}, and the gate takes no inline zizmor waiver under .github. "
-                + "zizmor honors one with no config, so nothing the gate holds names it. "
-                + "Move the waiver to rules.<audit>.ignore in .github/zizmor.yml as the file name, and change zizmorConfig in cake.cs to match."
+                + "zizmor honors one with no config, so it waives a finding outside .github/zizmor.yml, where review reads every waiver. "
+                + "Move the waiver to rules.<audit>.ignore in .github/zizmor.yml as the file name."
         );
     }
 
@@ -1691,27 +1499,24 @@ void RequireNoRefusedTrackedPaths()
     }
 }
 
-// bunfig.toml, held whole to the one setting it carries. Bun reads the file in the working
-// directory on every start, and no flag stops it. A top-level preload runs a module before the
-// first line of whatever Bun starts, and the prettier row's bunx --bun starts prettier under Bun.
-// Every other key reaches Bun as well: an [install] registry moves where even a frozen install
-// downloads from. So the file is read twice. Tomlyn's model has to hold [install] alone, with
-// minimumReleaseAge alone, at bunMinimumReleaseAge. Then the lines themselves, less comments and
-// blank ones, have to read exactly the two lines that model writes, in printable ASCII with LF or
-// CRLF endings. Bun's parser and Tomlyn could read a duplicate key, a dotted or quoted key, another
-// number form, a byte-order mark or a bare carriage return two ways, so each is refused rather than
-// resolved.
+// bunfig.toml's keys, when the file is there. Bun reads the file in the working directory on every
+// start, and no flag stops it. A top-level preload runs a module before the first line of whatever
+// Bun starts, and the prettier row's bunx --bun starts prettier under Bun. Every other key reaches
+// Bun as well: an [install] registry moves where even a frozen install downloads from. So the file
+// is read twice. Tomlyn's model has to hold nothing but [install], and [install] nothing but
+// minimumReleaseAge. Then each line, less comments and blank ones, has to read [install] or
+// minimumReleaseAge = and a run of ASCII digits, in printable ASCII with LF or CRLF endings. Bun's
+// parser and Tomlyn could read a dotted or quoted key, a string, a byte-order mark or a bare
+// carriage return two ways, so each is refused rather than resolved. The cooldown's value, and the
+// file itself, are review's to hold.
 void RequireBunfig()
 {
     const string path = "bunfig.toml";
-    string[] expected = ["[install]", $"minimumReleaseAge = {bunMinimumReleaseAge}"];
     string why =
         "Bun runs a top-level preload module before the first line of whatever it starts, and reads every other key there as well.";
     if (!System.IO.File.Exists(path))
     {
-        throw new CakeException(
-            $"{path} is missing, and it carries the cooldown Bun resolves under: {string.Join(" then ", expected.Select(Quoted))}."
-        );
+        return;
     }
 
     byte[] bytes = System.IO.File.ReadAllBytes(path);
@@ -1744,118 +1549,31 @@ void RequireBunfig()
         );
     }
 
-    RequireWhole(path, "install", table, ExpectedBunInstall(), "Bun");
+    string[] installKeys =
+        table.TryGetValue("install", out object? install) && install is TomlTable settings
+            ? [.. settings.Keys.Where(key => key != "minimumReleaseAge").Order(StringComparer.Ordinal)]
+            : [];
+    if (installKeys.Length > 0)
+    {
+        throw new CakeException(
+            $"{path} holds {string.Join(", ", installKeys.Select(Quoted))} under [install], and the gate takes minimumReleaseAge alone there. {why}"
+        );
+    }
 
-    string[] lines =
+    System.Text.RegularExpressions.Regex taken = new(@"^(?:\[install\]|minimumReleaseAge = [0-9]+)$");
+    string[] others =
     [
         .. System
             .Text.Encoding.ASCII.GetString(bytes)
             .Split('\n')
             .Select(line => (line.IndexOf('#') is int hash and >= 0 ? line[..hash] : line).Trim())
-            .Where(line => line.Length > 0),
+            .Where(line => line.Length > 0 && !taken.IsMatch(line)),
     ];
-    if (!lines.SequenceEqual(expected, StringComparer.Ordinal))
+    if (others.Length > 0)
     {
         throw new CakeException(
-            $"{path} reads {string.Join(" then ", lines.Select(Quoted))} once comments are set aside, and the gate takes {string.Join(" then ", expected.Select(Quoted))} alone. "
-                + "A duplicate, dotted or quoted key, or another way of writing the number, is a line Bun could read otherwise."
-        );
-    }
-}
-
-// The ten config files below, each held byte for byte against the text cake.cs holds for it.
-// prettier runs the modules .prettierrc names, and a line in .prettierignore takes files out of the
-// prettier row. .taplo.toml's exclude takes files out of the toml row, and a rule in
-// .github/zizmor.yml can disable an audit or ignore a finding. An override in .csharpierrc and a line
-// in .csharpierignore do the same to the format row. lefthook.yml holds the commands the hooks run,
-// and a severity in any of the three .editorconfig files can turn an analyzer finding off. So any
-// change to one of these texts is refused rather than read, and the finding names the constant and
-// the first line that differs. .github/actionlint.yaml, in either extension, is refused outright:
-// its paths block ignores actionlint's errors by pattern, and the repository carries none.
-void RequireHeldFiles()
-{
-    (string Path, string Constant, string Text, string Why)[] held =
-    [
-        (".prettierrc", nameof(prettierConfig), prettierConfig, "prettier runs the modules a config names"),
-        (".prettierignore", nameof(prettierIgnore), prettierIgnore, "a line there takes files out of the prettier row"),
-        (".taplo.toml", nameof(taploConfig), taploConfig, "its exclude takes files out of the toml row"),
-        (
-            ".github/zizmor.yml",
-            nameof(zizmorConfig),
-            zizmorConfig,
-            "a rule there can disable an audit or ignore a finding"
-        ),
-        (
-            ".csharpierrc",
-            nameof(csharpierConfig),
-            csharpierConfig,
-            "an override there changes the format row's options"
-        ),
-        (
-            ".csharpierignore",
-            nameof(csharpierIgnore),
-            csharpierIgnore,
-            "a line there takes files out of the format row"
-        ),
-        (
-            "lefthook.yml",
-            nameof(lefthookConfig),
-            lefthookConfig,
-            "lefthook runs the commands there, and an extends or remotes key pulls in more config"
-        ),
-        (
-            ".editorconfig",
-            nameof(rootEditorConfig),
-            rootEditorConfig,
-            "a severity or a generated_code key there reaches every file in the tree"
-        ),
-        (
-            "src/WingetNudge/.editorconfig",
-            nameof(appEditorConfig),
-            appEditorConfig,
-            "a severity there can turn an analyzer finding off"
-        ),
-        (
-            "tests/.editorconfig",
-            nameof(testsEditorConfig),
-            testsEditorConfig,
-            "a severity there can turn an analyzer finding off"
-        ),
-    ];
-    foreach ((string path, string constant, string text, string why) in held)
-    {
-        byte[] expected = System.Text.Encoding.UTF8.GetBytes(text);
-        byte[] actual = System.IO.File.Exists(path) ? System.IO.File.ReadAllBytes(path) : [];
-        int offset = actual.AsSpan().CommonPrefixLength(expected);
-        if (offset == actual.Length && offset == expected.Length)
-        {
-            continue;
-        }
-
-        string reason = $"{why[..1].ToUpperInvariant()}{why[1..]}, so the file has to match {constant} byte for byte.";
-        if (!System.IO.File.Exists(path))
-        {
-            throw new CakeException(
-                $"{path} is missing, and the gate takes the text {constant} in cake.cs holds for it. {reason} Restore the file."
-            );
-        }
-
-        int line = expected.AsSpan(0, offset).Count((byte)'\n') + 1;
-        throw new CakeException(
-            $"{path} differs from {constant} in cake.cs at line {line}, byte {offset}: the file has {LineAt(actual, offset)}, and {constant} has {LineAt(expected, offset)}. "
-                + $"{reason} Change both together, or restore the file."
-        );
-    }
-
-    string[] actionlintConfig =
-    [
-        .. ((string[])[".github/actionlint.yaml", ".github/actionlint.yml"]).Where(System.IO.File.Exists),
-    ];
-    if (actionlintConfig.Length > 0)
-    {
-        throw new CakeException(
-            $"The repository holds {string.Join(", ", actionlintConfig.Select(Quoted))}, and the gate takes no actionlint config. "
-                + "Its paths block ignores actionlint's errors by pattern, so a workflow it names is never checked."
+            $"{path} reads {string.Join(" then ", others.Select(Quoted))} once comments are set aside, and the gate takes the lines [install] and minimumReleaseAge = <digits> alone. "
+                + "A dotted or quoted key, or a value other than a plain number, is a line Bun could read otherwise."
         );
     }
 }
@@ -1866,7 +1584,7 @@ void RequireHeldFiles()
 // The walk is TreeFiles with the build output, because an editor reads an untracked file too, and
 // MSBuild imports files from obj. Every name matches without regard to case, as NTFS does, and the
 // one config the gate names for a tool passes in its exact case alone. An .editorconfig that sets
-// is_global is refused wherever it sits, the root one and the two held ones included, since the
+// is_global is refused wherever it sits, the root one and the two below it included, since the
 // analyzers apply a global config to every file of a project that finds it. A .config entry at the
 // root is refused whole: mise, dotnet tool run, cosmiconfig and lefthook each read config from it,
 // and cosmiconfig runs a module there on every commitlint start. No tool the gate starts reads a
@@ -1922,8 +1640,9 @@ void RequireNoConfigElsewhere()
 // 1.3.0's .csharpierrc family, MSBuild's Directory files, response file, project .user files and
 // obj imports, NuGet's config, the analyzers' .editorconfig and .globalconfig, Bun's tsconfig.json
 // and jsconfig.json, Cake's cake.config, taplo 0.10.0, zizmor 1.30.1, commitlint 21.2.2 over
-// cosmiconfig 9.0.2, lefthook 2.1.14, and the test platform's testconfig.json and xUnit's
-// xunit.runner.json. A name is refused at every depth the tool, or an editor running it, searches.
+// cosmiconfig 9.0.2, lefthook 2.1.14, actionlint 1.7.12's .github/actionlint.yaml, and the test
+// platform's testconfig.json and xUnit's xunit.runner.json. A name is refused at every depth the
+// tool, or an editor running it, searches.
 // package.yaml is refused whole, since the gate does not read its keys. In obj, MSBuild imports
 // <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on every
 // restore, so that pair alone passes.
@@ -1978,7 +1697,7 @@ static string? SearchedConfig(string relative)
         ".github/.github/zizmor.yaml",
     ];
     string[] lefthookFiles = ["lefthook.yaml", "lefthook.json", "lefthook.jsonc", "lefthook.toml"];
-    string[] heldEditorConfigs = ["src/WingetNudge/.editorconfig", "tests/.editorconfig"];
+    string[] placedEditorConfigs = ["src/WingetNudge/.editorconfig", "tests/.editorconfig"];
     string[] segments = relative.Split('/');
     string name = segments[^1].ToLowerInvariant();
     bool atRoot = segments.Length == 1;
@@ -2013,7 +1732,7 @@ static string? SearchedConfig(string relative)
             "MSBuild imports it into every build of the project beside obj, and NuGet's own nuget.g files are the only ones the gate takes there",
         _ when name == "nuget.config" && !atRoot =>
             "NuGet adds its sources past the root nuget.config's <clear /> for every project below it",
-        _ when name == ".editorconfig" && !atRoot && !heldEditorConfigs.Contains(relative) =>
+        _ when name == ".editorconfig" && !atRoot && !placedEditorConfigs.Contains(relative) =>
             "the analyzers read its severities, and an editor's prettier its indent and line endings, for every file below it",
         _ when name == ".globalconfig" =>
             "the analyzers apply it to every file of a project with a source file below it, in an editor's build, which does not pass DiscoverGlobalAnalyzerConfigFiles=false as the gate's does",
@@ -2032,6 +1751,8 @@ static string? SearchedConfig(string relative)
             "commitlint reads it as config when run without --config, as the shared commits job runs it",
         _ when atRoot && (lefthookFiles.Contains(name) || name.StartsWith(".lefthook.", StringComparison.Ordinal)) =>
             "lefthook reads it as its config",
+        _ when relative.ToLowerInvariant() is ".github/actionlint.yaml" or ".github/actionlint.yml" =>
+            "actionlint reads its paths block, which ignores actionlint's errors by pattern, so a workflow it names is never checked",
         _ => null,
     };
 }
@@ -2994,20 +2715,6 @@ void RequireChecked(string row, IReadOnlyCollection<string> files)
     }
 
     Information("{0} checks {1} files: {2}", row, files.Count, string.Join(", ", files));
-}
-
-// The line of a text that holds a byte offset, quoted, or "nothing more" when the text ends before
-// the offset.
-static string LineAt(byte[] bytes, int offset)
-{
-    if (offset >= bytes.Length)
-    {
-        return "nothing more";
-    }
-
-    int start = offset == 0 ? 0 : Array.LastIndexOf(bytes, (byte)'\n', offset - 1) + 1;
-    int end = Array.IndexOf(bytes, (byte)'\n', offset);
-    return Quoted(System.Text.Encoding.UTF8.GetString(bytes, start, (end < 0 ? bytes.Length : end) - start));
 }
 
 // A value read from mise.toml, mise.lock or mise's own output, as every message echoes one: in double

@@ -1,8 +1,8 @@
 # Every TOML file this repository authors, formatted by `taplo fmt`. The gate's toml row names each
-# .toml file in the tree to `taplo fmt --check` with this file, and holds this file to the text
-# cake.cs names. mise.lock is written by `mise lock` and carries no .toml extension, so the pattern
-# leaves it alone. A run that names no file walks every directory whatever .gitignore says, so the
-# two that hold TOML files this repository does not author are excluded by name: node_modules, and
-# the worktrees the Claude Code CLI checks out under .claude/worktrees.
+# .toml file in the tree to `taplo fmt --check` with this file. mise.lock is written by `mise lock`
+# and carries no .toml extension, so the pattern leaves it alone. A run that names no file walks
+# every directory whatever .gitignore says, so the two that hold TOML files this repository does not
+# author are excluded by name: node_modules, and the worktrees the Claude Code CLI checks out under
+# .claude/worktrees.
 include = ["**/*.toml"]
 exclude = [".claude/worktrees/**", "node_modules/**"]

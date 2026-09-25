@@ -304,9 +304,9 @@ task and what it checks, and `dotnet cake.cs --tree` prints the order they run i
 fails or disagrees with continuous integration, [Troubleshooting](#troubleshooting) says why.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
-`workflows`. `lockfile` reads `mise.toml`, `mise.lock`, `bunfig.toml` and every config file another
-row reads, walks the tree for any other config file a tool the gate starts searches for and for any
-inline waiver no analyzer checks, and asks git which paths are tracked. git is the one process it
+`workflows`. `lockfile` reads `mise.toml`, `mise.lock` and `bunfig.toml`, walks the tree for any
+other config file a tool the gate starts searches for and for any inline waiver no analyzer checks,
+and asks git which paths are tracked. git is the one process it
 starts, so it needs no mise on the machine, and it is the first task the whole gate runs. Every row
 that starts dotnet, bunx or a mise tool runs the same config checks first, so `--exclusive` skips
 none of them. `--target=tools` runs `lockfile` and then `mise install`; it is the install
@@ -564,17 +564,17 @@ owner alone.
   It compares no paths, so a checkout reached through a junction passes. The `gate` job's
   `bun install` takes `--ignore-scripts`, because a frozen lockfile still runs the lifecycle
   scripts `package.json` names.
-- `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone, at the value `cake.cs` names.
-  Bun reads the file on every start, and no flag stops it. A top-level `preload` there runs a
-  module before the first line of whatever Bun starts, prettier and commitlint included. Every other
-  key reaches Bun too: an `[install]` registry moves where even a frozen install downloads from. So
-  `lockfile` and the prettier row refuse any other key or table, and any other value, before the
-  gate starts bunx. The file's lines, less comments, have to read exactly those two lines in
-  printable ASCII, so Bun and the gate cannot read it two ways.
+- `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone. Bun reads the file on every
+  start, and no flag stops it. A top-level `preload` there runs a module before the first line of
+  whatever Bun starts, prettier and commitlint included. Every other key reaches Bun too: an
+  `[install]` registry moves where even a frozen install downloads from. So `lockfile` and the
+  prettier row refuse any other key or table before the gate starts bunx. The file's lines, less
+  comments, have to read `[install]` or `minimumReleaseAge = ` and digits, in printable ASCII, so
+  Bun and the gate cannot read it two ways. The gate reads no value there and passes a checkout
+  with no `bunfig.toml`, so review holds the cooldown.
 - The prettier row runs prettier with `--config .prettierrc`, so it searches for no other config
-  file, and `.prettierrc` has to equal, byte for byte, the text `cake.cs` holds, which every
-  repository shares. It also passes `--no-editorconfig`, so no `.editorconfig` sets the indent, line
-  ending or width prettier formats with. prettier runs the modules a config names under `plugins`,
+  file. It also passes `--no-editorconfig`, so no `.editorconfig` sets the indent, line ending or
+  width prettier formats with. prettier runs the modules a config names under `plugins`,
   and loads a config written as code, and an editor's prettier searches every directory. So
   `lockfile` and the prettier row also refuse every other file prettier 3.9.8 reads as config, at
   any depth and in any case: a `.prettierrc` below the root, `.prettierrc` and `prettier.config`
@@ -584,14 +584,15 @@ owner alone.
   skips `.git` at any depth, and `node_modules`, `.claude/worktrees` and `.vs` at the root. It reads
   the `bin` and `obj` beside each project, which the rows skip, because MSBuild imports files from
   `obj`. A directory it cannot list is refused by name.
-- These ten files each equal, byte for byte, the text `cake.cs` holds for them: `.prettierrc`,
-  `.prettierignore`, `.taplo.toml`, `.github/zizmor.yml`, `.csharpierrc`, `.csharpierignore`, which
-  is empty, `lefthook.yml`, the root `.editorconfig`, `src/WingetNudge/.editorconfig` and
-  `tests/.editorconfig`. A finding names the constant in `cake.cs` and the first line that differs,
-  so a deliberate change edits both. The prettier row passes `--ignore-path .prettierignore`, which
-  replaces prettier's default pair, so `.gitignore` takes nothing out of it, and `.prettierignore`
-  lists the local paths `.gitignore` covers that prettier would read. A `.github/actionlint.yaml` is
-  refused, because its `paths` block ignores actionlint's errors by pattern.
+- No config file is held to fixed text. CODEOWNERS review holds `.prettierrc`, `.prettierignore`,
+  `.taplo.toml`, `.github/zizmor.yml`, `.csharpierrc`, `.csharpierignore`, `lefthook.yml` and the
+  three `.editorconfig` files, and a reviewer refuses a line that takes a file out of a row or
+  turns a finding off. The `format` and `toml` rows fail when their tool drops a file they named,
+  and the prettier row does not: a line in `.prettierignore` takes files out of it without a word.
+  The prettier row passes `--ignore-path .prettierignore`, which replaces prettier's default pair,
+  so `.gitignore` takes nothing out of it, and `.prettierignore` lists the local paths `.gitignore`
+  covers that prettier would read. A `.github/actionlint.yaml` is refused, because its `paths` block
+  ignores actionlint's errors by pattern.
 - The `format` row names each file the tree walk finds with an extension CSharpier 1.3.0 formats.
   The walk skips the `bin` and `obj` beside a project file, where the SDK writes, and enters one
   anywhere else, since the SDK compiles a file there. The row names the files in batches that fit
@@ -675,10 +676,11 @@ owner alone.
   reads each as config, and the build copies a `testconfig.json` beside a test project into its
   output.
 - The analyzers read every `.editorconfig` above each source file, up to the root file's
-  `root = true`. So the gate refuses every `.editorconfig` below the root but the two it holds, and
-  every `.globalconfig`, which an editor's build reads. It refuses an `.editorconfig` that sets
-  `is_global` anywhere, the root one and the two it holds included, since the analyzers apply a
-  global config to every file of a project that finds it.
+  `root = true`. So the gate refuses every `.editorconfig` below the root but
+  `src/WingetNudge/.editorconfig` and `tests/.editorconfig`, and every `.globalconfig`, which an
+  editor's build reads. It refuses an `.editorconfig` that sets `is_global` anywhere, those two and
+  the root one included, since the analyzers apply a global config to every file of a project that
+  finds it.
 - A `.config` directory at the root is refused whole, in any case. mise, `dotnet tool run`,
   cosmiconfig and lefthook each read config from it. cosmiconfig runs a module there on every
   commitlint start, `--config` or not, and a tool manifest there outranks `dotnet-tools.json`. None

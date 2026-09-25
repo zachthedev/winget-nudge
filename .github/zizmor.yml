@@ -1,5 +1,5 @@
-# zizmor's settings for this repository. Every audit not named here runs at zizmor's defaults. The
-# gate holds this file to the text cake.cs names, since a rule here can disable an audit.
+# zizmor's settings for this repository. Every audit not named here runs at zizmor's defaults. A
+# rule here can disable an audit or ignore a finding, so review reads every change to this file.
 rules:
   # Every action is pinned to a commit, including the ones GitHub publishes. A tag can be
   # retargeted by its owner with no pull request and no cooldown, and this is what refuses one.
