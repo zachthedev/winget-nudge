@@ -6,7 +6,7 @@ namespace WingetNudge.Core.Tests;
 public sealed class WingetVersionTests
 {
     [Theory]
-    // Real upgrades this machine's winget offers.
+    // Version pairs winget reported for real upgrades.
     [InlineData("1.7.2", "1.19.2", true)]
     [InlineData("6.3.0", "6.6.1.0", true)]
     [InlineData("2026.05.07-c55b318", "2026.09.08-e1d69dd", true)]
