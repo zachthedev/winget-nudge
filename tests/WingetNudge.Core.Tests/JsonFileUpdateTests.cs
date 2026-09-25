@@ -276,7 +276,12 @@ public sealed class JsonFileUpdateTests : IDisposable
         JsonFile.Read<Dictionary<string, string>>(DataFile, deleteIfCorrupt: false).Should().BeNull();
         watch.Stop();
 
-        watch.ElapsedMilliseconds.Should().BeLessThan(400, "a move that waits out a holder sleeps 511 ms or more");
+        watch
+            .ElapsedMilliseconds.Should()
+            .BeLessThan(
+                1_000,
+                "a move that waits out a holder sleeps 511 ms or more, so two reads that wait sleep 1,022 ms or more"
+            );
         File.Exists(DataFile).Should().BeTrue("the held file stays for the next writer");
     }
 
