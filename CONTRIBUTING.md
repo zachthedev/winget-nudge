@@ -272,7 +272,7 @@ DigiCert timestamp. A self-signed certificate verifies only on a machine that tr
   category Cf) and every default-ignorable code point removed. An identifier takes escapes, and the
   compiler drops every format character from it, so `Generated­Code` binds to `[GeneratedCode]`.
 - The gate reads a `.cs` file as the compiler does, and refuses one it cannot: bytes that are not
-  UTF-8, nor UTF-16 after a byte-order mark, which the compiler reads in the machine's code page
+  UTF-8, nor UTF-16 after a byte-order mark, which the compiler reads in the system's ANSI code page
   instead. It refuses a `%` in a `.cs` path, which a SARIF log reads as an escape.
 - `.editorconfig` is lint configuration, and CODEOWNERS holds it to review. A `generated_code` key,
   and any `dotnet_diagnostic.*.severity` below `warning`, are waivers a reviewer refuses: each

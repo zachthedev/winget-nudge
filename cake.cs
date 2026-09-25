@@ -1817,7 +1817,7 @@ static bool SetsIsGlobal(string path) =>
 //   invisible character removed.
 // - Roslyn's generated-code comment marker anywhere in a .cs file, and its generated file names:
 //   TemporaryGeneratedFile_ at the start, or .designer, .generated, .g or .g.i before the extension.
-// - A .cs file whose bytes the compiler would read in the machine's code page, and a .cs path holding a
+// - A .cs file whose bytes the compiler would read in the system's ANSI code page, and a .cs path holding a
 //   %, which a SARIF log decodes into another path.
 // - CSharpier's ignore comments, in C# and in XML, in every file the format row names.
 void RequireNoInlineWaivers()
@@ -1866,7 +1866,7 @@ void RequireNoInlineWaivers()
                 (
                     relative,
                     0,
-                    "bytes that are not UTF-8, nor UTF-16 after a byte-order mark, which the compiler reads in the machine's code page, so the gate cannot read what it compiles. Save it as UTF-8"
+                    "bytes that are not UTF-8, nor UTF-16 after a byte-order mark, which the compiler reads in the system's ANSI code page, so the gate cannot read what it compiles. Save it as UTF-8"
                 )
             );
             continue;
@@ -2046,7 +2046,7 @@ static string WithoutInvisible(string text)
 }
 
 // A C# source file's text as the compiler reads it, or null when the compiler would read it in the
-// machine's code page instead. The compiler takes a UTF-8 or UTF-16 byte-order mark, and without one
+// system's ANSI code page instead. The compiler takes a UTF-8 or UTF-16 byte-order mark, and without one
 // reads the bytes as UTF-8 when all of them decode. A UTF-32 mark is refused: FF FE 00 00 also opens a
 // UTF-16 file whose first character is U+0000, so the two readings differ.
 static string? SourceText(byte[] bytes)
