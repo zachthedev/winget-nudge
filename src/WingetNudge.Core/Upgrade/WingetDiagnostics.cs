@@ -19,8 +19,9 @@ public sealed record WingetDiagnostics(string? Summary, IReadOnlyList<string> Fi
 /// </summary>
 /// <remarks>
 /// The elevated upgrade window calls this, and the directory sits under a profile any process
-/// running as the user can redirect. Every path is checked for a reparse point, and the reads
-/// are bounded, so a planted file cannot grow into a privileged read of somewhere else.
+/// running as the user can redirect. The directory opens by handle, refusing a reparse point at any
+/// step, each file opens relative to that handle and never through a link, and the reads are bounded,
+/// so a planted file cannot grow into a privileged read of somewhere else.
 /// </remarks>
 /// <param name="directory">
 /// Diagnostic directory to read, or <c>null</c> for the one App Installer writes to.
@@ -75,37 +76,33 @@ public sealed partial class WingetDiagnosticsReader(string? directory = null)
             return WingetDiagnostics.None;
         }
 
-        List<string> files;
+        List<FileInfo> files;
+        string? summary;
         try
         {
             // A redirected directory would have this elevated process read somewhere else.
-            SafePath.EnsureNotReparsePoint(root);
+            using SafeDirectory held = SafePath.OpenDirectory(root, create: false);
             files =
             [
-                .. new DirectoryInfo(root)
-                    .EnumerateFiles("*.log")
+                .. held.GetFiles("*.log")
                     .Where(file => file.LastWriteTimeUtc >= since.UtcDateTime)
                     .Where(static file => !SafePath.IsReparsePoint(file.FullName))
                     .OrderBy(static file => file.LastWriteTimeUtc)
-                    .Take(MaxFiles)
-                    .Select(static file => file.FullName),
+                    .Take(MaxFiles),
             ];
+            summary = files
+                .Where(static file => !WingetOwnLog().IsMatch(file.Name))
+                .Select(file => FindRefusal(held, file.Name))
+                .FirstOrDefault(static line => line is not null);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             return WingetDiagnostics.None;
         }
 
-        if (files.Count == 0)
-        {
-            return WingetDiagnostics.None;
-        }
-
-        string? summary = files
-            .Where(static file => !WingetOwnLog().IsMatch(Path.GetFileName(file)))
-            .Select(FindRefusal)
-            .FirstOrDefault(static line => line is not null);
-        return new WingetDiagnostics(summary, files);
+        return files.Count == 0
+            ? WingetDiagnostics.None
+            : new WingetDiagnostics(summary, [.. files.Select(static file => file.FullName)]);
     }
 
     /// <summary>Reads the tail of a diagnostic file.</summary>
@@ -113,14 +110,20 @@ public sealed partial class WingetDiagnosticsReader(string? directory = null)
     /// <returns>The last <see cref="TailLines"/> lines, or an empty list when unreadable.</returns>
     public static IReadOnlyList<string> Tail(string path)
     {
-        if (SafePath.IsReparsePoint(path))
+        string full = Path.GetFullPath(path);
+        string name = Path.GetFileName(full);
+        if (Path.GetDirectoryName(full) is not string parent || name.Length == 0)
         {
+            // A volume root, or a path ending in a separator, names no file.
             return [];
         }
 
         try
         {
-            using FileStream stream = File.OpenRead(path);
+            // The directory may have been redirected since Collect listed it, so the read goes through the handle a
+            // fresh walk verified.
+            using SafeDirectory directory = SafePath.OpenDirectory(parent, create: false);
+            using FileStream stream = directory.OpenFile(name, FileMode.Open, FileAccess.Read, FileShare.Read);
             // Only the end of the file can hold the last lines, and a winget log runs to megabytes.
             long start = Math.Max(0, stream.Length - TailBytes);
             stream.Seek(start, SeekOrigin.Begin);
@@ -144,18 +147,21 @@ public sealed partial class WingetDiagnosticsReader(string? directory = null)
 
             return lines;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
+            // A name the open refuses, such as a dot entry a device path keeps, is unreadable like any other.
             return [];
         }
     }
 
-    private static string? FindRefusal(string path)
+    private static string? FindRefusal(SafeDirectory directory, string name)
     {
         try
         {
+            using FileStream stream = directory.OpenFile(name, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using StreamReader reader = new(stream);
             int scanned = 0;
-            foreach (string line in File.ReadLines(path))
+            while (reader.ReadLine() is string line)
             {
                 if (++scanned > MaxScannedLines)
                 {
