@@ -305,12 +305,12 @@ fails or disagrees with continuous integration, [Troubleshooting](#troubleshooti
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
 `workflows`. `lockfile` reads `mise.toml`, `mise.lock` and `bunfig.toml`, walks the tree for any
-other config file a tool the gate starts searches for and for any inline waiver no analyzer checks,
-and asks git which paths are tracked. git is the one process it
-starts, so it needs no mise on the machine, and it is the first task the whole gate runs. Every row
-that starts dotnet, bunx or a mise tool runs the same config checks first, so `--exclusive` skips
-none of them. `--target=tools` runs `lockfile` and then `mise install`; it is the install
-continuous integration runs, and `check` does not reach it.
+config file a tool would read past the ones the gate names and for any inline waiver no analyzer
+checks, and asks git which paths are tracked. git is the one process it starts, so it needs no mise
+on the machine, and it is the first task the whole gate runs. Every row that starts dotnet, bunx or
+a mise tool runs the same config checks first, so `--exclusive` skips none of them. `--target=tools`
+runs `lockfile` and then `mise install`; it is the install continuous integration runs, and `check`
+does not reach it.
 
 `workflows` hands actionlint a ShellCheck stand-in in front of the ShellCheck binary it resolved,
 then asks actionlint for a finding only ShellCheck reports and for a refusal only the stand-in
@@ -574,16 +574,14 @@ owner alone.
   with no `bunfig.toml`, so review holds the cooldown.
 - The prettier row runs prettier with `--config .prettierrc`, so it searches for no other config
   file. It also passes `--no-editorconfig`, so no `.editorconfig` sets the indent, line ending or
-  width prettier formats with. prettier runs the modules a config names under `plugins`,
-  and loads a config written as code, and an editor's prettier searches every directory. So
-  `lockfile` and the prettier row also refuse every other file prettier 3.9.8 reads as config, at
-  any depth and in any case: a `.prettierrc` below the root, `.prettierrc` and `prettier.config`
-  with each extension prettier reads, `package.yaml`, and a `package.json` with a `prettier` key.
-  The same walk refuses any `.npmrc`, which moves where `bun install` downloads from, and any
-  directory link. It reads the file system, because an editor reads an untracked file too. It
-  skips `.git` at any depth, and `node_modules`, `.claude/worktrees` and `.vs` at the root. It reads
-  the `bin` and `obj` beside each project, which the rows skip, because MSBuild imports files from
-  `obj`. A directory it cannot list is refused by name.
+  width prettier formats with. On prettier 3.9.8, `--config` stops the read of every other config
+  file, a nested `.prettierrc` and a `package.json` `prettier` key included, so the gate refuses
+  none of them. An editor's prettier still reads one.
+- The config walk behind `lockfile` refuses any directory link. It reads the file system, because a
+  tool reads an untracked file too. It skips `.git` at any depth, and `node_modules`,
+  `.claude/worktrees` and `.vs` at the root. It reads the `bin` and `obj` beside each project,
+  which the rows skip, because MSBuild imports files from `obj`. A directory it cannot list is
+  refused by name.
 - No config file is held to fixed text. CODEOWNERS review holds `.prettierrc`, `.prettierignore`,
   `.taplo.toml`, `.github/zizmor.yml`, `.csharpierrc`, `.csharpierignore`, `lefthook.yml` and the
   three `.editorconfig` files, and a reviewer refuses a line that takes a file out of a row or
@@ -602,8 +600,7 @@ owner alone.
   `--include-generated`. CSharpier then reads no other config or ignore file, and checks a file
   whose header calls it generated. The path is absolute because CSharpier anchors a config's
   `overrides` to its directory, as an editor's CSharpier does. A named file is checked whatever
-  `.gitignore` says, so a local `Directory.Signing.props` is checked too. The gate refuses every
-  other `.csharpierrc*` and `.csharpierignore`, at any depth and in any case.
+  `.gitignore` says, so a local `Directory.Signing.props` is checked too.
 - The `build`, `tests` and `installer` rows name the root `Directory.Build.props`,
   `Directory.Build.targets` and `Directory.Packages.props` to MSBuild, so it searches above no
   project for them. The root holds no `Directory.Build.targets`, and MSBuild imports a named file
@@ -686,15 +683,16 @@ owner alone.
   commitlint start, `--config` or not, and a tool manifest there outranks `dotnet-tools.json`. None
   of them reads a `.config` below the root. `dotnet-tools.json` has to set `"isRoot": true`, because
   `dotnet tool run` takes no manifest path and walks up until a manifest sets it.
-- The gate refuses the other names each tool it starts searches for, at the depths it searches, in
-  any case: a root `taplo.toml`; `.github/zizmor.yaml`, a root `zizmor.yml` or `zizmor.yaml`, and
-  `.github/.github/zizmor.yml` or `.yaml`; every commitlint search place at the root but
-  `commitlint.config.js`; `lefthook.yaml`, `.json`, `.jsonc` and `.toml`, and any `.lefthook.*`, at
-  the root; and a root `cake.config`, which Cake reads before any task runs. It refuses a
-  `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules prettier and
-  commitlint load, and the repository has no TypeScript.
-- A `package.json` with a top-level `prettier`, `commitlint`, `cosmiconfig` or `patchedDependencies`
-  key is refused. So is one that names a key twice at any depth, because Bun keeps the first of two
+- A config name stays refused only where no flag the gate passes stops the read. prettier,
+  CSharpier, taplo and zizmor each read the one config the gate names and search for no other, so
+  their other names pass. The gate refuses these, at the depths each tool searches, in any case:
+  every commitlint search place at the root but `commitlint.config.js`, and a `package.yaml` at any
+  depth, which cosmiconfig reads; `lefthook.yaml`, `.json`, `.jsonc` and `.toml`, and any
+  `.lefthook.*`, at the root; and a root `cake.config`, which Cake reads before any task runs. It
+  refuses a `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules
+  prettier and commitlint load, and the repository has no TypeScript.
+- A `package.json` with a top-level `commitlint`, `cosmiconfig` or `patchedDependencies` key is
+  refused. So is one that names a key twice at any depth, because Bun keeps the first of two
   keys and `JSON.parse` the last. The finding names the key path. `bun install` applies a root
   `patchedDependencies` entry to the package it names, under a frozen lockfile too and with no
   `bun.lock` change, so a patch would change what prettier or commitlint runs. Bun reads the key in

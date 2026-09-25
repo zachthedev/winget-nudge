@@ -214,11 +214,13 @@ Task("format")
         );
     });
 
-// --ignore-path names .prettierignore alone, which replaces prettier's default pair, so .gitignore
-// takes nothing out of the row. --no-editorconfig stops prettier mapping an .editorconfig's indent,
-// line ending and width onto the options .prettierrc leaves unset, from any directory above a file.
-// prettier --check names no file it checked and passes on none, so a --debug-check pass first lists
-// them, with the same options, and the row refuses an empty list.
+// --config names .prettierrc, and prettier then reads no other config file, a nested one or a
+// package.json key included. --ignore-path names .prettierignore alone, which replaces prettier's
+// default pair, so .gitignore takes nothing out of the row. --no-editorconfig stops prettier
+// mapping an .editorconfig's indent, line ending and width onto the options .prettierrc leaves
+// unset, from any directory above a file. prettier --check names no file it checked and passes on
+// none, so a --debug-check pass first lists them, with the same options, and the row refuses an
+// empty list.
 Task("prettier")
     .Description("Markdown, YAML and JSON formatting, over the files the row lists first")
     .Does(() =>
@@ -257,11 +259,12 @@ Task("prettier")
     });
 
 // taplo comes from mise like the workflow linters, so it runs from the path mise which resolves
-// once the lockfile task has passed its entry. --config names the committed file so TAPLO_CONFIG
-// in the environment cannot swap it. The row names every .toml file TreeFiles finds, so taplo walks
-// nothing. taplo exits 0 having checked nothing when its walk finds no file, when a named file is
-// missing, and when .taplo.toml excludes every named file. So the row reads the list taplo logs,
-// with RUST_LOG set so no inherited filter hides it, and refuses any list but the one it named.
+// once the lockfile task has passed its entry. --config names the committed file so TAPLO_CONFIG in
+// the environment cannot swap it, and taplo reads no root taplo.toml beside it. The row names every
+// .toml file TreeFiles finds, so taplo walks nothing. taplo exits 0 having checked nothing when its
+// walk finds no file, when a named file is missing, and when .taplo.toml excludes every named file.
+// So the row reads the list taplo logs, with RUST_LOG set so no inherited filter hides it, and
+// refuses any list but the one it named.
 Task("toml")
     .Description("TOML formatting, through taplo, over every .toml file in the tree, each named to taplo")
     .IsDependentOn("lockfile")
@@ -577,7 +580,7 @@ const string justificationRule = "SA" + "1404";
 // needs none on the machine, and check runs it ahead of every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, no bunfig.toml key but the cooldown, no other config file a tool the gate starts searches for, and no inline waiver no analyzer checks"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, no bunfig.toml key but the cooldown, no config file a tool would read past the ones the gate names, and no inline waiver no analyzer checks"
     )
     .Does(() => RequireLockfile());
 
@@ -646,12 +649,13 @@ Task("workflows")
 
         // --strict-collection fails on a file zizmor cannot parse. Without it the file is dropped
         // with a warning and the run reports no findings for a workflow it never read. --config
-        // names the committed file so ZIZMOR_CONFIG in the environment cannot swap it. The input is
-        // .github with --collect=all: zizmor collects every workflow, .github/dependabot.yml and any
-        // composite action there, and reads no ignore file, so no .gitignore, .git/info/exclude or
-        // global excludes line can hide one. The walk stops at .github, so node_modules and
-        // .claude/worktrees are never read. zizmor logs each file it completes and exits non-zero
-        // when it collects none, so this row needs no list of its own.
+        // names the committed file so ZIZMOR_CONFIG in the environment cannot swap it, and zizmor
+        // discovers no other zizmor.yml or zizmor.yaml. The input is .github with --collect=all:
+        // zizmor collects every workflow, .github/dependabot.yml and any composite action there,
+        // and reads no ignore file, so no .gitignore, .git/info/exclude or global excludes line can
+        // hide one. The walk stops at .github, so node_modules and .claude/worktrees are never
+        // read. zizmor logs each file it completes and exits non-zero when it collects none, so
+        // this row needs no list of its own.
         //
         // The online audits read the GitHub API. zizmor given neither a token nor --offline skips
         // them and says so at debug level alone, so every run without a token names --offline. On
@@ -1578,12 +1582,12 @@ void RequireBunfig()
     }
 }
 
-// Every other file a tool the gate starts, or an editor running that tool, would read as config,
-// anywhere in the tree, each named with why. The gate hands each tool its one config by name, so
-// the refusals keep an editor's run, and a run the gate does not make, reading what the gate reads.
-// The walk is TreeFiles with the build output, because an editor reads an untracked file too, and
-// MSBuild imports files from obj. Every name matches without regard to case, as NTFS does, and the
-// one config the gate names for a tool passes in its exact case alone. An .editorconfig that sets
+// Every file a tool reads as config where no flag the gate passes stops the read, anywhere in the
+// tree, each named with why: in a run the gate makes, an editor's build or the shared commits job.
+// prettier, CSharpier, taplo and zizmor read the one config the gate names and search for no other,
+// so their other names pass. The walk is TreeFiles with the build output, because a tool reads an
+// untracked file too, and MSBuild imports files from obj. Every name matches without regard to case,
+// as NTFS does, and commitlint.config.js passes in its exact case alone. An .editorconfig that sets
 // is_global is refused wherever it sits, the root one and the two below it included, since the
 // analyzers apply a global config to every file of a project that finds it. A .config entry at the
 // root is refused whole: mise, dotnet tool run, cosmiconfig and lefthook each read config from it,
@@ -1629,46 +1633,23 @@ void RequireNoConfigElsewhere()
     {
         throw new CakeException(
             $"The tree holds {string.Join("; ", found.Order(StringComparer.Ordinal))}. "
-                + "The gate names each tool's one config itself and takes no other file the tool searches for. "
-                + "Remove each one, and put any setting it carries in the file the gate names."
+                + "The gate takes no config file a tool reads past the ones the gate names. "
+                + "Remove each one, and put any setting it carries in a file the gate names."
         );
     }
 }
 
 // Why the gate refuses a file of this name where it sits, or null when it takes it. The names are
-// each tool's own search list at the version the gate pins: prettier 3.9.8's CONFIG_FILES, CSharpier
-// 1.3.0's .csharpierrc family, MSBuild's Directory files, response file, project .user files and
-// obj imports, NuGet's config, the analyzers' .editorconfig and .globalconfig, Bun's tsconfig.json
-// and jsconfig.json, Cake's cake.config, taplo 0.10.0, zizmor 1.30.1, commitlint 21.2.2 over
+// each tool's own search list at the version the gate pins: MSBuild's Directory files, response
+// file, project .user files and obj imports, NuGet's config, the analyzers' .editorconfig and
+// .globalconfig, Bun's tsconfig.json and jsconfig.json, Cake's cake.config, commitlint 21.2.2 over
 // cosmiconfig 9.0.2, lefthook 2.1.14, actionlint 1.7.12's .github/actionlint.yaml, and the test
 // platform's testconfig.json and xUnit's xunit.runner.json. A name is refused at every depth the
-// tool, or an editor running it, searches.
-// package.yaml is refused whole, since the gate does not read its keys. In obj, MSBuild imports
-// <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on every
-// restore, so that pair alone passes.
+// tool, or an editor running it, searches. package.yaml is refused whole, since the gate does not
+// read its keys. In obj, MSBuild imports <project file>.*.props and .targets by wildcard, and NuGet
+// writes the nuget.g pair there on every restore, so that pair alone passes.
 static string? SearchedConfig(string relative)
 {
-    string[] prettierFiles =
-    [
-        ".prettierrc",
-        ".prettierrc.json",
-        ".prettierrc.yml",
-        ".prettierrc.yaml",
-        ".prettierrc.json5",
-        ".prettierrc.js",
-        ".prettierrc.ts",
-        ".prettierrc.mjs",
-        ".prettierrc.mts",
-        ".prettierrc.cjs",
-        ".prettierrc.cts",
-        ".prettierrc.toml",
-        "prettier.config.js",
-        "prettier.config.ts",
-        "prettier.config.mjs",
-        "prettier.config.mts",
-        "prettier.config.cjs",
-        "prettier.config.cts",
-    ];
     string[] commitlintFiles =
     [
         ".commitlintrc",
@@ -1688,14 +1669,6 @@ static string? SearchedConfig(string relative)
         "commitlint.config.cts",
         "commitlint.config.mts",
     ];
-    string[] zizmorFiles =
-    [
-        ".github/zizmor.yaml",
-        "zizmor.yml",
-        "zizmor.yaml",
-        ".github/.github/zizmor.yml",
-        ".github/.github/zizmor.yaml",
-    ];
     string[] lefthookFiles = ["lefthook.yaml", "lefthook.json", "lefthook.jsonc", "lefthook.toml"];
     string[] placedEditorConfigs = ["src/WingetNudge/.editorconfig", "tests/.editorconfig"];
     string[] segments = relative.Split('/');
@@ -1707,15 +1680,8 @@ static string? SearchedConfig(string relative)
     );
     return relative switch
     {
-        _ when prettierFiles.Contains(name) && relative != ".prettierrc" =>
-            "prettier reads it as config and runs the modules it names",
         _ when name == "package.yaml" =>
-            "prettier and cosmiconfig read its keys as config, and the gate does not read its keys",
-        _ when name == ".npmrc" => "it moves where bun install downloads from",
-        _ when name.StartsWith(".csharpierrc", StringComparison.Ordinal) && relative != ".csharpierrc" =>
-            "CSharpier reads it as config for every file below it",
-        _ when name == ".csharpierignore" && relative != ".csharpierignore" =>
-            "CSharpier leaves out every file it matches below it",
+            "cosmiconfig reads its keys as config for commitlint, and the gate does not read its keys",
         _ when (name is "directory.build.props" or "directory.build.targets" or "directory.packages.props")
                 && !atRoot => "MSBuild imports it for every project below it in a build that names no root file",
         _ when name == "directory.build.rsp" => "MSBuild reads its switches on every command-line build",
@@ -1743,10 +1709,6 @@ static string? SearchedConfig(string relative)
         _ when name is "tsconfig.json" or "jsconfig.json" =>
             "Bun reads its paths and jsx settings for the modules prettier and commitlint load",
         _ when atRoot && name == "cake.config" => "Cake reads its settings before any task runs",
-        _ when atRoot && name == "taplo.toml" =>
-            "taplo reads it as config when run without --config, as an editor runs it",
-        _ when zizmorFiles.Contains(relative.ToLowerInvariant()) =>
-            "zizmor reads it as config when run without --config",
         _ when atRoot && commitlintFiles.Contains(name) && relative != "commitlint.config.js" =>
             "commitlint reads it as config when run without --config, as the shared commits job runs it",
         _ when atRoot && (lefthookFiles.Contains(name) || name.StartsWith(".lefthook.", StringComparison.Ordinal)) =>
@@ -1757,9 +1719,9 @@ static string? SearchedConfig(string relative)
     };
 }
 
-// Why the gate refuses a package.json, or null when it takes it. prettier reads a top-level prettier
-// key as config, commitlint a commitlint key, and cosmiconfig a cosmiconfig key as options for every
-// search it makes. bun install applies a top-level patchedDependencies entry to the package it names,
+// Why the gate refuses a package.json, or null when it takes it. commitlint reads a top-level
+// commitlint key as config, and cosmiconfig a cosmiconfig key as options for every search it makes.
+// prettier reads no prettier key under the --config the prettier row passes. bun install applies a top-level patchedDependencies entry to the package it names,
 // under a frozen lockfile too and with no bun.lock edit, so a patch changes what prettier or
 // commitlint runs. Bun's reader takes more than JSON does, so a file that does not read as a JSON
 // object is refused. Bun keeps the first of two keys, and JSON.parse the last, so a key named twice
@@ -1786,11 +1748,10 @@ static string? RefusedPackageJson(string path)
         [
             .. top.EnumerateObject()
                 .Select(property => property.Name)
-                .Where(key => key is "prettier" or "commitlint" or "cosmiconfig" or "patchedDependencies")
+                .Where(key => key is "commitlint" or "cosmiconfig" or "patchedDependencies")
                 .Select(key =>
                     key switch
                     {
-                        "prettier" => "a top-level \"prettier\" key, which prettier reads as config",
                         "commitlint" =>
                             "a top-level \"commitlint\" key, which commitlint reads as config when run without --config",
                         "patchedDependencies" =>
