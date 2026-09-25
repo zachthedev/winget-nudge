@@ -61,10 +61,14 @@ public sealed class JsonFileUpdateTests : IDisposable
                             string key = $"writer{writer}-{update}";
                             try
                             {
+                                // Four writers back to back can pass one waiter over for the default
+                                // two seconds on a loaded machine. The case is about lost changes, not
+                                // the wait.
                                 JsonFile.Update<Dictionary<string, string>>(
                                     DataFile,
                                     false,
-                                    current => With(current, key, "written")
+                                    current => With(current, key, "written"),
+                                    TimeSpan.FromSeconds(30)
                                 );
                             }
                             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -79,8 +83,8 @@ public sealed class JsonFileUpdateTests : IDisposable
             .ToArray();
         await Task.WhenAll(running);
 
+        failures.Should().BeEmpty("a writer that failed saved nothing, and its key would read as overwritten");
         Read().Should().HaveCount(writers * updates, "no writer's change may overwrite another's");
-        failures.Should().BeEmpty();
     }
 
     [Fact(Timeout = 10_000)]
