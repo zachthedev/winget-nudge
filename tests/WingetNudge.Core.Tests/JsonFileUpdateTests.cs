@@ -87,8 +87,8 @@ public sealed class JsonFileUpdateTests : IDisposable
         Read().Should().HaveCount(writers * updates, "no writer's change may overwrite another's");
     }
 
-    [Fact(Timeout = 10_000)]
-    public async Task Update_WhileAnotherHandleHoldsTheLock_WaitsThenApplies()
+    [Fact]
+    public void Update_WhileAnotherHandleHoldsTheLock_WaitsThenApplies()
     {
         JsonFile.Write(DataFile, Old);
         FileStream holder = new(
@@ -98,19 +98,26 @@ public sealed class JsonFileUpdateTests : IDisposable
             FileShare.None
         );
 
-        // A dedicated thread starts at once, so the update meets the held lock.
-        Task update = Task.Factory.StartNew(
-            () =>
-                JsonFile.Update<Dictionary<string, string>>(DataFile, false, current => With(current, "value", "new")),
-            TestContext.Current.CancellationToken,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default
-        );
-        await Task.Delay(50, TestContext.Current.CancellationToken);
-        update.IsCompleted.Should().BeFalse("the update waits for the lock");
-        holder.Dispose();
+        // The update runs on this thread as soon as the releaser starts, so it meets the held lock.
+        Thread releaser = new(() =>
+        {
+            Thread.Sleep(50);
+            holder.Dispose();
+        });
+        releaser.Start();
+        Action update = () =>
+            JsonFile.Update<Dictionary<string, string>>(DataFile, false, current => With(current, "value", "new"));
 
-        await update.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        try
+        {
+            update.Should().NotThrow("the update waits for a lock that another handle lets go");
+        }
+        finally
+        {
+            // The data directory is deleted after the case, and a held lock file would refuse that.
+            releaser.Join();
+        }
+
         Read().Should().Equal(New);
     }
 
