@@ -28,6 +28,8 @@ jobs:
   build:
     needs: release-pr
     if: needs.release-pr.outputs.released == 'true'
+    # Windows: the WinUI build and WiX's MSI run there alone, and the version check below opens the
+    # MSI through the Windows Installer COM object.
     runs-on: windows-latest
     timeout-minutes: 30
     permissions:

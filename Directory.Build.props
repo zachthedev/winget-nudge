@@ -20,7 +20,7 @@
             Restore audits every package, transitive ones included, against nuget.org's advisory
             database. Every audit code warns rather than fails, so no build blocks on what the world
             discovers after a merge: NU1900 and NU1905 are a database restore could not reach, NU1901
-            to NU1904 are advisories from low to critical. The weekly audit workflow in .github
+            to NU1904 are advisories from low to critical. The daily audit workflow in .github
             reports every finding. TreatWarningsAsErrors stays for every other warning.
         -->
         <WarningsNotAsErrors>NU1900;NU1901;NU1902;NU1903;NU1904;NU1905</WarningsNotAsErrors>

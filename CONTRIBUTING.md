@@ -92,10 +92,13 @@ pushes with no local check. A hook that cannot find lefthook prints `Can't find 
 exits 0. The control is continuous integration: the `commits` job lints every commit message, and the
 `gate` job runs the whole gate.
 
-The committed `.claude/settings.json` pre-approves read-only git commands and nothing else, and
-denies the `--output` form of `git diff`, `git log` and `git show`, which writes a file. A branch
-supplies `cake.cs`, the project files and the tests, so approving a build or a test run for every
-clone would run a stranger's code without a prompt. Approve those for yourself in
+The committed `.claude/settings.json` pre-approves `git status` and nothing else. A permission rule
+matches text, and quoting evades a deny on an argument, so no broader git command is pre-approved.
+It denies the `--output` form of `git diff`, `git log` and `git show`, which writes a file, and
+`git diff --no-index`, which reads files outside the checkout. Given a path outside the checkout,
+`git diff` reads it with no `--no-index` flag for the deny to match, so the approval prompt is the
+control. A branch supplies `cake.cs`, the project files and the tests, so approving a build or a
+test run for every clone would run a stranger's code without a prompt. Approve those for yourself in
 `.claude/settings.local.json`, which `.gitignore` covers:
 
 ```json
@@ -371,7 +374,7 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
 - `codeql.yml`, on the same events plus a Thursday schedule: CodeQL code scanning as advanced
   setup, a committed workflow rather than the default setup a repository setting turns on and leaves
   nothing in the tree for. The checks report as `codeql / Analyze (<language>)`, the names the
-  branch ruleset requires. `Analyze (csharp)` runs on Windows with `build-mode: none`, which
+  branch ruleset requires. `Analyze (csharp)` runs on Linux with `build-mode: none`, which
   extracts every C# source without building the solution, so code a build generates, here the XAML
   compiler's partial classes, is outside the database. `Analyze (actions)` reads the workflows under
   `.github`. It overlaps the `workflows` job without replacing it: actionlint and zizmor read a
@@ -379,8 +382,9 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   for, and CodeQL's Actions queries follow attacker-controlled data from an event payload into a
   `run:` block, an action input or an artifact. Neither reports the other's findings.
 - `deps.yml`, daily: Renovate, under the updater app's credentials in the `deps` environment.
-- `audit.yml`, weekly: the NuGet advisory report over the locked graph, and zizmor's online audits
-  over the pinned actions. A red run there is a report, never a check.
+- `audit.yml`, daily: `bun run audit` over `bun.lock`, the NuGet advisory report over the locked
+  graph, and zizmor's online audits over the pinned actions. A red run there is a report, never a
+  check.
 
 ### What the rows check
 
@@ -682,8 +686,14 @@ owner alone.
   band still runs the gate. The pin is always the SDK carrying the newest runtime past the
   cooldown.
 - Restore audits every package, transitive ones included, against nuget.org's advisory database,
-  and every finding warns. The weekly `audit` workflow in `.github/workflows/audit.yml` lists every
+  and every finding warns. The daily `nuget` job in `.github/workflows/audit.yml` lists every
   advisory against the locked graph, whatever its severity, in the run's summary.
+- The dependency graph reads the direct packages `package.json` names and nothing under `bun.lock`.
+  The daily `audit` job in the same workflow runs `bun run audit` over the whole of `bun.lock`,
+  transitives included. The `audit` script in `package.json` is the one home of that audit's level
+  and its waivers. It runs `bun audit` at `--audit-level=high`. A waived advisory is an
+  `--ignore <id>` on that script, and this bullet names each one with its reason and the condition
+  that removes it. None is waived.
 - On a pull request, the `dependency-review` job in `.github/workflows/ci.yml` diffs GitHub's
   dependency graph between base and head. It fails on a high or critical advisory against a package
   the pull request adds or moves, and passes a package it leaves alone. It sees the direct npm

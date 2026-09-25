@@ -13,7 +13,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A push keys by commit, so each keeps its own run and no later push can cancel a pending one.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The four settings that leave mise reading mise.toml alone, for every mise call a step here makes
@@ -28,14 +29,16 @@ env:
 # Every action is pinned to a commit. A tag can be retargeted by its owner with no pull request and
 # no cooldown; a commit cannot. Renovate bumps the hash and keeps the version comment current.
 jobs:
-  # The whole gate, the same command a contributor runs before a push. Windows alone: the app is
-  # WinUI 3 and the installer is a WiX MSI, and neither builds on darwin or linux. The tools come
-  # from mise: mise.toml carries the version of each one and mise.lock carries the artifact that
-  # version resolved to, so this job, the workflows job below and a local run install the same
-  # bytes from the same two files. jdx/mise-action pins mise itself on its version line and
-  # verifies the download against the release's minisign-signed checksums.
+  # The whole gate, the same command a contributor runs before a push. The tools come from mise:
+  # mise.toml carries the version of each one and mise.lock carries the artifact that version
+  # resolved to, so this job, the workflows job below and a local run install the same bytes from
+  # the same two files. jdx/mise-action pins mise itself on its version line and verifies the
+  # download against the release's minisign-signed checksums.
   gate:
+    # Windows: the WinUI XAML compiler, the net10.0-windows test host and WiX's MSI run there alone.
     runs-on: windows-latest
+    # The bound covers a cold NuGet restore, the WinUI build, the suite and the MSI on a Windows
+    # runner.
     timeout-minutes: 30
     permissions:
       contents: read
@@ -46,10 +49,11 @@ jobs:
       # because the action otherwise exports the job token as MISE_GITHUB_TOKEN to every later
       # step. version: pins mise, so the action looks up no release, and a locked install asks the
       # GitHub API for nothing. env: false and export_path: false, because either one runs mise env
-      # over the checkout's mise.toml and hands later steps what it produces. The action still puts
-      # its own bin directory on PATH, outside the workspace. It runs ahead of checkout: its mise
-      # --version and mise ls read the workspace's mise.toml and evaluate its [env] and [vars]
-      # templates, and before checkout there is none.
+      # over the checkout's mise.toml and hands later steps what it produces. add_shims_to_path:
+      # false, so no bare program name in a later step resolves to a tool mise.toml pins. The
+      # action still puts its own bin directory on PATH, outside the workspace. It runs ahead of
+      # checkout: its mise --version and mise ls read the workspace's mise.toml and evaluate its
+      # [env] and [vars] templates, and before checkout there is none.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: 2026.9.11
@@ -58,6 +62,7 @@ jobs:
           github_token: ''
           env: false
           export_path: false
+          add_shims_to_path: false
       # This job pushes nothing, so the job token does not stay in the checkout for the steps
       # that follow it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -165,7 +170,7 @@ jobs:
   # between the last release tag and the head of the release pull request. It fails on a high or
   # critical advisory against a package the pull request adds or moves. A package the pull request
   # leaves alone passes here whatever is published against it: the restore audit in
-  # Directory.Build.props and the weekly audit workflow are what report those. The graph reads
+  # Directory.Build.props and the daily audit workflow are what report those. The graph reads
   # package.json and the workflows; for NuGet it reads each csproj, where Central Package Management
   # leaves no version, so the snapshot job above is what puts real NuGet versions in front of this
   # compare. !cancelled(), so a fork pull request whose snapshot did not run still gets the review

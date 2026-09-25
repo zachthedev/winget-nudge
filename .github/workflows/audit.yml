@@ -1,30 +1,54 @@
 name: audit
 
-# The whole-tree reports, on their own clock. A red run is a report, never a check: it means work
-# to pick up rather than a change refused. Nothing merges, releases or deploys through this file.
-# The pull request checks in ci.yml hold what a change adds. This file reports what the world
-# found about the tree since.
+# The whole-tree reports, on one daily clock. A red run is a report, never a check: it means work
+# to pick up. Nothing merges, releases or deploys through this file. The pull request checks in
+# ci.yml hold what a change adds. This file reports what the world found about the tree since.
 #
-# audit lists every NuGet advisory against the locked graph, whatever its severity. workflows runs
-# zizmor's online audits over the pinned actions: a pinned commit outside its action's repository,
-# a stale action ref, a known-vulnerable action. Those answers change with no pull request, so a
-# schedule is what asks again.
+# The package.json audit script runs bun audit, which reads every package in bun.lock, transitives
+# included, against the live database and exits non-zero at or above the script's audit level. The
+# work is a direct bump through Renovate's next security fix or a transitive one by hand with bun
+# audit fix.
+#
+# The nuget job lists every NuGet advisory against the locked graph, whatever its severity.
+#
+# The workflows job runs zizmor's online audits over the pinned actions: a pinned commit outside
+# its action's repository, a stale action ref, a known-vulnerable action. Those answers change
+# with no pull request, so a schedule is what asks again.
 on:
   schedule:
-    # Weekly, Monday, clear of the deps and CodeQL crons. The audit job's if: names this string.
-    - cron: '23 7 * * 1'
-    # Weekly, an hour later. The workflows job's if: names this string.
-    - cron: '23 8 * * 1'
+    # At least once a day. The hour is clear of deps.yml's cron.
+    - cron: '41 5 * * *'
   workflow_dispatch:
 
 permissions: {}
 
 jobs:
-  # The first weekly clock, and every dispatch. The schedule context carries the cron that fired.
   audit:
-    if: github.event_name != 'schedule' || github.event.schedule == '23 7 * * 1'
-    runs-on: windows-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # bun audit reads bun.lock, so the job needs Bun and no install.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # The verdict is a claim about an external database, and a clean verdict names no
+      # endpoint. bun audit has no --registry flag, and this variable outranks bunfig.toml and
+      # a dotenv, so setting it here fixes the endpoint for the run. The script, not bare bun audit,
+      # so its --audit-level and every --ignore waiver it carries apply to the daily report too.
+      - run: bun run audit
+        env:
+          BUN_CONFIG_REGISTRY: https://registry.npmjs.org/
+
+  # The C# half of the report, a job of its own so neither report waits on the other. The restore
+  # runs on Linux because Directory.Build.props enables the Windows target there.
+  nuget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -39,6 +63,7 @@ jobs:
       # The listing prints every advisory against the locked graph, transitive packages included,
       # and exits 0 with findings. It exits 1 only when it cannot reach the vulnerability data, so
       # a report that never ran cannot read green. The summary gets the same text in a fence.
+      # shell: bash runs with pipefail, so a listing that fails fails the step through the tee.
       - name: Advisories
         shell: bash
         run: |
@@ -46,11 +71,8 @@ jobs:
             --no-restore | tee advisories.txt
           printf '~~~\n%s\n~~~\n' "$(cat advisories.txt)" >> "$GITHUB_STEP_SUMMARY"
 
-  # The second weekly clock, and every dispatch. The calling job grants what the called job
-  # declares. The called workflow installs from mise.lock, so no install step of this repository's
-  # own runs here.
+  # The calling job grants what the called job declares.
   workflows:
-    if: github.event_name != 'schedule' || github.event.schedule == '23 8 * * 1'
     permissions:
       contents: read
     uses: zachthedev/.github/.github/workflows/workflows.yml@09a9a00aae657ea11e5d5979ef3ce5859d9aba3a # v0.2.0

@@ -14,6 +14,13 @@ rules:
   dependabot-cooldown:
     config:
       days: 3
+  # An advisory published against an unchanged action pin turns every pull request's workflows
+  # check red until the pin moves. A waiver is one GHSA id per entry, with a comment beside it
+  # naming the advisory, what it blocks, why shipping is safer and the condition that removes it.
+  # No advisory is waived.
+  known-vulnerable-actions:
+    config:
+      allow: []
   # cd.yml's release-pr job and deps.yml's deps job each call a job that names an environment, and
   # run in none themselves, so secrets: inherit is the one form that passes that environment's
   # secret. The gate refuses an inline ignore comment, so both waivers sit here, one per file. A

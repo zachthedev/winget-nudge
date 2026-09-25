@@ -8,6 +8,7 @@
     "lefthook"
   ],
   "scripts": {
+    "audit": "bun audit --audit-level=high",
     "prepare": "bun --no-env-file ./node_modules/lefthook/bin/index.js install"
   },
   "devDependencies": {

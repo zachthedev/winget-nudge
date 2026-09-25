@@ -9,8 +9,8 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Weekly, so a query published after the last change to this repository still reports against
-  # this tree. Thursday, clear of the audit and deps crons.
+  # At least once a week, so a query published after the last change to this repository still
+  # reports against this tree. Thursday, clear of deps.yml's daily cron and audit.yml's.
   schedule:
     - cron: '37 9 * * 4'
 
@@ -22,10 +22,13 @@ jobs:
   # analyzed: the only JavaScript in the tree is commitlint.config.js, tooling rather than code the
   # MSI carries.
   #
-  # csharp on Windows: build-mode none still resolves dependencies through dotnet restore, every
-  # project here targets net10.0-windows10.0.26100.0, and global-json-file puts the SDK the restore
-  # needs on the runner. A server-side flag can turn C# buildless analysis off, at which point the
-  # init action falls back to autobuild, and autobuild for this solution builds nowhere else.
+  # csharp runs on Linux with build-mode none, which extracts every C# source without building the
+  # solution. Dependency resolution is best effort on either runner. When GitHub's server-side
+  # disable_csharp_buildless flag is on, codeql-action falls back to autobuild and warns:
+  #   Scanning C# code without a build is temporarily unavailable.
+  #   Falling back to 'autobuild' build mode.
+  # Autobuild of this solution fails on Linux. The recovery is one line: csharp's runs-on below
+  # goes back to windows-latest.
   # actions on the default runner reads the workflows under .github; the workflows job in ci.yml
   # reads the same files with actionlint and zizmor, and CONTRIBUTING.md says which covers what.
   # The calling job grants what the called job declares.
@@ -36,5 +39,5 @@ jobs:
       actions: read
     uses: zachthedev/.github/.github/workflows/codeql.yml@09a9a00aae657ea11e5d5979ef3ce5859d9aba3a # v0.2.0
     with:
-      languages: '[{"language": "csharp", "runs-on": "windows-latest"}, {"language": "actions"}]'
+      languages: '[{"language": "csharp", "runs-on": "ubuntu-latest"}, {"language": "actions"}]'
       global-json-file: global.json
