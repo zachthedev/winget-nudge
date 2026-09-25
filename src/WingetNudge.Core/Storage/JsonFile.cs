@@ -30,6 +30,16 @@ public static class JsonFile
     // and a second save waits on the lock through all three, so this read gives up sooner than a plain one.
     private static readonly int[] LockedReadBackoffMilliseconds = [50, 100];
 
+    /// <summary>
+    /// Runs before each wait between attempts when set, and receives the planned delay in milliseconds. The wait
+    /// itself still sleeps that delay.
+    /// </summary>
+    /// <remarks>
+    /// A test sets it to act at an exact wait, so a holder it controls lets go by count rather than by time. The
+    /// value flows only with the context that set it, so tests running in parallel never see each other's.
+    /// </remarks>
+    internal static AsyncLocal<Action<int>?> BetweenAttempts { get; } = new();
+
     /// <summary>Serializer options shared by every state file.</summary>
     public static JsonSerializerOptions Options { get; } =
         new(JsonSerializerDefaults.General)
@@ -439,11 +449,17 @@ public static class JsonFile
                     throw;
                 }
 
-                Thread.Sleep(delay);
+                Wait(delay);
             }
         }
 
         return act();
+    }
+
+    private static void Wait(int delay)
+    {
+        BetweenAttempts.Value?.Invoke(delay);
+        Thread.Sleep(delay);
     }
 
     private static void WhileHeld(string path, Action act) =>
