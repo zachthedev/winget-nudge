@@ -697,12 +697,14 @@ Task("workflows")
     });
 
 // lockfile first by name as well as through code, so the order is stated where the gate is
-// assembled rather than left to the order code lists its own dependencies in.
+// assembled rather than left to the order code lists its own dependencies in. workflows comes
+// before code, so every row that builds nothing runs before build, tests and installer, the rows
+// that build and run the repository's code.
 Task("check")
     .Description("The whole gate")
     .IsDependentOn("lockfile")
-    .IsDependentOn("code")
-    .IsDependentOn("workflows");
+    .IsDependentOn("workflows")
+    .IsDependentOn("code");
 
 RunTarget(target);
 

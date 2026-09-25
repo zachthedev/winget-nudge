@@ -301,8 +301,11 @@ dotnet cake.cs
 
 [Cake](https://cakebuild.net) runs every task in `cake.cs`, each after the tasks it depends on. It
 stops at the first failure and prints a summary table. `dotnet cake.cs --description` lists every
-task and what it checks, and `dotnet cake.cs --tree` prints the order they run in. When a local run
-fails or disagrees with continuous integration, [Troubleshooting](#troubleshooting) says why.
+task and what it checks, `dotnet cake.cs --tree` prints what each depends on, and
+`dotnet cake.cs --dryrun` prints the order they run in and runs none. The rows that build nothing
+run first: `lockfile`, `workflows`, `format`, `prettier` and `toml`. `build`, `tests` and
+`installer` build and run the repository's code, so they run last. When a local run fails or
+disagrees with continuous integration, [Troubleshooting](#troubleshooting) says why.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
 `workflows`. `lockfile` reads `mise.toml`, `mise.lock` and `bunfig.toml`, walks the tree for any
