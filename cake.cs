@@ -248,10 +248,10 @@ Task("prettier")
     {
         const string tool = "prettier";
         const string options =
-            $"--bun --no-install {tool} --config .prettierrc --ignore-path .prettierignore --no-editorconfig";
-        FilePath bunx = Bunx(tool);
+            $"x --bun --no-install {tool} --config .prettierrc --ignore-path .prettierignore --no-editorconfig";
+        FilePath bun = BunX(tool);
         int exit = StartProcess(
-            bunx,
+            bun,
             new ProcessSettings
             {
                 Arguments = $"{options} --debug-check .",
@@ -274,9 +274,9 @@ Task("prettier")
 
         RequireChecked("prettier", [.. listed.Select(line => Plain(line).Trim()).Where(line => line.Length > 0)]);
         Command(
-            ["bunx", "bunx.exe"],
+            ["bun", "bun.exe"],
             $"{options} --check .",
-            settingsCustomization: settings => settings.WithToolPath(bunx)
+            settingsCustomization: settings => settings.WithToolPath(bun)
         );
     });
 
@@ -1105,17 +1105,17 @@ DotNetMSBuildSettings RootNamed(bool noAutoResponse)
     return settings;
 }
 
-// bunx for the prettier row, the one bun process the gate starts. The row passes --bun, so prettier
-// runs under this Bun rather than whichever node PATH names. bunx --no-install runs the checkout's
-// node_modules/.bin/<tool>, and with none there it runs a parent directory's copy, one on PATH or
-// one in its cache, and says nothing. So the checkout's own has to be there first, <tool>.exe on
-// Windows. bunx passes over a link there whose target is not a file to the same fallbacks, so a
-// link has to resolve to an existing file. The config checks run here as well as in the lockfile
-// task, so no --target=prettier or --exclusive run reaches bunx past them.
-FilePath Bunx(string tool)
+// bun for the prettier row, the one bun process the gate starts, which runs the tool as bun x. The
+// row passes --bun, so prettier runs under this Bun rather than whichever node PATH names. bun x
+// --no-install runs the checkout's node_modules/.bin/<tool>, and with none there it runs a parent
+// directory's copy, one on PATH or one in its cache, and says nothing. So the checkout's own has to
+// be there first, <tool>.exe on Windows. bun x passes over a link there whose target is not a file
+// to the same fallbacks, so a link has to resolve to an existing file. The config checks run here as
+// well as in the lockfile task, so no --target=prettier or --exclusive run reaches bun past them.
+FilePath BunX(string tool)
 {
     RequireConfigFiles();
-    FilePath bunx = RequireOnPath("bunx", "Install Bun at the version package.json names.");
+    FilePath bun = RequireOnPath("bun", "Install Bun at the version package.json names.");
     System.IO.FileInfo installed = new($"node_modules/.bin/{tool}{(OperatingSystem.IsWindows() ? ".exe" : "")}");
     bool resolves;
     try
@@ -1135,7 +1135,7 @@ FilePath Bunx(string tool)
         );
     }
 
-    return bunx;
+    return bun;
 }
 
 // Every check on the tree's config files, run before each tool the gate starts: the tracked-path
@@ -1151,10 +1151,11 @@ void RequireConfigFiles()
     RequireNoInlineWaivers();
 }
 
-// Files named like a program some step starts by name, at the root or anywhere under tools. Cake's
-// locator reads tools/** before PATH, and Windows searches the current directory for a bare name,
-// so a committed file with one of these names could run in place of the real program. The gate
-// finds its own programs through OnPath, and refuses these files for every other caller.
+// Files named like a program some step starts by name, or like bunx, which Bun installs beside bun
+// and a contributor can still type, at the root or anywhere under tools. Cake's locator reads
+// tools/** before PATH, and Windows searches the current directory for a bare name, so a committed
+// file with one of these names could run in place of the real program. The gate finds its own
+// programs through OnPath, and refuses these files for every other caller.
 void RequireNoToolNamedFiles()
 {
     string[] programs = ["mise", "gh", "bunx", "bun", "dotnet", "node", "git", "csharpier", "sbom-tool"];
@@ -1340,7 +1341,7 @@ void RequireOnlyPinnedMiseFiles()
 // Every tracked path with a bin or obj segment, in any case, since NTFS reads OBJ as the same
 // directory. MSBuild imports files from obj by wildcard, and a committed one reaches every checkout.
 // A tracked .env or .env.<name> at any depth is refused as well: Bun loads the one at the root into
-// every process it starts, prettier and commitlint included, and no bunx flag stops it. So is a
+// every process it starts, prettier and commitlint included, and no bun x flag stops it. So is a
 // lefthook-local or .lefthook-local file at the root, which lefthook merges over lefthook.yml on
 // every run. A zizmor: ignore[ comment in a tracked file under .github is refused, because zizmor
 // honors it with no config. A tracked node_modules path is the shared commits job's to refuse, on
@@ -1417,7 +1418,7 @@ void RequireNoRefusedTrackedPaths()
     {
         throw new CakeException(
             $"The repository tracks {string.Join(", ", envFiles.Select(Quoted))}, and the gate takes no tracked .env file at any depth. "
-                + "Bun loads one at the root into every process it starts, prettier and commitlint included, and no bunx flag stops it. "
+                + "Bun loads one at the root into every process it starts, prettier and commitlint included, and no bun x flag stops it. "
                 + "A tool started in any other directory loads the one there, and each holds values meant to stay out of git. Remove it from the commit."
         );
     }
@@ -1512,7 +1513,7 @@ void RequireNoRefusedTrackedPaths()
 
 // bunfig.toml's keys, when the file is there. Bun reads the file in the working directory on every
 // start, and no flag stops it. A top-level preload runs a module before the first line of whatever
-// Bun starts, and the prettier row's bunx --bun starts prettier under Bun. Every other key reaches
+// Bun starts, and the prettier row's bun x --bun starts prettier under Bun. Every other key reaches
 // Bun as well: an [install] registry moves where even a frozen install downloads from. So the file
 // is read twice. Tomlyn's model has to hold nothing but [install], and [install] nothing but
 // minimumReleaseAge. Then each line, less comments and blank ones, has to read [install] or

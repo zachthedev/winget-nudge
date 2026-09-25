@@ -10,7 +10,7 @@ commit-msg:
     - name: no .config
       run: test ! -e .config || { echo 'cosmiconfig runs modules from .config, so remove it' >&2; exit 1; }
     - name: commitlint
-      run: bunx --bun --no-install commitlint --config commitlint.config.js --edit {1}
+      run: bun x --bun --no-install commitlint --config commitlint.config.js --edit {1}
 
 # The gate, run before anything is pushed. `dotnet cake.cs --description` lists its steps.
 pre-push:

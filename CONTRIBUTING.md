@@ -87,7 +87,7 @@ the branch's own `cake.cs`, and the hooks run the branch's `lefthook.yml` and `c
 so no check runs ahead of the branch's code.
 
 No row stops the first Bun process on a branch nobody has read. lefthook's commit-msg hook runs
-`bunx --bun commitlint` before any gate row, and `bun install` runs lefthook's postinstall, which
+`bun x --bun commitlint` before any gate row, and `bun install` runs lefthook's postinstall, which
 starts under Bun when node is not on `PATH`. Read a pull request's `bunfig.toml`, and any root `.env`
 or `.env.*`, before running anything on its branch.
 
@@ -117,16 +117,17 @@ Two things reach the JS tools from your own environment:
 
 - A root `.env`. The gate refuses a tracked one, but your own untracked `.env` passes the
   tracked-path check. Bun loads it into prettier and commitlint, because `bunfig.toml` holds the
-  cooldown alone. `bunx` accepts `--no-env-file` in every position and ignores it. No variable
-  either tool reads from it loads code. `bun install` loads the root one too, whatever flag it gets.
-  There it moves the registry, and it swaps a package under a frozen lockfile with no `bun.lock`
-  change, through `BUN_INSTALL_CACHE_DIR`, or `BUN_CONFIG_SKIP_LOAD_LOCKFILE` with a registry. It
-  hands its values to every script it runs. `prepare` passes `--no-env-file`, so `bun run prepare`
-  hands lefthook's `install` none of them, but under `bun install` lefthook still sees them.
+  cooldown alone. `bun x` and `bunx` accept `--no-env-file` in every position and ignore it. No
+  variable either tool reads from it loads code. `bun install` loads the root one too, whatever flag
+  it gets. There it moves the registry, and it swaps a package under a frozen lockfile with no
+  `bun.lock` change, through `BUN_INSTALL_CACHE_DIR`, or `BUN_CONFIG_SKIP_LOAD_LOCKFILE` with a
+  registry. It hands its values to every script it runs. `prepare` passes `--no-env-file`, so
+  `bun run prepare` hands lefthook's `install` none of them, but under `bun install` lefthook still
+  sees them.
 - The Bun variables. `BUN_OPTIONS` reaches every direct Bun start, such as the `prepare` script's
   lefthook install. A `--preload` in it runs a module first in each. The gate withholds it from the
-  processes it starts, and a tool started through `bunx --bun --no-install` does not read it. Leave
-  it unset. Bun preloads the module `BUN_INSPECT_PRELOAD` names, and reads `BUN_INSPECT` and
+  processes it starts, and a tool started through `bun x --bun --no-install` does not read it.
+  Leave it unset. Bun preloads the module `BUN_INSPECT_PRELOAD` names, and reads `BUN_INSPECT` and
   `BUN_INSPECT_CONNECT_TO` for its inspector. The gate and the hooks leave those three in place, so
   keep them unset in the shell you commit from and run the gate from.
 
@@ -319,7 +320,7 @@ disagrees with continuous integration, [Troubleshooting](#troubleshooting) says 
 tools read, walks the tree for any config file a tool would read past the ones the gate names and
 for any inline waiver no analyzer checks, and asks git which paths are tracked. git is the one
 process it starts, so it needs no mise installed, and it is the first task the whole gate runs.
-Every row that starts dotnet, bunx or a mise tool runs the same config checks first, so
+Every row that starts dotnet, bun or a mise tool runs the same config checks first, so
 `--exclusive` skips none of them. `--target=tools` runs `lockfile` and then `mise install`; it is
 the install continuous integration runs, and `check` does not reach it.
 
@@ -431,28 +432,28 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   variable, from the shell or anywhere else, reaches mise, so the gate's mise uses mise's default
   directories whatever `MISE_DATA_DIR` or `MISE_GLOBAL_CONFIG_FILE` says, and trusts the checkout
   itself.
-- The gate starts mise, gh, bunx, dotnet and git from the absolute path `PATH` names for each,
+- The gate starts mise, gh, bun, dotnet and git from the absolute path `PATH` names for each,
   skipping empty and relative entries and any entry inside the checkout. Cake's own lookup reads
   `tools` before `PATH`, and Windows reads the current directory for a bare name. So the gate also
   refuses a file at the root or under `tools` named `mise`, `gh`, `bunx`, `bun`, `dotnet`, `node`,
   `git`, `csharpier` or `sbom-tool`, bare or with `.exe`, `.bat`, `.cmd` or `.com`.
-- The prettier row runs `bunx --bun --no-install`, which starts `node_modules/.bin/prettier` ahead
-  of anything else. With none in the checkout, bunx runs a parent directory's copy, one on `PATH` or
-  one in its cache, and says nothing, so the row first checks that `node_modules/.bin/prettier.exe`
-  is there, and that a link there resolves to an existing file, and fails naming the install to run
-  when either does not hold. `--bun` runs it under the Bun the gate resolved, never whichever node
-  `PATH` names, and lefthook's commit-msg hook passes it to commitlint too. The hook checks for no
-  install. `bun install` keeps a package it finds already at the version `bun.lock` records, so a
-  committed `node_modules/prettier` still runs after an install. `node_modules` stays untracked, as
-  `.gitignore` says, and the shared `commits` job refuses every tracked path with a `node_modules`
-  segment, in any case, on each pull request. `lockfile` refuses a tracked path with a `bin` or
-  `obj` segment, in any case, and the prettier row refuses them again before it starts bunx, since
-  MSBuild imports files from `obj` by wildcard, and a committed one reaches every checkout. They
-  also refuse a tracked `.env` or `.env.<name>` at any depth. Bun loads the one at the root into
-  prettier and commitlint, and no bunx flag stops it, and one anywhere else holds values meant to
-  stay out of git. `git ls-files` answers what is tracked, so a contributor's own `.env` passes.
-  An extraction from `git archive` has no `.git` at the root and tracks nothing, so the check
-  starts no git there and passes. Beside a `.git`,
+- The prettier row runs `bun x --bun --no-install`, which starts `node_modules/.bin/prettier` ahead
+  of anything else. With none in the checkout, `bun x` runs a parent directory's copy, one on `PATH`
+  or one in its cache, and says nothing, so the row first checks that
+  `node_modules/.bin/prettier.exe` is there, and that a link there resolves to an existing file, and
+  fails naming the install to run when either does not hold. `--bun` runs it under the Bun the gate
+  resolved, never whichever node `PATH` names, and lefthook's commit-msg hook passes it to
+  commitlint too. The hook checks for no install. `bun install` keeps a package it finds already at
+  the version `bun.lock` records, so a committed `node_modules/prettier` still runs after an
+  install. `node_modules` stays untracked, as `.gitignore` says, and the shared `commits` job
+  refuses every tracked path with a `node_modules` segment, in any case, on each pull request.
+  `lockfile` refuses a tracked path with a `bin` or `obj` segment, in any case, and the prettier row
+  refuses them again before it starts bun, since MSBuild imports files from `obj` by wildcard, and a
+  committed one reaches every checkout. They also refuse a tracked `.env` or `.env.<name>` at any
+  depth. Bun loads the one at the root into prettier and commitlint, and no `bun x` flag stops it,
+  and one anywhere else holds values meant to stay out of git. `git ls-files` answers what is
+  tracked, so a contributor's own `.env` passes. An extraction from `git archive` has no `.git` at
+  the root and tracks nothing, so the check starts no git there and passes. Beside a `.git`,
   `git rev-parse --show-cdup` has to print an empty line, because git searches the directories above
   a `.git` it cannot open and would list another repository's paths. It compares no paths, so a
   checkout reached through a junction passes. The `gate` job's `bun install` takes
@@ -462,7 +463,7 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   start, and no flag stops it. A top-level `preload` there runs a module before the first line of
   whatever Bun starts, prettier and commitlint included. Every other key reaches Bun too: an
   `[install]` registry moves where even a frozen install downloads from. So `lockfile` and the
-  prettier row refuse any other key or table before the gate starts bunx. The file's lines, less
+  prettier row refuse any other key or table before the gate starts bun. The file's lines, less
   comments, have to read `[install]` or `minimumReleaseAge = ` and digits, in printable ASCII, so
   Bun and the gate cannot read it two ways. The gate reads no value there and passes a checkout
   with no `bunfig.toml`, so review holds the cooldown.
@@ -842,10 +843,10 @@ certificate; [Building the MSI](#building-the-msi) shows how.
   whether git tracks it or not ([What the rows check](#what-the-rows-check)). Keep local mise
   settings in mise's global config.
 - A local run that disagrees with continuous integration may have run another copy of a tool. The
-  prettier row and the commit-msg hook start theirs with `bunx --bun --no-install`, which runs
+  prettier row and the commit-msg hook start theirs with `bun x --bun --no-install`, which runs
   `node_modules/.bin/<tool>` in the checkout and never downloads. With no install there, the
-  prettier row fails and names the install to run, and the hook runs the first copy bunx finds in a
-  parent directory's `node_modules/.bin`, then on `PATH`, then in Bun's cache, and says nothing
+  prettier row fails and names the install to run, and the hook runs the first copy `bun x` finds
+  in a parent directory's `node_modules/.bin`, then on `PATH`, then in Bun's cache, and says nothing
   about which. With an install older than `bun.lock`, both run that older copy, and the row's check
   passes it. The `gate` job's `bun install` is fresh, so neither happens there.
   [Worktrees](#worktrees) says how each worktree gets an install of its own.
