@@ -246,9 +246,10 @@ Task("prettier")
     .Description("Markdown, YAML and JSON formatting, over the files the row lists first")
     .Does(() =>
     {
+        const string tool = "prettier";
         const string options =
-            "--bun --no-install prettier --config .prettierrc --ignore-path .prettierignore --no-editorconfig";
-        FilePath bunx = Bunx();
+            $"--bun --no-install {tool} --config .prettierrc --ignore-path .prettierignore --no-editorconfig";
+        FilePath bunx = Bunx(tool);
         int exit = StartProcess(
             bunx,
             new ProcessSettings
@@ -1102,12 +1103,36 @@ DotNetMSBuildSettings RootNamed(bool noAutoResponse)
 }
 
 // bunx for the prettier row, the one bun process the gate starts. The row passes --bun, so prettier
-// runs under this Bun rather than whichever node PATH names. The config checks run here as well as
-// in the lockfile task, so no --target=prettier or --exclusive run reaches bunx past them.
-FilePath Bunx()
+// runs under this Bun rather than whichever node PATH names. bunx --no-install runs the checkout's
+// node_modules/.bin/<tool>, and with none there it runs a parent directory's copy, one on PATH or
+// one in its cache, and says nothing. So the checkout's own has to be there first, <tool>.exe on
+// Windows. bunx passes over a link there whose target is not a file to the same fallbacks, so a
+// link has to resolve to an existing file. The config checks run here as well as in the lockfile
+// task, so no --target=prettier or --exclusive run reaches bunx past them.
+FilePath Bunx(string tool)
 {
     RequireConfigFiles();
-    return RequireOnPath("bunx", "Install Bun at the version package.json names.");
+    FilePath bunx = RequireOnPath("bunx", "Install Bun at the version package.json names.");
+    System.IO.FileInfo installed = new($"node_modules/.bin/{tool}{(OperatingSystem.IsWindows() ? ".exe" : "")}");
+    bool resolves;
+    try
+    {
+        resolves =
+            installed.LinkTarget is null || installed.ResolveLinkTarget(true) is System.IO.FileInfo { Exists: true };
+    }
+    catch (System.IO.IOException)
+    {
+        resolves = false;
+    }
+
+    if (!installed.Exists || !resolves)
+    {
+        throw new CakeException(
+            $"{tool} is not installed in this checkout: run bun install --frozen-lockfile, or bun install --frozen-lockfile --ignore-scripts in a worktree (CONTRIBUTING.md#setup)."
+        );
+    }
+
+    return bunx;
 }
 
 // Every check on the tree's config files, run before each tool the gate starts: the tracked-path
