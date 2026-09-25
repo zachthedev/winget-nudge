@@ -67,6 +67,32 @@ public sealed class UpdateLogTests : IDisposable
             .And.Contain("ExtendedError: APPINSTALLER_CLI_ERROR_INSTALL_PACKAGE_IN_USE_BY_APPLICATION")
             .And.Contain("RebootRequired: True");
     }
+
+    [Fact]
+    public void SaveInstallerLog_WhenItsDirectoryBecomesAJunctionAfterItsCheck_RefusesWithoutWritingThroughIt()
+    {
+        UpgradeOutcome outcome = new(false, "InstallError", 6, UpgradeOutcome.FilesInUseHResult, true, "corr");
+        string directory = _data.Paths.InstallerLogDirectory;
+        string elsewhere = Directory.CreateDirectory(Path.Combine(_data.Root, "elsewhere")).FullName;
+        Action save = () => _log.SaveInstallerLog("Git.Git", outcome);
+
+        using (JunctionAfterCheck swap = new(directory, elsewhere))
+        {
+            save.Should()
+                .Throw<IOException>("a directory that became a link after its check refuses the open")
+                .WithMessage(
+                    $"*'{directory}' {SafePath.ReparsePointCause}*",
+                    "diagnostics.log names the directory and the link as the cause"
+                );
+            swap.Converted.Should()
+                .BeTrue("the empty installer-logs directory became a junction once its check passed");
+        }
+
+        Directory
+            .EnumerateFileSystemEntries(elsewhere)
+            .Should()
+            .BeEmpty("the dump, which carries what an installer printed, never lands where the junction points");
+    }
 }
 
 public sealed class LegacyDataMigratorTests : IDisposable
@@ -807,6 +833,31 @@ public sealed class RunLockTests : IDisposable
         }
 
         Directory.EnumerateFileSystemEntries(elsewhere).Should().BeEmpty("nothing is written through the junction");
+    }
+
+    [Fact]
+    public void Acquire_WhenTheDataDirectoryBecomesAJunctionAfterItsCheck_RefusesItAsAReparsePoint()
+    {
+        string file = _data.Paths.RunLockFile(RunLock.Upgrade);
+        string elsewhere = Directory.CreateDirectory(Path.Combine(_data.Root, "elsewhere")).FullName;
+        RunLockAttempt attempt;
+
+        using (JunctionAfterCheck swap = new(_data.Paths.Directory, elsewhere))
+        {
+            attempt = RunLock.Acquire(_data.Paths, RunLock.Upgrade);
+            swap.Converted.Should().BeTrue("the empty data directory became a junction once its check passed");
+        }
+
+        Directory
+            .EnumerateFileSystemEntries(elsewhere)
+            .Should()
+            .BeEmpty("the lock file never lands where the junction points");
+        attempt
+            .Should()
+            .BeOfType<RunLockAttempt.Unavailable>("a directory that became a link after its check refuses the open")
+            .Which.Reason.Should()
+            .Contain(file, "the caller shows the reason to someone who has to fix it")
+            .And.Contain(SafePath.ReparsePointCause, "the reason names the link rather than a failed open");
     }
 
     [Theory]

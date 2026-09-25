@@ -12,6 +12,9 @@ public sealed class JsonFileUpdateTests : IDisposable
     private static readonly Dictionary<string, string> Old = new(StringComparer.Ordinal) { ["value"] = "old" };
     private static readonly Dictionary<string, string> New = new(StringComparer.Ordinal) { ["value"] = "new" };
 
+    // ERROR_DIR_NOT_EMPTY, as an IOException carries it.
+    private const int DirectoryNotEmpty = unchecked((int)0x80070091);
+
     private readonly TempData _data = new();
 
     private string DataFile => _data.Paths.Preferences;
@@ -266,6 +269,149 @@ public sealed class JsonFileUpdateTests : IDisposable
         Directory.GetFileSystemEntries(existing).Should().BeEmpty("nothing may land where the link points");
         Path.Exists(missing).Should().BeFalse("a dangling link's target is never created");
         File.Exists(DataFile).Should().BeFalse("an update that took no lock writes nothing");
+    }
+
+    [Fact]
+    public void Update_WhenTheDataDirectoryBecomesAJunctionAfterItsCheck_RefusesWithoutWritingThroughIt()
+    {
+        string elsewhere = Directory.CreateDirectory(Path.Combine(_data.Root, "elsewhere")).FullName;
+        bool changed = false;
+        Action update = () =>
+            JsonFile.Update<Dictionary<string, string>>(
+                DataFile,
+                false,
+                current =>
+                {
+                    changed = true;
+                    return With(current, "value", "new");
+                }
+            );
+
+        using (JunctionAfterCheck swap = new(_data.Paths.Directory, elsewhere))
+        {
+            update
+                .Should()
+                .Throw<IOException>("a directory that became a link after its check refuses the lock's open")
+                .WithMessage(
+                    $"*'{_data.Paths.Directory}' {SafePath.ReparsePointCause}*",
+                    "diagnostics.log names the directory and the link as the cause"
+                );
+            swap.Converted.Should().BeTrue("the empty data directory became a junction once its check passed");
+        }
+
+        Directory
+            .EnumerateFileSystemEntries(elsewhere)
+            .Should()
+            .BeEmpty("neither the lock file nor the data lands where the junction points");
+        changed.Should().BeFalse("the change runs only under the lock");
+    }
+
+    [Fact]
+    public void Write_UnderTheLock_StaysInTheDataDirectoryWhileAnotherProcessTriesToLinkIt()
+    {
+        string elsewhere = Directory.CreateDirectory(Path.Combine(_data.Root, "elsewhere")).FullName;
+        Exception? deleting = null;
+        Exception? linking = null;
+
+        // Inside the change the lock is held and the data directory holds the lock file alone. Another process running
+        // as the user empties the directory and makes it a junction, so a write by path would land in the target.
+        Action update = () =>
+            JsonFile.Update<Dictionary<string, string>>(
+                DataFile,
+                false,
+                current =>
+                {
+                    deleting = Record.Exception(() => File.Delete(DataFile + JsonFile.LockSuffix));
+                    linking = Record.Exception(() => Junction.Create(_data.Paths.Directory, elsewhere));
+                    return With(current, "value", "new");
+                }
+            );
+
+        try
+        {
+            update.Should().NotThrow("the directory the write goes to is the one the lock's open verified");
+        }
+        finally
+        {
+            if (SafePath.IsReparsePoint(_data.Paths.Directory))
+            {
+                Directory.Delete(_data.Paths.Directory);
+            }
+        }
+
+        Directory
+            .EnumerateFileSystemEntries(elsewhere)
+            .Should()
+            .BeEmpty("the write never lands where a junction points");
+        Read().Should().Equal(New, "the write lands in the data directory");
+        deleting
+            .Should()
+            .BeOfType<IOException>("the lock file shares no delete")
+            .Which.HResult.Should()
+            .Be(ExclusiveFile.SharingViolation);
+        linking
+            .Should()
+            .BeOfType<IOException>("the lock file keeps the directory from being emptied")
+            .Which.HResult.Should()
+            .Be(DirectoryNotEmpty);
+    }
+
+    [Fact]
+    public void SetAside_UnderTheLock_StaysInTheDataDirectoryWhileAnotherProcessTriesToLinkIt()
+    {
+        Directory.CreateDirectory(_data.Paths.Directory);
+        File.WriteAllText(DataFile, "{ corrupt");
+        string elsewhere = Directory.CreateDirectory(Path.Combine(_data.Root, "elsewhere")).FullName;
+        string victim = Path.Combine(elsewhere, Path.GetFileName(DataFile));
+        File.WriteAllText(victim, "victim");
+        Exception? deleting = null;
+        Exception? linking = null;
+        Exception? refused = new InvalidOperationException("the set-aside never ran");
+
+        // Under the lock, another process running as the user moves the corrupt file out, then empties the directory and
+        // makes it a junction to a directory holding a file of the same name. A set-aside by path would then move that
+        // file.
+        Action setAside = () =>
+            JsonFile.Locked(
+                DataFile,
+                () =>
+                {
+                    File.Move(DataFile, Path.Combine(_data.Root, "stash.json"));
+                    deleting = Record.Exception(() => File.Delete(DataFile + JsonFile.LockSuffix));
+                    linking = Record.Exception(() => Junction.Create(_data.Paths.Directory, elsewhere));
+                    refused = JsonFile.SetAside(DataFile, delete: false, beforeWrite: true);
+                    return true;
+                }
+            );
+
+        try
+        {
+            setAside.Should().NotThrow("the directory the set-aside acts in is the one the lock's open verified");
+        }
+        finally
+        {
+            if (SafePath.IsReparsePoint(_data.Paths.Directory))
+            {
+                Directory.Delete(_data.Paths.Directory);
+            }
+        }
+
+        Directory
+            .EnumerateFileSystemEntries(elsewhere)
+            .Should()
+            .Equal([victim], "no move or delete reaches the directory a junction would point to");
+        File.ReadAllText(victim).Should().Be("victim");
+        refused.Should().BeNull("nothing stands at the path once the corrupt file moved out");
+        deleting
+            .Should()
+            .BeOfType<IOException>("the lock file shares no delete")
+            .Which.HResult.Should()
+            .Be(ExclusiveFile.SharingViolation);
+        linking
+            .Should()
+            .BeOfType<IOException>("the lock file keeps the directory from being emptied")
+            .Which.HResult.Should()
+            .Be(DirectoryNotEmpty);
     }
 
     [Fact]
