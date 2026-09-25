@@ -88,7 +88,7 @@ public sealed class UpdateLog(
 
     /// <summary>
     /// Writes the full outcome of a failed upgrade to its own file and prunes older dumps past
-    /// the per-package limit.
+    /// the per-package limit. The dump just written always stays.
     /// </summary>
     /// <param name="packageId">Winget package id.</param>
     /// <param name="outcome">The failed attempt.</param>
@@ -131,12 +131,10 @@ public sealed class UpdateLog(
 
     private string WriteInstallerLog(string packageId, UpgradeOutcome outcome, WingetDiagnostics? diagnostics)
     {
-        Directory.CreateDirectory(paths.InstallerLogDirectory);
-        SafePath.EnsureNotReparsePoint(paths.Directory);
-        SafePath.EnsureNotReparsePoint(paths.InstallerLogDirectory);
         DateTimeOffset now = clock.GetUtcNow();
         string stamp = now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-        string file = Path.Combine(paths.InstallerLogDirectory, $"{packageId}_{stamp}.log");
+        string name = $"{packageId}_{stamp}.log";
+        string file = Path.Combine(paths.InstallerLogDirectory, name);
 
         StringBuilder content = new();
         content.AppendLine(CultureInfo.InvariantCulture, $"Package: {packageId}");
@@ -159,12 +157,22 @@ public sealed class UpdateLog(
         content.AppendLine(CultureInfo.InvariantCulture, $"RebootRequired: {outcome.RebootRequired}");
         content.AppendLine(CultureInfo.InvariantCulture, $"CorrelationData: {outcome.CorrelationData}");
         AppendDiagnostics(content, diagnostics);
-        File.WriteAllText(file, content.ToString());
 
+        // The log opens relative to the verified directory and stays open through the prune. Held without delete
+        // sharing, it keeps the directory from being emptied and turned into a link, so each delete by path lands
+        // inside it.
+        using SafeDirectory directory = SafePath.OpenDirectory(paths.InstallerLogDirectory, create: true);
+        using FileStream log = directory.OpenFile(name, FileMode.Create, FileAccess.Write, FileShare.Read);
+        log.Write(Encoding.UTF8.GetBytes(content.ToString()));
+
+        // The dump just written stays, and takes one of the kept slots, whatever its name sorts as. A clock set back
+        // names it older than dumps already there, and the prune would then aim at the handle held above, which
+        // refuses the delete.
         IEnumerable<string> stale = Directory
             .EnumerateFiles(paths.InstallerLogDirectory, $"{packageId}_*.log")
-            .OrderByDescending(static name => name, StringComparer.Ordinal)
-            .Skip(InstallerLogsPerPackage);
+            .Where(other => !string.Equals(Path.GetFileName(other), name, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(static other => other, StringComparer.Ordinal)
+            .Skip(InstallerLogsPerPackage - 1);
         foreach (string old in stale)
         {
             File.Delete(old);

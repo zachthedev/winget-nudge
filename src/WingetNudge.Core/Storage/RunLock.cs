@@ -55,12 +55,12 @@ public sealed class RunLock : IDisposable
         try
         {
             // Inside, because a junction on the data directory and a directory that cannot be
-            // created both reach the caller the same way an unopenable file does.
-            Directory.CreateDirectory(paths.Directory);
-            SafePath.EnsureNotReparsePoint(paths.Directory);
+            // created both reach the caller the same way an unopenable file does. The directory
+            // closes once the lock is open, which then holds it in place.
+            using SafeDirectory directory = SafePath.OpenDirectory(paths.Directory, create: true);
 
             // A second run holding the file is the one answer that means stand down.
-            return ExclusiveFile.TryOpen(file) is FileStream handle
+            return ExclusiveFile.TryOpen(directory, Path.GetFileName(file)) is FileStream handle
                 ? new RunLockAttempt.Taken(new RunLock(handle))
                 : new RunLockAttempt.Held();
         }

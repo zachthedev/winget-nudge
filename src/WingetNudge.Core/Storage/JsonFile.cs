@@ -189,14 +189,15 @@ public static class JsonFile
     /// </summary>
     /// <remarks>
     /// Every caller holds the file's write lock, as <see cref="Update"/> does, so a reader's set-aside
-    /// never moves what this wrote.
+    /// never moves what this wrote. The lock also keeps the directory where the lock's open verified it:
+    /// while the lock file is open, the directory can neither move nor become a link, so every path here
+    /// resolves inside it.
     /// </remarks>
     /// <typeparam name="T">Serialized shape.</typeparam>
     /// <param name="path">File to write.</param>
     /// <param name="value">Value to serialize.</param>
     /// <exception cref="IOException">
-    /// The parent directory is a reparse point, or a handle without delete sharing still holds the
-    /// temporary file once the retries run out.
+    /// A handle without delete sharing still holds the temporary file once the retries run out.
     /// </exception>
     /// <exception cref="UnauthorizedAccessException">
     /// Another handle still holds the target once the retries run out, the target is read-only or a
@@ -204,11 +205,9 @@ public static class JsonFile
     /// </exception>
     public static void Write<T>(string path, T value)
     {
-        string? directory = Path.GetDirectoryName(path);
-        if (directory is not null)
+        if (Path.GetDirectoryName(path) is string directory)
         {
             Directory.CreateDirectory(directory);
-            SafePath.EnsureNotReparsePoint(directory);
         }
 
         string temporary = $"{path}.{Environment.ProcessId}-{Guid.NewGuid():N}.tmp";
@@ -267,9 +266,9 @@ public static class JsonFile
     /// <param name="lockTimeout">How long to wait for another process's write; two seconds when omitted.</param>
     /// <returns>The value written, or the current value when the change wrote nothing.</returns>
     /// <exception cref="IOException">
-    /// Another process held the write lock past the timeout, the parent directory is a reparse point, a
-    /// corrupt file that keeps a repair copy could not move aside before the write, or
-    /// <see cref="Write"/> failed.
+    /// Another process held the write lock past the timeout, another program held a directory on the path with
+    /// delete access past it, the parent directory is a reparse point, a corrupt file that keeps a repair copy could
+    /// not move aside before the write, or <see cref="Write"/> failed.
     /// </exception>
     /// <exception cref="UnauthorizedAccessException"><see cref="Write"/> failed.</exception>
     /// <exception cref="InvalidOperationException">The calling thread already holds a write lock.</exception>
@@ -301,7 +300,8 @@ public static class JsonFile
     /// <param name="lockTimeout">How long to wait for another process's write; two seconds when omitted.</param>
     /// <returns>What the body returns.</returns>
     /// <exception cref="IOException">
-    /// Another process held the write lock past the timeout, or the parent directory is a reparse point.
+    /// Another process held the write lock past the timeout, another program held a directory on the path with
+    /// delete access past it, or the parent directory is a reparse point.
     /// </exception>
     /// <exception cref="InvalidOperationException">The calling thread already holds a write lock.</exception>
     internal static TResult Locked<TResult>(string path, Func<TResult> body, TimeSpan? lockTimeout = null)
@@ -312,14 +312,6 @@ public static class JsonFile
                 $"An update of {Path.GetFileName(path)} started inside another update. A change must not "
                     + "read or write a state file."
             );
-        }
-
-        if (Path.GetDirectoryName(path) is string directory)
-        {
-            Directory.CreateDirectory(directory);
-
-            // A junction here would put the lock file, and the writes it guards, in another directory.
-            SafePath.EnsureNotReparsePoint(directory);
         }
 
         using FileStream held = AcquireWriteLock(path, lockTimeout ?? DefaultLockTimeout);
@@ -336,27 +328,53 @@ public static class JsonFile
 
     private static FileStream AcquireWriteLock(string path, TimeSpan timeout)
     {
-        string lockPath = path + LockSuffix;
+        string full = Path.GetFullPath(path);
+        string directoryPath = Path.GetDirectoryName(full) ?? full;
+        string lockName = Path.GetFileName(full) + LockSuffix;
         Stopwatch waited = Stopwatch.StartNew();
-        while (true)
+
+        // A junction on the directory would put the lock file, and the writes it guards, in another directory. Once
+        // the walk opens, every attempt opens relative to its one verified handle, which closes once the lock holds
+        // the directory.
+        SafeDirectory? directory = null;
+        try
         {
-            if (ExclusiveFile.TryOpen(lockPath) is FileStream held)
+            while (true)
             {
-                return held;
-            }
+                try
+                {
+                    directory ??= SafePath.OpenDirectory(directoryPath, create: true);
+                }
+                catch (IOException exception)
+                    when (exception.HResult == ExclusiveFile.SharingViolation && waited.Elapsed < timeout)
+                {
+                    // Another program holds a directory on the path with delete access, which the walk's handles
+                    // refuse to share. That waits as a held lock does, and past the timeout its own error reaches
+                    // the caller.
+                }
 
-            if (waited.Elapsed >= timeout)
-            {
-                throw new IOException(
-                    $"{Path.GetFileName(path)} stayed busy in another Winget Nudge process for "
-                        + $"{timeout.TotalSeconds:0.#} s, so the change was not saved."
-                );
-            }
+                if (directory is not null && ExclusiveFile.TryOpen(directory, lockName) is FileStream held)
+                {
+                    return held;
+                }
 
-            // Sleep(1) waits one timer tick, 15.625 ms by default, since Windows ticks its clock 64 times a second.
-            // A fixed short wait gives every waiter the same chance at a lock that another process takes and drops
-            // in quick succession.
-            Thread.Sleep(1);
+                if (directory is not null && waited.Elapsed >= timeout)
+                {
+                    throw new IOException(
+                        $"{Path.GetFileName(path)} stayed busy in another Winget Nudge process for "
+                            + $"{timeout.TotalSeconds:0.#} s, so the change was not saved."
+                    );
+                }
+
+                // One timer tick, 15.625 ms by default, since Windows ticks its clock 64 times a second. A fixed
+                // short wait gives every waiter the same chance at a lock that another process takes and drops in
+                // quick succession.
+                Wait(1);
+            }
+        }
+        finally
+        {
+            directory?.Dispose();
         }
     }
 
@@ -496,7 +514,9 @@ public static class JsonFile
 
     /// <summary>
     /// Deletes a corrupt file, or moves it to a <c>.corrupt</c> name no other copy holds and drops
-    /// the oldest copies past <see cref="CorruptCopiesKept"/>. The caller holds the file's write lock.
+    /// the oldest copies past <see cref="CorruptCopiesKept"/>. The caller holds the file's write lock,
+    /// which keeps the directory where the lock's open verified it, so every delete and move here lands
+    /// inside it.
     /// </summary>
     /// <param name="path">The corrupt file.</param>
     /// <param name="delete">Whether the file is recreatable, so it goes rather than moving aside.</param>
@@ -509,12 +529,6 @@ public static class JsonFile
     {
         try
         {
-            // A junction in the path would aim this delete or rename at another directory.
-            if (Path.GetDirectoryName(path) is string directory)
-            {
-                SafePath.EnsureNotReparsePoint(directory);
-            }
-
             if (delete)
             {
                 File.Delete(path);
