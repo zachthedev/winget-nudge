@@ -762,6 +762,7 @@ public sealed class RunLockTests : IDisposable
     [Fact]
     public void Acquire_ThroughAReparsePoint_ReportsWhyRatherThanThrowing()
     {
+        string file = _data.Paths.RunLockFile(RunLock.Upgrade);
         string elsewhere = Path.Combine(_data.Root, "elsewhere");
         Directory.CreateDirectory(elsewhere);
         Directory.CreateSymbolicLink(_data.Paths.Directory, elsewhere);
@@ -771,7 +772,11 @@ public sealed class RunLockTests : IDisposable
             .Should()
             .BeOfType<RunLockAttempt.Unavailable>(
                 "the elevated process refuses to write through a link any user process can plant"
-            );
+            )
+            .Which.Reason.Should()
+            .Contain(file, "the caller shows the reason to someone who has to fix it")
+            .And.Contain(SafePath.ReparsePointCause, "the reason names the link rather than a failed open");
+        Directory.EnumerateFileSystemEntries(elsewhere).Should().BeEmpty("nothing is written through the link");
     }
 
     [Theory]
