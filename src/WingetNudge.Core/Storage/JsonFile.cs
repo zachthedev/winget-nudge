@@ -383,8 +383,9 @@ public static class JsonFile
             // A junction here would aim these deletes at whatever directory it points to.
             SafePath.EnsureNotReparsePoint(directory);
         }
-        catch (IOException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            // A directory the check cannot open is one the sweep cannot vouch for, so it deletes nothing there.
             return 0;
         }
 
