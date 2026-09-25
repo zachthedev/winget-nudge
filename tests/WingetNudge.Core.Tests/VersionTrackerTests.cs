@@ -151,36 +151,31 @@ public sealed class VersionTrackerTests : IDisposable
     [Fact]
     public void Load_WhileAnExclusiveHolderLetsGoInsideTheWritersWait_ReadsTheSavedTracking()
     {
-        // Another program holds the file sharing nothing, and a dedicated thread lets it go 370 ms in. The read
-        // retries a refused open on the writers' schedule, whose sleeps add to 511 ms before the last attempt,
-        // and a sleep never returns early. A read that does not retry gives up at its first attempt.
+        // Another program holds the file sharing nothing, and lets go at the read's third wait between attempts. A
+        // read that does not retry gives up at its first attempt, and one on the write lock's table after two waits,
+        // so neither reaches the release. The release comes at a count, not a time.
         _tracker.Reconcile([Fixture.Current("Git.Git", "2.47.0")]);
         FileStream holder = new(_data.Paths.VersionTracking, FileMode.Open, FileAccess.Read, FileShare.None);
-        Thread releaser = new(() =>
-        {
-            Thread.Sleep(370);
-            holder.Dispose();
-        });
-        releaser.Start();
-
+        using AttemptWaits waits = new(3, holder.Dispose);
         Func<Dictionary<string, Dictionary<string, VersionObservation>>> load = () => _tracker.Load();
 
         try
         {
             load.Should()
                 .NotThrow(
-                    "the holder lets go at 370 ms, 141 ms before the read's last attempt at 511 ms or later, "
-                        + "and 370 ms after a read that does not retry has given up"
+                    "the holder lets go at the read's third wait, which a read that does not retry, or waits "
+                        + "twice, never reaches"
                 )
                 .Which.Should()
                 .ContainKey("Git.Git", "the load reads what the reconcile saved")
                 .WhoseValue.Should()
                 .ContainKey("2.47.0");
+            waits.Delays.Take(3).Should().Equal([1, 2, 4], "a plain read waits on the writers' table");
         }
         finally
         {
             // The data directory is deleted after the case, and a held file would refuse that.
-            releaser.Join();
+            holder.Dispose();
         }
     }
 

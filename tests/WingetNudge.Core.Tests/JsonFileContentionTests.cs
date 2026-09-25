@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using AwesomeAssertions;
 using WingetNudge.Core.Storage;
@@ -8,10 +7,9 @@ namespace WingetNudge.Core.Tests;
 
 // A scanner or a second process of the app holds a freshly written file for a few milliseconds. Any
 // open handle on the target refuses a replace, whatever its share mode, and a handle without delete
-// sharing on the temporary refuses it too. The replace retries for about 0.6 s, since each of its waits
-// rounds up to the ~15 ms timer tick. A case that releases its handle does so from a dedicated thread
-// 50 ms after the write or replace starts, so the release waits on no thread pool. A stall of that
-// thread past about 0.5 s on a loaded machine still fails it.
+// sharing on the temporary refuses it too. The replace retries on the writers' table of waits. A case that
+// releases its handle does so at the replace's first wait between attempts, so the release comes at a count
+// rather than a time, and no stall on a loaded machine moves it.
 public sealed class JsonFileContentionTests : IDisposable
 {
     // ERROR_SHARING_VIOLATION, as .NET carries it on an IOException.
@@ -33,14 +31,9 @@ public sealed class JsonFileContentionTests : IDisposable
         JsonFile.Write(path, Old);
         FileStream holder = new(path, FileMode.Open, FileAccess.Read, share);
 
-        // The write runs on this thread as soon as the releaser starts, so its first replace meets the
-        // held target.
-        Thread releaser = new(() =>
-        {
-            Thread.Sleep(50);
-            holder.Dispose();
-        });
-        releaser.Start();
+        // The first replace meets the held target, and the holder lets go at the wait that follows. A write whose
+        // replace does not wait meets the holder at its only attempt.
+        using AttemptWaits waits = new(1, holder.Dispose);
         Action write = () => JsonFile.Write(path, New);
 
         try
@@ -50,7 +43,7 @@ public sealed class JsonFileContentionTests : IDisposable
         finally
         {
             // The data directory is deleted after the case, and a held file would refuse that.
-            releaser.Join();
+            holder.Dispose();
         }
 
         JsonFile.Read<Dictionary<string, string>>(path, deleteIfCorrupt: false).Should().Equal(New);
@@ -63,11 +56,17 @@ public sealed class JsonFileContentionTests : IDisposable
         string path = _data.Paths.Preferences;
         JsonFile.Write(path, Old);
 
+        // The waits are recorded on the pool thread the write runs on, since the watch flows into Task.Run.
+        using AttemptWaits waits = new();
         using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
             Func<Task> write = () => Task.Run(() => JsonFile.Write(path, New), TestContext.Current.CancellationToken);
             await write.Should().ThrowAsync<UnauthorizedAccessException>();
         }
+
+        waits
+            .Delays.Should()
+            .Equal([1, 2, 4, 8, 16, 32, 64, 128, 256], "a replace waits the whole writers' table before it gives up");
 
         JsonFile.Read<Dictionary<string, string>>(path, deleteIfCorrupt: false).Should().Equal(Old);
         Directory.GetFiles(_data.Paths.Directory, $"*{JsonFile.TemporarySuffix}").Should().BeEmpty();
@@ -91,15 +90,12 @@ public sealed class JsonFileContentionTests : IDisposable
 
         try
         {
-            // Waiting out the retries takes about 0.6 s and failing at once about 5 ms, so 300 ms
-            // separates the two with room for a cold first call.
-            Stopwatch elapsed = Stopwatch.StartNew();
+            // The case counts the waits between attempts rather than timing them, so no stall moves it.
+            using AttemptWaits waits = new();
             Action write = () => JsonFile.Write(path, New);
 
             write.Should().Throw<UnauthorizedAccessException>();
-            elapsed
-                .Elapsed.Should()
-                .BeLessThan(TimeSpan.FromMilliseconds(300), "a target that refuses every replace fails at once");
+            waits.Delays.Should().BeEmpty("a target that refuses every replace fails at once");
             if (target == "directory")
             {
                 Directory.Exists(path).Should().BeTrue();
@@ -126,14 +122,9 @@ public sealed class JsonFileContentionTests : IDisposable
         (string temporary, string path) = PrepareReplace();
         FileStream holder = new(temporary, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
-        // The replace runs on this thread as soon as the releaser starts, so its first attempt meets the
-        // held source.
-        Thread releaser = new(() =>
-        {
-            Thread.Sleep(50);
-            holder.Dispose();
-        });
-        releaser.Start();
+        // The first attempt meets the held source, and the holder lets go at the wait that follows. A replace that
+        // does not wait meets the holder at its only attempt.
+        using AttemptWaits waits = new(1, holder.Dispose);
         Action replace = () => JsonFile.Replace(temporary, path);
 
         try
@@ -143,7 +134,7 @@ public sealed class JsonFileContentionTests : IDisposable
         finally
         {
             // The data directory is deleted after the case, and a held file would refuse that.
-            releaser.Join();
+            holder.Dispose();
         }
 
         JsonFile.Read<Dictionary<string, string>>(path, deleteIfCorrupt: false).Should().Equal(New);
@@ -155,12 +146,18 @@ public sealed class JsonFileContentionTests : IDisposable
     {
         (string temporary, string path) = PrepareReplace();
 
+        // The waits are recorded on the pool thread the replace runs on, since the watch flows into Task.Run.
+        using AttemptWaits waits = new();
         using (new FileStream(temporary, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
             Func<Task> replace = () =>
                 Task.Run(() => JsonFile.Replace(temporary, path), TestContext.Current.CancellationToken);
             (await replace.Should().ThrowAsync<IOException>()).Which.HResult.Should().Be(SharingViolation);
         }
+
+        waits
+            .Delays.Should()
+            .Equal([1, 2, 4, 8, 16, 32, 64, 128, 256], "a replace waits the whole writers' table before it gives up");
 
         JsonFile.Read<Dictionary<string, string>>(path, deleteIfCorrupt: false).Should().Equal(Old);
     }

@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using AwesomeAssertions;
 using WingetNudge.Core.Storage;
 using WingetNudge.Core.Tests.Support;
@@ -278,18 +277,12 @@ public sealed class JsonFileUpdateTests : IDisposable
         Directory.CreateDirectory(_data.Paths.Directory);
         File.WriteAllText(DataFile, "{ corrupt");
         using FileStream holder = new(DataFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using AttemptWaits waits = new();
 
-        Stopwatch watch = Stopwatch.StartNew();
         JsonFile.Read<Dictionary<string, string>>(DataFile, deleteIfCorrupt: false).Should().BeNull();
         JsonFile.Read<Dictionary<string, string>>(DataFile, deleteIfCorrupt: false).Should().BeNull();
-        watch.Stop();
 
-        watch
-            .ElapsedMilliseconds.Should()
-            .BeLessThan(
-                1_000,
-                "a move that waits out a holder sleeps 511 ms or more, so two reads that wait sleep 1,022 ms or more"
-            );
+        waits.Delays.Should().BeEmpty("a read tries the move once and never waits out the holder");
         File.Exists(DataFile).Should().BeTrue("the held file stays for the next writer");
     }
 
@@ -298,12 +291,10 @@ public sealed class JsonFileUpdateTests : IDisposable
     {
         JsonFile.Write(DataFile, Old);
         FileStream reader = new(DataFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        Thread releaser = new(() =>
-        {
-            Thread.Sleep(50);
-            reader.Dispose();
-        });
-        releaser.Start();
+
+        // The update's replace meets the held target, and the reader lets go at the wait that follows. An update
+        // whose replace does not wait meets the reader at its only attempt.
+        using AttemptWaits waits = new(1, reader.Dispose);
         Action update = () =>
             JsonFile.Update<Dictionary<string, string>>(DataFile, false, current => With(current, "value", "new"));
 
@@ -314,7 +305,7 @@ public sealed class JsonFileUpdateTests : IDisposable
         finally
         {
             // The data directory is deleted after the case, and a held file would refuse that.
-            releaser.Join();
+            reader.Dispose();
         }
 
         Read().Should().Equal(New);

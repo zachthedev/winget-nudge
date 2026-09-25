@@ -244,35 +244,27 @@ public sealed class SettingsTests : IDisposable
     [Fact]
     public void Load_WhileAnExclusiveHolderLetsGoInsideTheWritersWait_ReadsTheSavedSettings()
     {
-        // Another program holds the file sharing nothing, and a dedicated thread lets it go 370 ms in. The
-        // read retries a refused open on the writers' schedule, whose sleeps add to 511 ms before the last
-        // attempt, and a sleep never returns early. 370 ms sits midway between that and 230 ms, the latest
-        // a read that gives up after three attempts 50 and 100 ms apart was seen to give up.
+        // Another program holds the file sharing nothing, and lets go at the read's third wait between attempts. A
+        // plain read waits up to nine times, on the writers' table. The read under the write lock waits twice, so a
+        // read on that table makes its last attempt with the holder still there. The release comes at a count, not a
+        // time, so no stall on a loaded machine moves it.
         new Settings { CooldownHours = 30 }.Save(_data.Paths);
         FileStream holder = new(_data.Paths.Settings, FileMode.Open, FileAccess.Read, FileShare.None);
-        Thread releaser = new(() =>
-        {
-            Thread.Sleep(370);
-            holder.Dispose();
-        });
-        releaser.Start();
-
+        using AttemptWaits waits = new(3, holder.Dispose);
         Func<Settings> load = () => Settings.Load(_data.Paths);
 
         try
         {
             load.Should()
-                .NotThrow(
-                    "the holder lets go at 370 ms, 141 ms before the read's last attempt at 511 ms or later, "
-                        + "and 140 ms after a three-attempt read has given up"
-                )
+                .NotThrow("the holder lets go at the read's third wait, which a read that waits twice never reaches")
                 .Which.CooldownHours.Should()
                 .Be(30, "the load reads what the save wrote");
+            waits.Delays.Take(3).Should().Equal([1, 2, 4], "a plain read waits on the writers' table");
         }
         finally
         {
             // The data directory is deleted after the case, and a held file would refuse that.
-            releaser.Join();
+            holder.Dispose();
         }
     }
 
@@ -280,10 +272,9 @@ public sealed class SettingsTests : IDisposable
     public void Load_WhileADeleteWaitsOnAnotherHandleInsideTheWritersWait_WaitsThenReadsDefaults()
     {
         // Another program's reader holds the file sharing delete, and a delete-on-close handle closes beside
-        // it, so the file waits deleted and every open meets access denied. A dedicated thread lets the reader
-        // go 370 ms in, which completes the delete. The read retries access denied on the writers' schedule,
-        // whose sleeps add to 511 ms before the last attempt, and a sleep never returns early. A read that
-        // does not retry access denied gives up at its first attempt.
+        // it, so the file waits deleted and every open meets access denied. The reader lets go at the read's third
+        // wait between attempts, which completes the delete. A read that does not retry access denied gives up at its
+        // first attempt, and one on the write lock's table after two waits, so neither reaches the release.
         new Settings { CooldownHours = 30 }.Save(_data.Paths);
         FileStream reader = new(
             _data.Paths.Settings,
@@ -299,12 +290,7 @@ public sealed class SettingsTests : IDisposable
             4096,
             FileOptions.DeleteOnClose
         ).Dispose();
-        Thread releaser = new(() =>
-        {
-            Thread.Sleep(370);
-            reader.Dispose();
-        });
-        bool started = false;
+        using AttemptWaits waits = new(3, reader.Dispose);
 
         try
         {
@@ -318,58 +304,73 @@ public sealed class SettingsTests : IDisposable
                 ).Dispose();
             open.Should().Throw<UnauthorizedAccessException>("a file that waits deleted refuses every open");
 
-            releaser.Start();
-            started = true;
             Func<Settings> load = () => Settings.Load(_data.Paths);
 
             load.Should()
                 .NotThrow(
-                    "the reader lets go at 370 ms, 141 ms before the read's last attempt at 511 ms or later, "
-                        + "and 370 ms after a read that fails access denied at once has given up"
+                    "the reader lets go at the read's third wait, which a read that fails access denied at once, "
+                        + "or waits twice, never reaches"
                 )
                 .Which.CooldownHours.Should()
                 .Be(Settings.DefaultCooldownHours, "the delete completes once the reader lets go, so nothing remains");
+            waits.Delays.Take(3).Should().Equal([1, 2, 4], "a plain read waits on the writers' table");
         }
         finally
         {
             // The data directory is deleted after the case, and a held file would refuse that.
-            if (started)
-            {
-                releaser.Join();
-            }
-            else
-            {
-                reader.Dispose();
-            }
+            reader.Dispose();
         }
+    }
+
+    [Fact]
+    public void Load_WhileAnotherProgramHoldsTheFileThroughout_WaitsTheWholeWritersTableThenThrows()
+    {
+        // Another program holds settings.json sharing nothing and never lets go, so the read waits out the whole
+        // writers' table before it gives up. The planned waits prove the table. The time taken proves the waits
+        // sleep: the nine add to 511 ms, and each can end up to one 15.6 ms timer tick early, so the read takes at
+        // least about 370 ms, and 350 ms leaves room. It is the one clock reading among the retry cases, and a lower
+        // bound, so a stall only lengthens the call and never fails it. A read that skips its sleeps passes only if a
+        // stall of 350 ms or more lands inside it.
+        new Settings { CooldownHours = 30 }.Save(_data.Paths);
+        using FileStream holder = new(_data.Paths.Settings, FileMode.Open, FileAccess.Read, FileShare.None);
+        using AttemptWaits waits = new();
+        Func<Settings> load = () => Settings.Load(_data.Paths);
+
+        Stopwatch watch = Stopwatch.StartNew();
+        load.Should().Throw<IOException>("the holder never lets go");
+        watch.Stop();
+
+        waits
+            .Delays.Should()
+            .Equal(
+                [1, 2, 4, 8, 16, 32, 64, 128, 256],
+                "a plain read waits the whole writers' table before it gives up"
+            );
+        watch
+            .ElapsedMilliseconds.Should()
+            .BeGreaterThanOrEqualTo(
+                350,
+                "the nine waits add to 511 ms, and each can end up to one 15.6 ms timer tick early, which leaves at least about 370 ms"
+            );
     }
 
     [Fact]
     public void Save_WhileAnotherProgramHoldsTheFile_GivesUpItsLockedReadWithinTheShortWait()
     {
-        // Another program holds settings.json sharing nothing and never lets go. A read under the write lock
-        // retries 50 and 100 ms apart, about 0.17 s, then throws. The writers' wait sleeps 511 ms or more, and
-        // 609 ms or more as measured here, so 500 ms separates the two with about 330 ms of room for a loaded
-        // machine, and about 110 ms under a read that waits like a writer.
+        // Another program holds settings.json sharing nothing and never lets go. The save's read under the write
+        // lock plans its waits from the short table, 50 and 100 ms, where a plain read plans 511 ms on the writers'
+        // table. The case checks the planned waits rather than a clock, so no stall on a loaded machine moves it.
         new Settings { CooldownHours = 30 }.Save(_data.Paths);
         using FileStream holder = new(_data.Paths.Settings, FileMode.Open, FileAccess.Read, FileShare.None);
+        using AttemptWaits waits = new();
         Action save = () => new Settings { CooldownHours = 40 }.Save(_data.Paths);
 
-        // A stall on a loaded machine can land inside any one timing, so the case keeps the fastest of three.
-        // A read that waits like a writer never sleeps less than 511 ms, so no attempt of it can pass.
-        long fastest = long.MaxValue;
-        for (int attempt = 0; attempt < 3; attempt++)
-        {
-            Stopwatch watch = Stopwatch.StartNew();
-            save.Should().Throw<IOException>("the holder never lets go");
-            fastest = Math.Min(fastest, watch.ElapsedMilliseconds);
-        }
-
-        fastest
-            .Should()
-            .BeLessThan(
-                500,
-                "a read under the lock gives up after about 0.17 s, about 330 ms inside the bound, and a read that waits like a writer sleeps 511 ms or more, measured at 609 ms or more"
+        save.Should().Throw<IOException>("the holder never lets go");
+        waits
+            .Delays.Should()
+            .Equal(
+                [50, 100],
+                "a read under the write lock gives up after 150 ms of waits, where a plain read waits 511 ms"
             );
     }
 
