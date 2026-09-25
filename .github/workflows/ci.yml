@@ -125,16 +125,7 @@ jobs:
           cache: true
           cache-dependency-path: '**/packages.lock.json'
       - run: dotnet tool restore --tool-manifest dotnet-tools.json
-      # The restore names the root Directory files, imports no Directory.Solution file and reads no
-      # response file, as the gate's build rows do, so the graph this job submits is the one the
-      # gate builds. GITHUB_WORKSPACE is the checkout's absolute path on the runner.
-      - run: >-
-          dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true
-          -p:DirectoryBuildPropsPath="$GITHUB_WORKSPACE/Directory.Build.props"
-          -p:DirectoryBuildTargetsPath="$GITHUB_WORKSPACE/Directory.Build.targets"
-          -p:DirectoryPackagesPropsPath="$GITHUB_WORKSPACE/Directory.Packages.props"
-          -p:ImportDirectorySolutionProps=false -p:ImportDirectorySolutionTargets=false
-          -noAutoResponse
+      - run: dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true
       # The tool refuses an output directory that does not exist.
       - run: mkdir sbom && dotnet sbom-tool generate -b . -bc . -pn winget-nudge -pv 0.0.0 -ps zachthedev -nsb https://zachthe.dev -m sbom
       # A tool that found no project.assets.json exits 0 with a hollow file, and a snapshot with
