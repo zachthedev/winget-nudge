@@ -9,8 +9,9 @@ namespace WingetNudge.Core.Tests;
 // A scanner or a second process of the app holds a freshly written file for a few milliseconds. Any
 // open handle on the target refuses a replace, whatever its share mode, and a handle without delete
 // sharing on the temporary refuses it too. The replace retries for about 0.6 s, since each of its waits
-// rounds up to the ~15 ms timer tick. A case that releases its handle does so 50 ms after the replace
-// is under way, so a stall of more than about 0.5 s on a loaded machine fails it.
+// rounds up to the ~15 ms timer tick. A case that releases its handle does so from a dedicated thread
+// 50 ms after the write or replace starts, so the release waits on no thread pool. A stall of that
+// thread past about 0.5 s on a loaded machine still fails it.
 public sealed class JsonFileContentionTests : IDisposable
 {
     // ERROR_SHARING_VIOLATION, as .NET carries it on an IOException.
@@ -23,27 +24,35 @@ public sealed class JsonFileContentionTests : IDisposable
 
     public void Dispose() => _data.Dispose();
 
-    [Theory(Timeout = 10_000)]
+    [Theory]
     [InlineData(FileShare.ReadWrite)]
     [InlineData(FileShare.ReadWrite | FileShare.Delete)]
-    public async Task Write_WhileAnotherHandleHoldsTheTarget_LandsOnceTheHandleCloses(FileShare share)
+    public void Write_WhileAnotherHandleHoldsTheTarget_LandsOnceTheHandleCloses(FileShare share)
     {
         string path = _data.Paths.Preferences;
         JsonFile.Write(path, Old);
+        FileStream holder = new(path, FileMode.Open, FileAccess.Read, share);
 
-        Task write;
-        using (new FileStream(path, FileMode.Open, FileAccess.Read, share))
+        // The write runs on this thread as soon as the releaser starts, so its first replace meets the
+        // held target.
+        Thread releaser = new(() =>
         {
-            write = Task.Run(() => JsonFile.Write(path, New), TestContext.Current.CancellationToken);
+            Thread.Sleep(50);
+            holder.Dispose();
+        });
+        releaser.Start();
+        Action write = () => JsonFile.Write(path, New);
 
-            // The temporary exists from its creation until the replace lands or fails, so seeing it
-            // shows the write reached the replace while this handle holds the target.
-            await WaitForTemporaryAsync(write);
-            await Task.Delay(50, TestContext.Current.CancellationToken);
-            write.IsCompleted.Should().BeFalse("the write waits out a handle that closes");
+        try
+        {
+            write.Should().NotThrow("the write waits out a handle that closes");
+        }
+        finally
+        {
+            // The data directory is deleted after the case, and a held file would refuse that.
+            releaser.Join();
         }
 
-        await write.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         JsonFile.Read<Dictionary<string, string>>(path, deleteIfCorrupt: false).Should().Equal(New);
         Directory.GetFiles(_data.Paths.Directory, $"*{JsonFile.TemporarySuffix}").Should().BeEmpty();
     }
@@ -155,19 +164,5 @@ public sealed class JsonFileContentionTests : IDisposable
         string temporary = $"{path}.test{JsonFile.TemporarySuffix}";
         File.WriteAllText(temporary, JsonSerializer.Serialize(New, JsonFile.Options));
         return (temporary, path);
-    }
-
-    // Returns once the write's temporary exists, or once the write has already finished.
-    private async Task WaitForTemporaryAsync(Task write)
-    {
-        Stopwatch waited = Stopwatch.StartNew();
-        while (
-            !write.IsCompleted
-            && Directory.GetFiles(_data.Paths.Directory, $"preferences.json.*{JsonFile.TemporarySuffix}").Length == 0
-        )
-        {
-            waited.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5), "the write creates its temporary first");
-            await Task.Delay(1, TestContext.Current.CancellationToken);
-        }
     }
 }
