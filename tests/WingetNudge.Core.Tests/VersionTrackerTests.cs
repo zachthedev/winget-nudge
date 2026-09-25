@@ -220,7 +220,7 @@ public sealed class VersionTrackerTests : IDisposable
         _tracker
             .GetCooling(updatable)
             .Should()
-            .BeEmpty("the version has been public for five days even though this machine just saw it");
+            .BeEmpty("the version has been public for five days even though a local check just saw it");
     }
 
     [Fact]
