@@ -116,13 +116,12 @@ Two things reach the JS tools from your own environment:
   change, through `BUN_INSTALL_CACHE_DIR`, or `BUN_CONFIG_SKIP_LOAD_LOCKFILE` with a registry. It
   hands its values to every script it runs. `prepare` passes `--no-env-file`, so `bun run prepare`
   hands lefthook's `install` none of them, but under `bun install` lefthook still sees them.
-- The Bun variables. Bun reads command-line flags from `BUN_OPTIONS`, so a `--preload` there runs a
-  module in every Bun process, and an `--env-file` there loads that file. Bun preloads the module
-  `BUN_INSPECT_PRELOAD` names, and reads `BUN_INSPECT` and `BUN_INSPECT_CONNECT_TO` for its
-  inspector. The gate removes `BUN_OPTIONS` from its own environment as it starts, in any letter
-  case, so no process it starts gets it, and leaves the other three in place. The hooks leave all
-  four. Keep `BUN_OPTIONS`, `BUN_INSPECT`, `BUN_INSPECT_CONNECT_TO` and `BUN_INSPECT_PRELOAD` unset
-  in the shell you commit from and run the gate from.
+- The Bun variables. `BUN_OPTIONS` reaches every direct Bun start, such as the `prepare` script's
+  lefthook install. A `--preload` in it runs a module first in each. The gate withholds it from the
+  processes it starts, and a tool started through `bunx --bun --no-install` does not read it. Leave
+  it unset. Bun preloads the module `BUN_INSPECT_PRELOAD` names, and reads `BUN_INSPECT` and
+  `BUN_INSPECT_CONNECT_TO` for its inspector. The gate and the hooks leave those three in place, so
+  keep them unset in the shell you commit from and run the gate from.
 
 `prepare` starts `bun` by name, and a `package.json` script finds it in every `node_modules/.bin`
 before `PATH`. A dependency declaring its own `bun` bin would win there, and it would arrive as a
@@ -383,6 +382,247 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
 - `audit.yml`, weekly: the NuGet advisory report over the locked graph, and zizmor's online audits
   over the pinned actions. A red run there is a report, never a check.
 
+### What the rows check
+
+- For each `mise.lock` entry, the gate asserts the `backend`, `url` and `url_api` against what
+  `cake.cs` names for that tool. Those three are what an install fetches, so a provenance line
+  beside an address somewhere else would be a claim about bytes nobody downloads. `url` has to
+  equal, byte for byte, the address `cake.cs` builds from the tool's repository, its tag prefix, the
+  pinned version and the asset it names for that platform. `url_api` has to be an asset id under the
+  same repository. An address carrying a control or whitespace character, a percent escape, a
+  backslash, or a `.` or `..` segment is refused before any comparison. The expected owner and
+  assets live in `cake.cs` rather than in `mise.lock`, so moving an install takes an edit to both.
+- mise fetches an asset through its `url_api` address in place of `url` when a HEAD on `url` fails,
+  and nothing offline ties that asset id to a release. The one `url_replacements` entry in
+  `mise.toml` sends that fetch to `url-api-fallback-refused.invalid`, so such an install fails with
+  a DNS error rather than installing whatever the id names. `lockfile` refuses a `mise.toml`
+  without that entry or with any other, because another entry would move a download away from the
+  url `mise.lock` records. `tools` hands `mise install` the same entry through
+  `MISE_URL_REPLACEMENTS`, which outranks every config file. A `mise install` run by hand reads the
+  files alone.
+- mise reads more config files than `mise.toml`, and merges the lockfile beside each one ahead of
+  `mise.lock`, so a `mise.local.toml` with a `mise.local.lock` would install from a url the gate
+  never read. `lockfile` refuses, by name, any file or directory at the root whose name starts with
+  `mise` or `.mise` other than `mise.toml` and `mise.lock`, and `.tool-versions`. That covers
+  `.miserc.toml`, the `mise.<env>.toml` and `.mise.<env>.toml` env files, the `mise.windows.toml`
+  platform files, the `.local` variants, and the `mise` and `.mise` directories. The `.config`
+  directory, where mise reads `.config/miserc.toml` and `.config/mise`, is refused whole. Both
+  checks read the file system rather than git, because mise reads an untracked file too. Every mise
+  call the gate makes also runs with
+  `MISE_OVERRIDE_CONFIG_FILENAMES=mise.toml`, `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none`,
+  `MISE_ENV` empty and `MISE_AUTO_ENV=false`, which leave mise reading `mise.toml` alone even when a
+  refused file is present.
+- `mise.toml` itself holds `[tools]`, `[settings]` and `[tool_config]` alone, because mise evaluates
+  `[env]` and `[vars]` templates as it loads the file and runs `[hooks]` during an install.
+  `[tools]` carries version strings, and `[settings]` and `[tool_config]` have to equal, whole, the
+  tables `cake.cs` holds in `ExpectedSettings` and `ExpectedToolConfig`. `mise.lock` holds the keys
+  `mise lock` writes and no others, for the tools `mise.toml` pins. A symbolic link or junction at
+  the root, or under `.mise` or `mise`, is refused.
+- The gate starts mise with an environment it builds from nothing: `SYSTEMROOT`, `LOCALAPPDATA`,
+  `TEMP`, `TMP`, the proxy variables when set, `NO_COLOR=1`, and its own mise settings. No other
+  variable, from the shell or anywhere else, reaches mise, so the gate's mise uses mise's default
+  directories whatever `MISE_DATA_DIR` or `MISE_GLOBAL_CONFIG_FILE` says, and trusts the checkout
+  itself.
+- The gate starts mise, gh, bunx, dotnet and git from the absolute path `PATH` names for each,
+  skipping empty and relative entries and any entry inside the checkout. Cake's own lookup reads
+  `tools` before `PATH`, and Windows reads the current directory for a bare name. So the gate also
+  refuses a file at the root or under `tools` named `mise`, `gh`, `bunx`, `bun`, `dotnet`, `node`,
+  `git`, `csharpier` or `sbom-tool`, bare or with `.exe`, `.bat`, `.cmd` or `.com`.
+- The prettier row runs `bunx --bun --no-install`, which starts `node_modules/.bin/prettier` ahead
+  of anything else. With none in the checkout, bunx runs a parent directory's copy, one on `PATH` or
+  one in its cache, and says nothing, so the row first checks that `node_modules/.bin/prettier.exe`
+  is there, and that a link there resolves to an existing file, and fails naming the install to run
+  when either does not hold. `--bun` runs it under the Bun the gate resolved, never whichever node
+  `PATH` names, and lefthook's commit-msg hook passes it to commitlint too. The hook checks for no
+  install. `bun install` keeps a package it finds already at the version `bun.lock` records, so a
+  committed `node_modules/prettier` still runs after an install. `lockfile` refuses every tracked
+  path with a `node_modules` segment, in any case, and the prettier row refuses them again before it
+  starts bunx. They refuse a tracked path with a `bin` or `obj` segment too, since MSBuild imports
+  files from `obj` by wildcard, and a committed one reaches every checkout. They also refuse a
+  tracked `.env` or `.env.<name>` at any depth. Bun loads the one at the root into prettier and
+  commitlint, and no bunx flag stops it, and one anywhere else holds values meant to stay out of
+  git. `git ls-files` answers what is tracked, so the `node_modules` an install writes, and a
+  contributor's own `.env`, pass. An extraction from `git archive` has no `.git` at the root and
+  tracks nothing, so the check starts no git there and passes. Beside a `.git`,
+  `git rev-parse --show-cdup` has to print an empty line, because git searches the directories above
+  a `.git` it cannot open and would list another repository's paths. It compares no paths, so a
+  checkout reached through a junction passes. The `gate` job's `bun install` takes
+  `--ignore-scripts`, because a frozen lockfile still runs the lifecycle scripts `package.json`
+  names.
+- `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone. Bun reads the file on every
+  start, and no flag stops it. A top-level `preload` there runs a module before the first line of
+  whatever Bun starts, prettier and commitlint included. Every other key reaches Bun too: an
+  `[install]` registry moves where even a frozen install downloads from. So `lockfile` and the
+  prettier row refuse any other key or table before the gate starts bunx. The file's lines, less
+  comments, have to read `[install]` or `minimumReleaseAge = ` and digits, in printable ASCII, so
+  Bun and the gate cannot read it two ways. The gate reads no value there and passes a checkout
+  with no `bunfig.toml`, so review holds the cooldown.
+- The prettier row runs prettier with `--config .prettierrc`. On prettier 3.9.8 that stops the read
+  of every other config file, a nested `.prettierrc` and a `package.json` `prettier` key included,
+  so the gate refuses none of them. An editor's prettier still reads one. The row also passes
+  `--no-editorconfig`, so no `.editorconfig` sets the indent, line ending or width prettier formats
+  with.
+- The config walk behind `lockfile` is the rows' walk of the tree described above, and it also reads
+  the `bin` and `obj` beside each project, which the rows skip, because MSBuild imports files from
+  `obj`. It reads the file system, because a tool reads an untracked file too. It refuses any
+  directory link, and any directory it cannot list, by name.
+- No config file is held to fixed text. CODEOWNERS review holds `.prettierrc`, `.prettierignore`,
+  `.taplo.toml`, `.github/zizmor.yml`, `.csharpierrc`, `.csharpierignore`, `lefthook.yml` and the
+  three `.editorconfig` files, and a reviewer refuses a line that takes a file out of a row or
+  turns a finding off. The `format` and `toml` rows fail when their tool drops a file they named,
+  and the prettier row does not: a line in `.prettierignore` takes files out of it without a word.
+  The prettier row passes `--ignore-path .prettierignore`, which replaces prettier's default pair,
+  so `.gitignore` takes nothing out of it, and `.prettierignore` lists the local paths `.gitignore`
+  covers that prettier would read. A `.github/actionlint.yaml` is refused, because its `paths` block
+  ignores actionlint's errors by pattern.
+- The `format` row takes each file of the walk with an extension CSharpier 1.3.0 formats, and names
+  them in batches that fit a Windows command line, each held to the count above. It passes
+  `--config-path` with the absolute path of `.csharpierrc`, `--ignore-path .csharpierignore` and
+  `--include-generated`. CSharpier then reads no other config or ignore file, and checks a file
+  whose header calls it generated. The path is absolute because CSharpier anchors a config's
+  `overrides` to its directory, as an editor's CSharpier does. A named file is checked whatever
+  `.gitignore` says, so a local `Directory.Signing.props` is checked too.
+- The `build`, `tests` and `installer` rows name the root `Directory.Build.props`,
+  `Directory.Build.targets` and `Directory.Packages.props` to MSBuild, so it searches above no
+  project for them. The root holds no `Directory.Build.targets`, and MSBuild imports a named file
+  only when it exists. They pass `RestoreForce=true`, so each build's restore writes a project's
+  `obj` imports from NuGet again, where a restore with nothing to do keeps a changed one. The same
+  rows pass `ImportDirectorySolutionProps=false` and
+  `ImportDirectorySolutionTargets=false`, so a solution build imports no `Directory.Solution.props`
+  or `.targets` from the root or above it. They pass `DiscoverGlobalAnalyzerConfigFiles=false`,
+  which stops the compiler finding a file named `.globalconfig` above a source file. An
+  `.editorconfig` that sets `is_global` is global under any name, and MSBuild still finds one in any
+  directory above a source file, up to the drive root, past the root file's `root = true`. The gate
+  refuses one in the tree, and no check reaches one above the checkout, which a pull request cannot
+  write. The `build` and `installer` rows pass `-noAutoResponse`, so no `Directory.Build.rsp` adds
+  switches. `dotnet test` reads none, and hands that switch to the test application, which refuses
+  it. NuGet still reads a contributor's own settings, since the gate names no `RestoreConfigFile`.
+- `ErrorLog` in `Directory.Build.props` has every compile write a SARIF log to
+  `obj/<configuration>/waivers.sarif` beside its project. After each configuration the `build` row
+  reads the log of every project `WingetNudge.slnx` names, and refuses an in-source suppression
+  whose justification is empty or blank once invisible characters are removed, which is what a
+  pragma or an unconditional waiver leaves, and any suppression of SA1404, however it was spelled.
+  A suppression in the project's `obj`, such as the XAML compiler's output or a source generator's,
+  is that tool's own. One anywhere else outside the tree is refused, since only a `#line` directive
+  or a file the tree walk skips puts it there. The same log records each severity a rule takes
+  across the compile's files. `WarningsAsErrors` in `Directory.Build.props` names SA1404, which
+  gives a source generator's output the rule as an error too, so the row fails unless SA1404 is an
+  error for every file the compile analyzes: a project with its analyzers off, without StyleCop,
+  or with SA1404 lowered for any of its files, turns it red. A file Roslyn reads as generated is
+  not analyzed, so the log says nothing about it. A missing or unreadable log fails the row, and so
+  does one older than its project's intermediate assembly, which an earlier compile wrote. The XAML
+  compiler's first pass runs the compiler on every build with no analyzers, so it writes
+  `obj/<configuration>/xaml-first-pass.sarif` instead. The row prints the compiles and the number
+  of suppressions it read. The `installer` row compiles the app and the custom action again for the
+  MSI, so it reads the Release logs again after the package builds. The `tests` row compiles
+  nothing.
+- The SARIF log records neither `NoWarn` nor `WarningsNotAsErrors`, so before each configuration
+  the `build` row asks MSBuild to evaluate each project under the build row's properties. It
+  refuses `TreatWarningsAsErrors` other than true, SA1404 missing from `WarningsAsErrors` or named
+  in either of the others, a `WarningLevel` below 1, any `CodeAnalysisRuleSet`, and `RunAnalyzers`
+  or `RunAnalyzersDuringBuild` false. It splits each warning list at a semicolon, a comma or any
+  whitespace, as the compiler does, and reads each value however a project file spells it. It reads
+  those properties and nothing else. CODEOWNERS review of the project files is the control for what
+  it does not see, as it is for `.editorconfig`, and a reviewer refuses each of these:
+  - a `Compile` item that is not a `.cs` file the tree walk names, such as a file of another type,
+    one outside the tree, or one in a project's `bin` or `obj`, since the text scan reads none of
+    them;
+  - a `Using` item, alias included, that names a refused attribute;
+  - an `EditorConfigFiles` or `GlobalAnalyzerConfigFiles` item;
+  - a compiler response file;
+  - a condition on a property the evaluation does not pass, such as the `Platform=x64` the
+    `installer` row builds the custom action with, or the absolute `PublishDir` it publishes the
+    app to;
+  - a target that changes a setting or adds an item while the build runs.
+- The gate refuses, at any depth and in any case, a `Directory.Build.props`,
+  `Directory.Build.targets`, `Directory.Packages.props` or `nuget.config` below the root, and any
+  `Directory.Build.rsp`, `Directory.Solution.props` or `Directory.Solution.targets`. `.gitignore`
+  keeps the template's re-include of `Directory.Build.rsp`, so a local one shows in `git status`
+  beside the refusal. It refuses any `*.csproj.user` or `*.wixproj.user`, in `bin` and `obj` too,
+  which MSBuild imports after the project body, so a property there switches what the build rows
+  check. A debug profile belongs in `Properties/launchSettings.json`, which MSBuild does not import.
+  It refuses a file in `obj` named `<project file>.<name>.props` or `.targets`, which MSBuild
+  imports by wildcard, unless `<name>` is NuGet's own `nuget.g`. It refuses a `testconfig.json` or
+  `xunit.runner.json`, bare or behind an assembly name, in `bin` and `obj` too: the test application
+  reads each as config, and the build copies a `testconfig.json` beside a test project into its
+  output.
+- The analyzers read every `.editorconfig` above each source file, up to the root file's
+  `root = true`. So the gate refuses every `.editorconfig` below the root but
+  `src/WingetNudge/.editorconfig` and `tests/.editorconfig`, and every `.globalconfig`, which an
+  editor's build reads. It refuses an `.editorconfig` that sets `is_global` anywhere, those two and
+  the root one included, since the analyzers apply a global config to every file of a project that
+  finds it.
+- A `.config` directory at the root is refused whole, in any case. mise, `dotnet tool run`,
+  cosmiconfig and lefthook each read config from it. cosmiconfig runs a module there on every
+  commitlint start, `--config` or not, and a tool manifest there outranks `dotnet-tools.json`. None
+  of them reads a `.config` below the root. `dotnet-tools.json` keeps `"isRoot": true`, so
+  `dotnet tool run`, which takes no manifest path, reads no manifest above the checkout. The gate
+  does not check it, so review keeps it there.
+- A config name stays refused only where no flag the gate passes stops the read. prettier,
+  CSharpier, taplo and zizmor each read the one config the gate names and search for no other, so
+  their other names pass. The gate refuses these, at the depths each tool searches, in any case:
+  every commitlint search place at the root but `commitlint.config.js`, and a `package.yaml` at any
+  depth, which cosmiconfig reads; `lefthook.yaml`, `.json`, `.jsonc` and `.toml`, and any
+  `.lefthook.*`, at the root; and a root `cake.config`, which Cake reads before any task runs. It
+  refuses a `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules
+  prettier and commitlint load, and the repository has no TypeScript.
+- A `package.json` with a top-level `commitlint`, `cosmiconfig` or `patchedDependencies` key is
+  refused. `bun install` applies a root `patchedDependencies` entry to the package it names, under
+  a frozen lockfile too and with no `bun.lock` change, so a patch would change what prettier or
+  commitlint runs. Bun reads the key in an escaped spelling too, and the refusal matches the
+  decoded name. The refusal reads every copy of a key named twice, so a second copy hides none.
+  Write each JSON key once all the same: Bun keeps the first of two copies, and most other readers
+  keep the last.
+- lefthook's commit-msg hook passes `--config commitlint.config.js`, so commitlint searches for no
+  other config. The shared `commits` job runs commitlint without it, so a planted
+  `.commitlintrc.json` passes that job, and the refusal above is where it lands. cosmiconfig runs a
+  module from `.config` at the root before commitlint reads `--config`, and the hook runs before
+  any gate row. So the hook's first job fails on a `.config`, and `piped: true` stops the hook
+  there, before commitlint starts. That job stops an accidental `.config`, not a hostile branch:
+  lefthook merges a `.config/lefthook-local.*` file over `lefthook.yml` before any job runs, so the
+  same directory can replace the job, which is why [Safety](#safety) says to read a branch first.
+  lefthook also merges a `lefthook-local.*` or `.lefthook-local.*` file at the root on every run,
+  and no switch stops it. The tracked-path check refuses a tracked one, and `.gitignore` covers a
+  contributor's own.
+- prettier's CLI skips a directory named `.git`, `.sl`, `.svn`, `.hg` or `.jj` without a word, and
+  the tree walk skips `.git` at any depth, so no row checks a file under one. Name no directory that
+  way. Review reads what a row skips.
+- The tracked-path check refuses a `zizmor: ignore[` comment in any tracked file under `.github`,
+  because zizmor honors one with no config. A waiver goes in `.github/zizmor.yml` as a
+  `rules.<audit>.ignore` entry. zizmor takes no config waiver for a composite action's finding, so
+  such a finding cannot be waived here.
+- The `workflows` row passes actionlint a `-shellcheck` command that starts `cake.cs` again as a
+  ShellCheck stand-in, through a hidden argument it reads before Cake reads any. actionlint writes
+  each script to the stand-in's stdin as ShellCheck would read it, with every YAML escape decoded
+  and every fold joined. The stand-in refuses any line holding `#`, then `shellcheck` and a blank,
+  in any case, as an error finding, because ShellCheck honors every such directive inside a `run:`
+  script and nothing holds a waiver for one. No line check over the file sees through an escape or a
+  fold. Otherwise the stand-in runs the pinned ShellCheck over the same bytes and passes its output
+  and exit code through. It adds about a quarter of a second per script. The paths in the command go
+  single-quoted with forward slashes, since actionlint drops an unquoted backslash and turns
+  ShellCheck off without a word.
+- The row also refuses a `shell:` on a step or under `defaults.run`, for the workflow or a job,
+  other than `bash`, `sh` or `pwsh`. actionlint hands ShellCheck a script by the shell's first
+  word, so `shell: /bin/bash` runs bash with no ShellCheck at all. It reads each workflow with
+  YamlDotNet for that, so an escape or an alias resolves to the value GitHub reads, and it refuses
+  a workflow YamlDotNet cannot read.
+- The two `secrets-inherit` waivers name `cd.yml` and `deps.yml` whole. A waiver binds a file,
+  never the workflow a job calls, so the `workflows` row runs zizmor again with no config and no
+  ignores. Every job passing `secrets: inherit` has to call a workflow under
+  `zachthedev/.github/.github/workflows/`, and zizmor's count of such jobs has to equal the
+  `secrets: inherit` lines in the workflows. The row prints each callee.
+- `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
+  than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
+  whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
+  entry carries, so a bare `mise lock` writes both legs and the gate refuses an entry for a
+  platform the list does not name. mise also reads a nested `[tools.<tool>.platforms.<name>]`
+  table for any platform, and `mise lock` writes the quoted `platforms.<name>` form alone, so the
+  gate refuses an entry carrying the nested one. [Safety](#safety) names the environment variable
+  that overrides a tool's backend, which no setting reports.
+- The gate removes `SHELLCHECK_OPTS` from its own environment as it starts, in any letter case, so
+  actionlint, its two canaries and the stand-in's ShellCheck never get it. ShellCheck reads that
+  variable as extra arguments past actionlint's `--norc`, so an `-e` there drops a finding.
+
 ## Commit messages
 
 [Conventional Commits](https://www.conventionalcommits.org), enforced by the commit-msg hook and by
@@ -509,159 +749,6 @@ owner alone.
   lines are the sha256 of the artifact at each recorded url, computed as `mise.toml` says, and a
   relock at the same version keeps them. A taplo bump drops them, so its pull request stays red at
   `lockfile` until the new hashes are computed and committed in the same change.
-- The gate also asserts the `backend`, `url` and `url_api` of every entry against what `cake.cs`
-  names for that tool. Those three are what an install fetches, so a provenance line beside an
-  address somewhere else would be a claim about bytes nobody downloads. `url` has to equal, byte
-  for byte, the address `cake.cs` builds from the tool's repository, its tag prefix, the pinned
-  version and the asset it names for that platform. `url_api` has to be an asset id under the same
-  repository. An address carrying a control or whitespace character, a percent escape, a backslash,
-  or a `.` or `..` segment is refused before any comparison. The expected owner and assets live in
-  `cake.cs` rather than in `mise.lock`, so moving an install takes an edit to both.
-- mise fetches an asset through its `url_api` address in place of `url` when a HEAD on `url` fails,
-  and nothing offline ties that asset id to a release. The one `url_replacements` entry in
-  `mise.toml` sends that fetch to `url-api-fallback-refused.invalid`, so such an install fails with
-  a DNS error rather than installing whatever the id names. `lockfile` refuses a `mise.toml`
-  without that entry or with any other, because another entry would move a download away from the
-  url `mise.lock` records. `tools` hands `mise install` the same entry through
-  `MISE_URL_REPLACEMENTS`, which outranks every config file. A `mise install` run by hand reads the
-  files alone.
-- mise reads more config files than `mise.toml`, and merges the lockfile beside each one ahead of
-  `mise.lock`, so a `mise.local.toml` with a `mise.local.lock` would install from a url the gate
-  never read. `lockfile` refuses, by name, any file or directory at the root whose name starts with
-  `mise` or `.mise` other than `mise.toml` and `mise.lock`, and `.tool-versions`. That covers
-  `.miserc.toml`, the `mise.<env>.toml` and `.mise.<env>.toml` env files, the `mise.windows.toml`
-  platform files, the `.local` variants, and the `mise` and `.mise` directories. The `.config`
-  directory, where mise reads `.config/miserc.toml` and `.config/mise`, is refused whole. Both
-  checks read the file system rather than git, because mise reads an untracked file too. Every mise
-  call the gate makes also runs with
-  `MISE_OVERRIDE_CONFIG_FILENAMES=mise.toml`, `MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none`,
-  `MISE_ENV` empty and `MISE_AUTO_ENV=false`, which leave mise reading `mise.toml` alone even when a
-  refused file is present.
-- `mise.toml` itself holds `[tools]`, `[settings]` and `[tool_config]` alone, because mise evaluates
-  `[env]` and `[vars]` templates as it loads the file and runs `[hooks]` during an install.
-  `[tools]` carries version strings, and `[settings]` and `[tool_config]` have to equal, whole, the
-  tables `cake.cs` holds in `ExpectedSettings` and `ExpectedToolConfig`. `mise.lock` holds the keys
-  `mise lock` writes and no others, for the tools `mise.toml` pins. A symbolic link or junction at
-  the root, or under `.mise` or `mise`, is refused.
-- The gate starts mise with an environment it builds from nothing: `SYSTEMROOT`, `LOCALAPPDATA`,
-  `TEMP`, `TMP`, the proxy variables when set, and its own mise settings. No other variable, from
-  the shell or anywhere else, reaches mise, so the gate's mise uses mise's default directories
-  whatever `MISE_DATA_DIR` or `MISE_GLOBAL_CONFIG_FILE` says, and trusts the checkout itself.
-- The gate starts mise, gh, bunx, dotnet and git from the absolute path `PATH` names for each,
-  skipping empty and relative entries and any entry inside the checkout. Cake's own lookup reads
-  `tools` before `PATH`, and Windows reads the current directory for a bare name. So the gate also
-  refuses a file at the root or under `tools` named `mise`, `gh`, `bunx`, `bun`, `dotnet`, `node`,
-  `git`, `csharpier` or `sbom-tool`, bare or with `.exe`, `.bat`, `.cmd` or `.com`.
-- The prettier row runs `bunx --bun --no-install`, which starts `node_modules/.bin/prettier` ahead
-  of anything else. With none in the checkout, bunx runs a parent directory's copy, one on `PATH` or
-  one in its cache, and says nothing, so the row first checks that `node_modules/.bin/prettier.exe`
-  is there, and that a link there resolves to an existing file, and fails naming the install to run
-  when either does not hold. `--bun` runs it under the Bun the gate resolved, never whichever node
-  `PATH` names, and lefthook's commit-msg hook passes it to commitlint too. The hook checks for no
-  install. `bun install` keeps a package it finds already at the version `bun.lock` records, so a
-  committed `node_modules/prettier` still runs after an install. `lockfile` refuses every tracked
-  path with a `node_modules` segment, in any case, and the prettier row refuses them again before it
-  starts bunx. They refuse a tracked path with a `bin` or `obj` segment too, since MSBuild imports
-  files from `obj` by wildcard, and a committed one reaches every checkout. They also refuse a
-  tracked `.env` or `.env.<name>` at any depth. Bun loads the one at the root into prettier and
-  commitlint, and no bunx flag stops it, and one anywhere else holds values meant to stay out of
-  git. `git ls-files` answers what is tracked, so the `node_modules` an install writes, and a
-  contributor's own `.env`, pass. An extraction from `git archive` has no `.git` at the root and
-  tracks nothing, so the check starts no git there and passes. Beside a `.git`,
-  `git rev-parse --show-cdup` has to print an empty line, because git searches the directories above
-  a `.git` it cannot open and would list another repository's paths. It compares no paths, so a
-  checkout reached through a junction passes. The `gate` job's `bun install` takes
-  `--ignore-scripts`, because a frozen lockfile still runs the lifecycle scripts `package.json`
-  names.
-- `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone. Bun reads the file on every
-  start, and no flag stops it. A top-level `preload` there runs a module before the first line of
-  whatever Bun starts, prettier and commitlint included. Every other key reaches Bun too: an
-  `[install]` registry moves where even a frozen install downloads from. So `lockfile` and the
-  prettier row refuse any other key or table before the gate starts bunx. The file's lines, less
-  comments, have to read `[install]` or `minimumReleaseAge = ` and digits, in printable ASCII, so
-  Bun and the gate cannot read it two ways. The gate reads no value there and passes a checkout
-  with no `bunfig.toml`, so review holds the cooldown.
-- The prettier row runs prettier with `--config .prettierrc`, so it searches for no other config
-  file. It also passes `--no-editorconfig`, so no `.editorconfig` sets the indent, line ending or
-  width prettier formats with. On prettier 3.9.8, `--config` stops the read of every other config
-  file, a nested `.prettierrc` and a `package.json` `prettier` key included, so the gate refuses
-  none of them. An editor's prettier still reads one.
-- The config walk behind `lockfile` refuses any directory link. It reads the file system, because a
-  tool reads an untracked file too. It skips `.git` at any depth, and `node_modules`,
-  `.claude/worktrees` and `.vs` at the root. It reads the `bin` and `obj` beside each project,
-  which the rows skip, because MSBuild imports files from `obj`. A directory it cannot list is
-  refused by name.
-- No config file is held to fixed text. CODEOWNERS review holds `.prettierrc`, `.prettierignore`,
-  `.taplo.toml`, `.github/zizmor.yml`, `.csharpierrc`, `.csharpierignore`, `lefthook.yml` and the
-  three `.editorconfig` files, and a reviewer refuses a line that takes a file out of a row or
-  turns a finding off. The `format` and `toml` rows fail when their tool drops a file they named,
-  and the prettier row does not: a line in `.prettierignore` takes files out of it without a word.
-  The prettier row passes `--ignore-path .prettierignore`, which replaces prettier's default pair,
-  so `.gitignore` takes nothing out of it, and `.prettierignore` lists the local paths `.gitignore`
-  covers that prettier would read. A `.github/actionlint.yaml` is refused, because its `paths` block
-  ignores actionlint's errors by pattern.
-- The `format` row names each file the tree walk finds with an extension CSharpier 1.3.0 formats.
-  The walk skips the `bin` and `obj` beside a project file, where the SDK writes, and enters one
-  anywhere else, since the SDK compiles a file there. The row names the files in batches that fit
-  a Windows command line, and each batch fails unless CSharpier reports checking as many files as
-  the batch named. It passes `--config-path`
-  with the absolute path of `.csharpierrc`, `--ignore-path .csharpierignore` and
-  `--include-generated`. CSharpier then reads no other config or ignore file, and checks a file
-  whose header calls it generated. The path is absolute because CSharpier anchors a config's
-  `overrides` to its directory, as an editor's CSharpier does. A named file is checked whatever
-  `.gitignore` says, so a local `Directory.Signing.props` is checked too.
-- The `build`, `tests` and `installer` rows name the root `Directory.Build.props`,
-  `Directory.Build.targets` and `Directory.Packages.props` to MSBuild, so it searches above no
-  project for them. The root holds no `Directory.Build.targets`, and MSBuild imports a named file
-  only when it exists. They pass `RestoreForce=true`, so each build's restore writes a project's
-  `obj` imports from NuGet again, where a restore with nothing to do keeps a changed one. The same
-  rows pass `ImportDirectorySolutionProps=false` and
-  `ImportDirectorySolutionTargets=false`, so a solution build imports no `Directory.Solution.props`
-  or `.targets` from the root or above it. They pass `DiscoverGlobalAnalyzerConfigFiles=false`,
-  which stops the compiler finding a file named `.globalconfig` above a source file. An
-  `.editorconfig` that sets `is_global` is global under any name, and MSBuild still finds one in any
-  directory above a source file, up to the drive root, past the root file's `root = true`. The gate
-  refuses one in the tree, and no check reaches one above the checkout, which a pull request cannot
-  write. The `build` and `installer` rows pass `-noAutoResponse`, so no `Directory.Build.rsp` adds
-  switches. `dotnet test` reads none, and hands that switch to the test application, which refuses
-  it. NuGet still reads a contributor's own settings, since the gate names no `RestoreConfigFile`.
-- `ErrorLog` in `Directory.Build.props` has every compile write a SARIF log to
-  `obj/<configuration>/waivers.sarif` beside its project. After each configuration the `build` row
-  reads the log of every project `WingetNudge.slnx` names, and refuses an in-source suppression
-  whose justification is empty or blank once invisible characters are removed, which is what a
-  pragma or an unconditional waiver leaves, and any suppression of SA1404, however it was spelled.
-  A suppression in the project's `obj`, such as the XAML compiler's output or a source generator's,
-  is that tool's own. One anywhere else outside the tree is refused, since only a `#line` directive
-  or a file the tree walk skips puts it there. The same log records each severity a rule takes
-  across the compile's files. `WarningsAsErrors` in `Directory.Build.props` names SA1404, which
-  gives a source generator's output the rule as an error too, so the row fails unless SA1404 is an
-  error for every file the compile analyzes: a project with its analyzers off, without StyleCop,
-  or with SA1404 lowered for any of its files, turns it red. A file Roslyn reads as generated is
-  not analyzed, so the log says nothing about it. A missing or unreadable log fails the row, and so
-  does one older than its project's intermediate assembly, which an earlier compile wrote. The XAML
-  compiler's first pass runs the compiler on every build with no analyzers, so it writes
-  `obj/<configuration>/xaml-first-pass.sarif` instead. The row prints the compiles and the number
-  of suppressions it read. The `installer` row compiles the app and the custom action again for the
-  MSI, so it reads the Release logs again after the package builds. The `tests` row compiles
-  nothing.
-- The SARIF log records neither `NoWarn` nor `WarningsNotAsErrors`, so before each configuration
-  the `build` row asks MSBuild to evaluate each project under the build row's properties. It
-  refuses `TreatWarningsAsErrors` other than true, SA1404 missing from `WarningsAsErrors` or named
-  in either of the others, a `WarningLevel` below 1, any `CodeAnalysisRuleSet`, and `RunAnalyzers`
-  or `RunAnalyzersDuringBuild` false. It splits each warning list at a semicolon, a comma or any
-  whitespace, as the compiler does, and reads each value however a project file spells it. It reads
-  those properties and nothing else. CODEOWNERS review of the project files is the control for what
-  it does not see, as it is for `.editorconfig`, and a reviewer refuses each of these:
-  - a `Compile` item that is not a `.cs` file the tree walk names, such as a file of another type,
-    one outside the tree, or one in a project's `bin` or `obj`, since the text scan reads none of
-    them;
-  - a `Using` item, alias included, that names a refused attribute;
-  - an `EditorConfigFiles` or `GlobalAnalyzerConfigFiles` item;
-  - a compiler response file;
-  - a condition on a property the evaluation does not pass, such as the `Platform=x64` the
-    `installer` row builds the custom action with, or the absolute `PublishDir` it publishes the
-    app to;
-  - a target that changes a setting or adds an item while the build runs.
 - StyleCop.Analyzers is one `GlobalPackageReference` in `Directory.Packages.props`, conditioned to
   `.csproj` projects, so it reaches every C# project and `cake.cs`, and no wixproj. Reviewers hold
   that line as the one place its version lives, since no check compares the version each project
@@ -669,97 +756,10 @@ owner alone.
   fails a lock file that disagrees with the references. The canary reads the solution's compiles
   alone, and `cake.cs` writes no log, so review of `Directory.Packages.props` and
   `cake.packages.lock.json` is the control for StyleCop reaching `cake.cs`.
-- The gate refuses, at any depth and in any case, a `Directory.Build.props`,
-  `Directory.Build.targets`, `Directory.Packages.props` or `nuget.config` below the root, and any
-  `Directory.Build.rsp`, `Directory.Solution.props` or `Directory.Solution.targets`. `.gitignore`
-  keeps the template's re-include of `Directory.Build.rsp`, so a local one shows in `git status`
-  beside the refusal. It refuses any `*.csproj.user` or `*.wixproj.user`, in `bin` and `obj` too,
-  which MSBuild imports after the project body, so a property there switches what the build rows
-  check. A debug profile belongs in `Properties/launchSettings.json`, which MSBuild does not import.
-  It refuses a file in `obj` named `<project file>.<name>.props` or `.targets`, which MSBuild
-  imports by wildcard, unless `<name>` is NuGet's own `nuget.g`. It refuses a `testconfig.json` or
-  `xunit.runner.json`, bare or behind an assembly name, in `bin` and `obj` too: the test application
-  reads each as config, and the build copies a `testconfig.json` beside a test project into its
-  output.
-- The analyzers read every `.editorconfig` above each source file, up to the root file's
-  `root = true`. So the gate refuses every `.editorconfig` below the root but
-  `src/WingetNudge/.editorconfig` and `tests/.editorconfig`, and every `.globalconfig`, which an
-  editor's build reads. It refuses an `.editorconfig` that sets `is_global` anywhere, those two and
-  the root one included, since the analyzers apply a global config to every file of a project that
-  finds it.
-- A `.config` directory at the root is refused whole, in any case. mise, `dotnet tool run`,
-  cosmiconfig and lefthook each read config from it. cosmiconfig runs a module there on every
-  commitlint start, `--config` or not, and a tool manifest there outranks `dotnet-tools.json`. None
-  of them reads a `.config` below the root. `dotnet-tools.json` keeps `"isRoot": true`, so
-  `dotnet tool run`, which takes no manifest path, reads no manifest above the checkout. The gate
-  does not check it, so review keeps it there.
-- A config name stays refused only where no flag the gate passes stops the read. prettier,
-  CSharpier, taplo and zizmor each read the one config the gate names and search for no other, so
-  their other names pass. The gate refuses these, at the depths each tool searches, in any case:
-  every commitlint search place at the root but `commitlint.config.js`, and a `package.yaml` at any
-  depth, which cosmiconfig reads; `lefthook.yaml`, `.json`, `.jsonc` and `.toml`, and any
-  `.lefthook.*`, at the root; and a root `cake.config`, which Cake reads before any task runs. It
-  refuses a `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules
-  prettier and commitlint load, and the repository has no TypeScript.
-- A `package.json` with a top-level `commitlint`, `cosmiconfig` or `patchedDependencies` key is
-  refused. `bun install` applies a root `patchedDependencies` entry to the package it names, under
-  a frozen lockfile too and with no `bun.lock` change, so a patch would change what prettier or
-  commitlint runs. Bun reads the key in an escaped spelling too, and the refusal matches the
-  decoded name. The refusal reads every copy of a key named twice, so a second copy hides none.
-  Write each JSON key once all the same: Bun keeps the first of two copies, and most other readers
-  keep the last.
-- lefthook's commit-msg hook passes `--config commitlint.config.js`, so commitlint searches for no
-  other config. The shared `commits` job runs commitlint without it, so a planted
-  `.commitlintrc.json` passes that job, and the refusal above is where it lands. cosmiconfig runs a
-  module from `.config` at the root before commitlint reads `--config`, and the hook runs before
-  any gate row. So the hook's first job fails on a `.config`, and `piped: true` stops the hook
-  there, before commitlint starts. That job stops an accidental `.config`, not a hostile branch:
-  lefthook merges a `.config/lefthook-local.*` file over `lefthook.yml` before any job runs, so the
-  same directory can replace the job, which is why [Safety](#safety) says to read a branch first.
-  lefthook also merges a `lefthook-local.*` or `.lefthook-local.*` file at the root on every run,
-  and no switch stops it. The tracked-path check refuses a tracked one, and `.gitignore` covers a
-  contributor's own.
-- prettier's CLI skips a directory named `.git`, `.sl`, `.svn`, `.hg` or `.jj` without a word, and
-  the tree walk skips `.git` at any depth, so no row checks a file under one. Name no directory that
-  way. Review reads what a row skips.
-- The tracked-path check refuses a `zizmor: ignore[` comment in any tracked file under `.github`, because zizmor honors one with no
-  config. A waiver goes in `.github/zizmor.yml` as a `rules.<audit>.ignore` entry. zizmor takes no
-  config waiver for a composite action's finding, so such a finding cannot be waived here.
-- The `workflows` row passes actionlint a `-shellcheck` command that starts `cake.cs` again as a
-  ShellCheck stand-in, through a hidden argument it reads before Cake reads any. actionlint writes
-  each script to the stand-in's stdin as ShellCheck would read it, with every YAML escape decoded
-  and every fold joined. The stand-in refuses any line holding `#`, then `shellcheck` and a blank,
-  in any case, as an error finding, because ShellCheck honors every such directive inside a `run:`
-  script and nothing holds a waiver for one. No line check over the file sees through an escape or
-  a fold. Otherwise the stand-in runs the pinned ShellCheck over the same bytes and passes its
-  output and exit code through. It adds about a quarter
-  of a second per script. The paths in the command go single-quoted with forward slashes, since
-  actionlint drops an unquoted backslash and turns ShellCheck off without a word.
-- The row also refuses a `shell:` on a step or under `defaults.run`, for the workflow or a job,
-  other than `bash`, `sh` or `pwsh`. actionlint hands ShellCheck a script by the shell's first
-  word, so `shell: /bin/bash` runs bash with no ShellCheck at all. It reads each workflow with
-  YamlDotNet for that, so an escape or an alias resolves to the value GitHub reads, and it refuses
-  a workflow YamlDotNet cannot read.
-- The two `secrets-inherit` waivers name `cd.yml` and `deps.yml` whole. A waiver binds a file,
-  never the workflow a job calls, so the `workflows` row runs zizmor again with no config and no
-  ignores. Every job passing `secrets: inherit` has to call a workflow under
-  `zachthedev/.github/.github/workflows/`, and zizmor's count of such jobs has to equal the
-  `secrets: inherit` lines in the workflows. The row prints each callee.
-- `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
-  than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
-  whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
-  entry carries, so a bare `mise lock` writes both legs and the gate refuses an entry for a
-  platform the list does not name. mise also reads a nested `[tools.<tool>.platforms.<name>]`
-  table for any platform, and `mise lock` writes the quoted `platforms.<name>` form alone, so the
-  gate refuses an entry carrying the nested one. [Safety](#safety) names the environment variable
-  that overrides a tool's backend, which no setting reports.
 - ShellCheck is a pinned dependency of this repository on both legs. The `rhysd/actionlint` image
   bundles a ShellCheck copied out of `koalaman/shellcheck-alpine:stable` when that image is built,
   so a run through the image has no pin on the ShellCheck it executes. One `mise.toml` entry drives
   the binary both legs run.
-- The gate removes `SHELLCHECK_OPTS` from its own environment as it starts, in any letter case, so
-  actionlint, its two canaries and the stand-in's ShellCheck never get it. ShellCheck reads that
-  variable as extra arguments past actionlint's `--norc`, so an `-e` there drops a finding.
 - The `gate` job pins mise itself on its `jdx/mise-action` line in `.github/workflows/ci.yml`. The
   shared `workflows` job pins its own on the same action's line in the reusable workflow `ci.yml`
   calls. The action verifies its download against the release's minisign-signed `SHASUMS256.txt`,
@@ -808,8 +808,8 @@ certificate; [Building the MSI](#building-the-msi) shows how.
 - Without a matching SDK, `dotnet` prints the install command the `errorMessage` in `global.json`
   names. [Dependencies](#dependencies) says which SDK matches.
 - `lockfile` refuses a mise config file of your own at the root, such as a `mise.local.toml`,
-  whether git tracks it or not ([Dependencies](#dependencies)). Keep local mise settings in mise's
-  global config.
+  whether git tracks it or not ([What the rows check](#what-the-rows-check)). Keep local mise
+  settings in mise's global config.
 - A local run that disagrees with continuous integration may have run another copy of a tool. The
   prettier row and the commit-msg hook start theirs with `bunx --bun --no-install`, which runs
   `node_modules/.bin/<tool>` in the checkout and never downloads. With no install there, the
@@ -818,6 +818,9 @@ certificate; [Building the MSI](#building-the-msi) shows how.
   about which. With an install older than `bun.lock`, both run that older copy, and the row's check
   passes it. The `gate` job's `bun install` is fresh, so neither happens there.
   [Worktrees](#worktrees) says how each worktree gets an install of its own.
+- In a worktree under the main checkout with no `dotnet-tools.json` of its own, `dotnet tool run`
+  uses the main checkout's manifest, so the `format` row can run another CSharpier than continuous
+  integration does.
 - A personal `.env` reaches a local run and never continuous integration. `PRETTIER_EXPERIMENTAL_CLI`
   set there turns the prettier row red, since that CLI refuses `--config`. A Bun variable in your
   shell changes every Bun start the same way, and [Safety](#safety) lists them.
