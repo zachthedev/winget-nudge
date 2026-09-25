@@ -315,13 +315,13 @@ run first: `lockfile`, `workflows`, `format`, `prettier` and `toml`. `build`, `t
 disagrees with continuous integration, [Troubleshooting](#troubleshooting) says why.
 
 `--target=<task>` runs one task and the tasks it depends on. `--target=code` runs everything but
-`workflows`. `lockfile` reads `mise.toml`, `mise.lock` and `bunfig.toml`, walks the tree for any
-config file a tool would read past the ones the gate names and for any inline waiver no analyzer
-checks, and asks git which paths are tracked. git is the one process it starts, so it needs no mise
-installed, and it is the first task the whole gate runs. Every row that starts dotnet, bunx or
-a mise tool runs the same config checks first, so `--exclusive` skips none of them. `--target=tools`
-runs `lockfile` and then `mise install`; it is the install continuous integration runs, and `check`
-does not reach it.
+`workflows`. `lockfile` reads `mise.toml`, `mise.lock`, `bunfig.toml` and the JSON config the
+tools read, walks the tree for any config file a tool would read past the ones the gate names and
+for any inline waiver no analyzer checks, and asks git which paths are tracked. git is the one
+process it starts, so it needs no mise installed, and it is the first task the whole gate runs.
+Every row that starts dotnet, bunx or a mise tool runs the same config checks first, so
+`--exclusive` skips none of them. `--target=tools` runs `lockfile` and then `mise install`; it is
+the install continuous integration runs, and `check` does not reach it.
 
 `workflows` hands actionlint a ShellCheck stand-in in front of the ShellCheck binary it resolved,
 then asks actionlint for a finding only ShellCheck reports and for a refusal only the stand-in
@@ -443,15 +443,16 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   when either does not hold. `--bun` runs it under the Bun the gate resolved, never whichever node
   `PATH` names, and lefthook's commit-msg hook passes it to commitlint too. The hook checks for no
   install. `bun install` keeps a package it finds already at the version `bun.lock` records, so a
-  committed `node_modules/prettier` still runs after an install. `lockfile` refuses every tracked
-  path with a `node_modules` segment, in any case, and the prettier row refuses them again before it
-  starts bunx. They refuse a tracked path with a `bin` or `obj` segment too, since MSBuild imports
-  files from `obj` by wildcard, and a committed one reaches every checkout. They also refuse a
-  tracked `.env` or `.env.<name>` at any depth. Bun loads the one at the root into prettier and
-  commitlint, and no bunx flag stops it, and one anywhere else holds values meant to stay out of
-  git. `git ls-files` answers what is tracked, so the `node_modules` an install writes, and a
-  contributor's own `.env`, pass. An extraction from `git archive` has no `.git` at the root and
-  tracks nothing, so the check starts no git there and passes. Beside a `.git`,
+  committed `node_modules/prettier` still runs after an install. `node_modules` stays untracked, as
+  `.gitignore` says, and the shared `commits` job refuses every tracked path with a `node_modules`
+  segment, in any case, on each pull request. `lockfile` refuses a tracked path with a `bin` or
+  `obj` segment, in any case, and the prettier row refuses them again before it starts bunx, since
+  MSBuild imports files from `obj` by wildcard, and a committed one reaches every checkout. They
+  also refuse a tracked `.env` or `.env.<name>` at any depth. Bun loads the one at the root into
+  prettier and commitlint, and no bunx flag stops it, and one anywhere else holds values meant to
+  stay out of git. `git ls-files` answers what is tracked, so a contributor's own `.env` passes.
+  An extraction from `git archive` has no `.git` at the root and tracks nothing, so the check
+  starts no git there and passes. Beside a `.git`,
   `git rev-parse --show-cdup` has to print an empty line, because git searches the directories above
   a `.git` it cannot open and would list another repository's paths. It compares no paths, so a
   checkout reached through a junction passes. The `gate` job's `bun install` takes
@@ -580,8 +581,15 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   a frozen lockfile too and with no `bun.lock` change, so a patch would change what prettier or
   commitlint runs. Bun reads the key in an escaped spelling too, and the refusal matches the
   decoded name. The refusal reads every copy of a key named twice, so a second copy hides none.
-  Write each JSON key once all the same: Bun keeps the first of two copies, and most other readers
-  keep the last.
+- A key named twice in one object, at any depth, is refused in every `package.json` and in
+  `.github/renovate.json`, `global.json` and `dotnet-tools.json`, because the tools that read them
+  disagree on which copy wins. Bun and the dotnet host keep the first copy. setup-bun, setup-dotnet
+  and `dotnet tool` keep the last, and Renovate refuses the file at its next run, after the merge.
+  Two names match once their escapes are decoded and with their case kept, as Bun and JavaScript
+  read them, so `"a"` and `"\u0061"` are one key and `"a"` and `"A"` are two. The gate reads
+  these files as strict JSON, with no comment and no trailing comma, and refuses one that does not
+  parse, at the line and byte where the parse stops, since it then cannot tell. The refusal names a
+  duplicate key as .NET does, cut to its first 15 characters.
 - lefthook's commit-msg hook passes `--config commitlint.config.js`, so commitlint searches for no
   other config. The shared `commits` job runs commitlint without it, so a planted
   `.commitlintrc.json` passes that job, and the refusal above is where it lands. cosmiconfig runs a
@@ -619,7 +627,15 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   never the workflow a job calls, so the `workflows` row runs zizmor again with no config and no
   ignores. Every job passing `secrets: inherit` has to call a workflow under
   `zachthedev/.github/.github/workflows/`, and zizmor's count of such jobs has to equal the
-  `secrets: inherit` lines in the workflows. The row prints each callee.
+  `secrets: inherit` lines in the workflows. The row prints each callee. zizmor matches a waiver to
+  a finding by the workflow's file name, and by line and column too when the waiver gives them, as
+  `cd.yml:22:11`, against any of the finding's locations. The row reads
+  `rules.secrets-inherit.ignore` with YamlDotNet and holds each waiver to a location of a
+  secrets-inherit finding from its no-config run. A waiver that matches none waives nothing, and it
+  waives the next inherit call put where it points with no word in the diff, so the row refuses it.
+  An entry naming a path never matches, since zizmor matches a file name alone. zizmor keeps the
+  last copy of a key named twice, so the row also refuses a mapping in `.github/zizmor.yml` that
+  names a key twice, whatever its tag or quotes.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
