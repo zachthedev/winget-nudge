@@ -13,7 +13,7 @@ using Tomlyn;
 using Tomlyn.Model;
 using YamlDotNet.RepresentationModel;
 
-// The gate: every check a change must pass before it leaves the machine. Each Description says
+// The gate: every check a change must pass before it is pushed. Each Description says
 // what its task covers, and --description lists them. The pre-push hook runs the check target.
 // Continuous integration's gate job runs the tools target, which asserts the lockfile and then
 // installs from it, and then the check target. The release build in cd.yml runs the installer
@@ -594,7 +594,7 @@ const string justificationRule = "SA" + "1404";
 // are read before the install rather than after. bunfig.toml's keys and the tree's other config
 // files are read here as well, so a pull request that adds a refused one fails the first row. The
 // one process it starts is git, to list the tracked paths. Nothing here resolves mise, so the task
-// needs none on the machine, and check runs it ahead of every other task.
+// needs none installed, and check runs it ahead of every other task.
 Task("lockfile")
     .Description(
         "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, no bunfig.toml key but the cooldown, no config file a tool would read past the ones the gate names, and no inline waiver no analyzer checks"

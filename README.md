@@ -58,7 +58,7 @@ upgrade and an uninstall do.
 ## Contributing
 
 [CONTRIBUTING.md](CONTRIBUTING.md) takes a fresh clone to a running app and has the rules, and
-`dotnet cake.cs` is the gate every change passes before it leaves the machine.
+`dotnet cake.cs` is the gate every change passes before it is pushed.
 Report security problems privately, as [SECURITY.md](SECURITY.md) describes.
 
 Winget Nudge is not affiliated with or endorsed by Microsoft.

@@ -24,8 +24,9 @@ Read these before changing anything, in order. They bind an agent as they bind a
 ## Never
 
 - Never run `register`, `unregister`, `upgrade`, `update-all` or `check` from a build output unless
-  the user asks. They change this machine's scheduled tasks, notification registration and installed
-  packages, and the real scheduled tasks here run the installed app.
+  the user asks. They change the scheduled tasks, notification registration and installed packages of
+  the computer they run on, and a development computer's own scheduled tasks may run an installed
+  copy of the app.
 - Never edit the version in `Directory.Build.props` or `CHANGELOG.md` by hand
   ([what never happens](CONTRIBUTING.md#what-never-happens)).
 - Never write a `mise.lock` line outside `mise lock`, except a checksum computed as `mise.toml`

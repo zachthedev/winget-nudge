@@ -12,7 +12,7 @@ commit-msg:
     - name: commitlint
       run: bunx --bun --no-install commitlint --config commitlint.config.js --edit {1}
 
-# The gate, run before anything leaves this machine. `dotnet cake.cs --description` lists its steps.
+# The gate, run before anything is pushed. `dotnet cake.cs --description` lists its steps.
 pre-push:
   jobs:
     - name: gate

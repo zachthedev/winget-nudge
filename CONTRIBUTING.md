@@ -53,7 +53,7 @@ dotnet cake.cs
 CSharpier at the version `dotnet-tools.json` pins. `mise trust` marks this repository's `mise.toml`
 as one mise may read, and `mise install` puts the linters and taplo on disk from the artifacts
 `mise.lock` records. `dotnet cake.cs` runs the whole gate, which a pre-push hook runs again before
-anything leaves the machine.
+every push.
 
 The gate resolves each mise tool with `mise which` and runs the path it gets back. `mise install` is
 the step that needs the network; the gate itself reaches it only for zizmor's online audits, when
@@ -174,11 +174,11 @@ $env:WINGETNUDGE_DEMO = '1'
 & $app
 ```
 
-It lists well-known packages and tools that are not this machine's, keeps its state in
+It lists well-known packages and tools, not the computer's own, keeps its state in
 `%TEMP%\WingetNudge-demo` rather than the real data directory, answers every web request with a 404,
-and shows the default Windows blue rather than this machine's accent. Update selected, the run
+and shows the default Windows blue rather than the system accent. Update selected, the run
 button and the log links start nothing while it runs, and saving Settings schedules nothing. Every
-verb is refused with exit code 2, because each one acts on this machine rather than on the
+verb is refused with exit code 2, because each one acts on the computer rather than on the
 inventory: it opens the picker and nothing else.
 
 `docs/images/picker-light.png` and `docs/images/picker-dark.png` are captures of it, one per theme.
@@ -202,10 +202,10 @@ of the previous version skip the check. The installer project asks the app proje
 that package name and version, which come from the `Microsoft.WindowsAppSDK.Runtime` package it
 resolved.
 
-Installing the MSI on this machine points its scheduled checks and notification at the build. Windows
-Sandbox starts from a clean copy of Windows, so try setup there instead: map `installer/bin/Release`
-into it read-only and run `msiexec /i <folder>\WingetNudge.msi /l*v <log>`. Installing a runtime
-there from the downloads page tries the other side of the check.
+Installing the MSI on a development computer points its scheduled checks and notification at the
+build. Windows Sandbox starts from a clean copy of Windows, so try setup there instead: map
+`installer/bin/Release` into it read-only and run `msiexec /i <folder>\WingetNudge.msi /l*v <log>`.
+Installing a runtime there from the downloads page tries the other side of the check.
 
 The gate builds it unsigned on every machine. To sign a local build, put a code-signing
 certificate's thumbprint from the current user's store in `Directory.Signing.props` at the
@@ -288,7 +288,7 @@ it; never paste in whatever the code returned.
 
 Winget, the Restart Manager, Task Scheduler and notifications sit behind seams, and a test passes a
 substitute for each one it could reach. No test needs a real one. Nothing in the suite may upgrade a
-package, close an app, show a notification, or touch a scheduled task this machine relies on. Files
+package, close an app, show a notification, or touch a scheduled task the computer relies on. Files
 go in a temporary directory the test owns.
 
 ## The gate
@@ -311,7 +311,7 @@ disagrees with continuous integration, [Troubleshooting](#troubleshooting) says 
 `workflows`. `lockfile` reads `mise.toml`, `mise.lock` and `bunfig.toml`, walks the tree for any
 config file a tool would read past the ones the gate names and for any inline waiver no analyzer
 checks, and asks git which paths are tracked. git is the one process it starts, so it needs no mise
-on the machine, and it is the first task the whole gate runs. Every row that starts dotnet, bunx or
+installed, and it is the first task the whole gate runs. Every row that starts dotnet, bunx or
 a mise tool runs the same config checks first, so `--exclusive` skips none of them. `--target=tools`
 runs `lockfile` and then `mise install`; it is the install continuous integration runs, and `check`
 does not reach it.
