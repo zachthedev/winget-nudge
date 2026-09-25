@@ -23,7 +23,9 @@ public sealed partial class SettingsView : UserControl, IDisposable
     private bool _scheduleChanged;
     private int _toolCount;
 
-    /// <summary>Creates the view and fills it from the saved settings.</summary>
+    /// <summary>
+    /// Creates the view and fills it from the saved settings, or says in its message bar why it could not.
+    /// </summary>
     public SettingsView()
     {
         InitializeComponent();
@@ -33,8 +35,20 @@ public sealed partial class SettingsView : UserControl, IDisposable
 
         // The tool count feeds a summary line, so it has to be in hand before the form fills.
         LoadTools();
-        Load(AppServices.Current.Settings);
-        _loading = false;
+        try
+        {
+            Load(AppServices.Current.Settings);
+            _loading = false;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Another program can hold settings.json past the read's wait. The form then stays unfilled, and a
+            // save would write the controls' defaults over the saved settings, so the page stays loading and
+            // saves nothing. Opening Settings again builds a new page and reads the file again.
+            MessageBar.Severity = InfoBarSeverity.Error;
+            MessageBar.Message = $"Could not read settings, so changes here are not saved: {exception.Message}";
+            MessageBar.IsOpen = true;
+        }
     }
 
     /// <summary>
