@@ -136,8 +136,16 @@ public sealed class JsonFileContentionTests : IDisposable
         releaser.Start();
         Action replace = () => JsonFile.Replace(temporary, path);
 
-        replace.Should().NotThrow("the replace waits out a handle that closes");
-        releaser.Join();
+        try
+        {
+            replace.Should().NotThrow("the replace waits out a handle that closes");
+        }
+        finally
+        {
+            // The data directory is deleted after the case, and a held file would refuse that.
+            releaser.Join();
+        }
+
         JsonFile.Read<Dictionary<string, string>>(path, deleteIfCorrupt: false).Should().Equal(New);
         File.Exists(temporary).Should().BeFalse("the temporary became the target");
     }

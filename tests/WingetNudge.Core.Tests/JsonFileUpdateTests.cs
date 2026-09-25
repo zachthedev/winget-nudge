@@ -303,10 +303,19 @@ public sealed class JsonFileUpdateTests : IDisposable
             reader.Dispose();
         });
         releaser.Start();
+        Action update = () =>
+            JsonFile.Update<Dictionary<string, string>>(DataFile, false, current => With(current, "value", "new"));
 
-        JsonFile.Update<Dictionary<string, string>>(DataFile, false, current => With(current, "value", "new"));
+        try
+        {
+            update.Should().NotThrow("the update waits out a reader that closes");
+        }
+        finally
+        {
+            // The data directory is deleted after the case, and a held file would refuse that.
+            releaser.Join();
+        }
 
-        releaser.Join();
         Read().Should().Equal(New);
     }
 
