@@ -1,6 +1,6 @@
 namespace WingetNudge.Core.Packages;
 
-/// <summary>Lists packages the winget source manages on this machine.</summary>
+/// <summary>Lists packages the winget source manages on the computer the app runs on.</summary>
 public interface IPackageSource
 {
     /// <summary>

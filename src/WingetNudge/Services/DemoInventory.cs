@@ -181,8 +181,8 @@ internal static class DemoInventory
         new(services.Tools, new ProcessRunner(), services.Http, services.Clock, services.Settings.ToolCacheHours);
 
     /// <summary>
-    /// Replaces this machine's accent with the default Windows blue in the app's own resources,
-    /// so a screenshot carries neither the accent this machine happens to use nor a change to it.
+    /// Replaces the system accent with the default Windows blue in the app's own resources,
+    /// so a screenshot carries neither the accent the computer happens to use nor a change to it.
     /// </summary>
     /// <param name="resources">The application's resources, before any window loads.</param>
     public static void UseDefaultAccent(Microsoft.UI.Xaml.ResourceDictionary resources)

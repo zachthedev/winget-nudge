@@ -319,7 +319,7 @@ public sealed partial class SettingsView : UserControl, IDisposable
         {
             settings.Save(services.Paths);
             services.ReloadSettings();
-            // The demo inventory is not this machine's, so its settings schedule nothing.
+            // The demo inventory is not the computer's, so its settings schedule nothing.
             if (_scheduleChanged && !services.IsDemo)
             {
                 services.Registrar.RegisterScheduledTask(services.Settings);

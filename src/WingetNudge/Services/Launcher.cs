@@ -7,7 +7,7 @@ namespace WingetNudge.Services;
 /// <summary>
 /// Starts other processes: this app elevated, and shells for tool upgrades. On the demo
 /// inventory every method returns without starting anything, because nothing the demo lists is
-/// what this machine has installed.
+/// what the computer has installed.
 /// </summary>
 public static class Launcher
 {

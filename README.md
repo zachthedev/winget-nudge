@@ -26,9 +26,9 @@ host that breaks when PowerShell or Windows Terminal upgrade themselves.
   link to its release notes. Sections separate what is ready, tools installed outside winget, and
   what is too new, skipped, muted, or failed last time. Each section's header has a checkbox that
   selects or clears its rows.
-- **Too new** counts from when the version landed in `microsoft/winget-pkgs`, not from when this
-  machine first saw it. The default wait is 24 hours, so a version published earlier in the week is
-  offered right away.
+- **Too new** counts from when the version landed in `microsoft/winget-pkgs`, not from when a
+  local check first saw it. The default wait is 24 hours, so a version published earlier in the
+  week is offered right away.
 - Per package, you can mute it, or skip just this version until the next one appears.
 - **Update selected** opens one elevated window that upgrades the packages in order. Each upgrade
   runs silently first. Only when winget reports a locked file does it find the apps holding it

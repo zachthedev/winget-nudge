@@ -14,7 +14,7 @@ public enum PublishSource
 }
 
 /// <summary>What the app knows about one package version's age.</summary>
-/// <param name="FirstSeen">When a check on this machine first observed the version.</param>
+/// <param name="FirstSeen">When a local check first observed the version.</param>
 /// <param name="Published">When the version became available, or <c>null</c> while unresolved.</param>
 /// <param name="Source">Which lookup produced <paramref name="Published"/>.</param>
 public sealed record VersionObservation(DateTimeOffset FirstSeen, DateTimeOffset? Published, PublishSource Source)

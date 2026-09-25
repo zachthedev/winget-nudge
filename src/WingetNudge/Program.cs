@@ -26,7 +26,7 @@ public static class Program
         WinRtActivation.Initialize();
         AttachParentConsole();
 
-        // The demo inventory shows no notifications, so it leaves this machine's notification
+        // The demo inventory shows no notifications, so it leaves the computer's notification
         // registration pointing at whichever build last registered it.
         bool notifies = !AppServices.Current.IsDemo;
         if (notifies)
@@ -53,8 +53,8 @@ public static class Program
     private static async Task<int> RunAsync(string[] args)
     {
 #if DEBUG
-        // Every verb acts on this machine: register writes scheduled tasks, upgrade drives winget,
-        // check shows a notification. The demo inventory is not this machine's, so a verb run
+        // Every verb acts on the computer: register writes scheduled tasks, upgrade drives winget,
+        // check shows a notification. The demo inventory is not the computer's, so a verb run
         // against it would act on the wrong thing. It opens the picker and nothing else.
         if (AppServices.Current.IsDemo && args.Length > 0)
         {
