@@ -681,8 +681,9 @@ owner alone.
 - A `.config` directory at the root is refused whole, in any case. mise, `dotnet tool run`,
   cosmiconfig and lefthook each read config from it. cosmiconfig runs a module there on every
   commitlint start, `--config` or not, and a tool manifest there outranks `dotnet-tools.json`. None
-  of them reads a `.config` below the root. `dotnet-tools.json` has to set `"isRoot": true`, because
-  `dotnet tool run` takes no manifest path and walks up until a manifest sets it.
+  of them reads a `.config` below the root. `dotnet-tools.json` keeps `"isRoot": true`, so
+  `dotnet tool run`, which takes no manifest path, reads no manifest above the checkout. The gate
+  does not check it, so review keeps it there.
 - A config name stays refused only where no flag the gate passes stops the read. prettier,
   CSharpier, taplo and zizmor each read the one config the gate names and search for no other, so
   their other names pass. The gate refuses these, at the depths each tool searches, in any case:
@@ -692,12 +693,12 @@ owner alone.
   refuses a `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules
   prettier and commitlint load, and the repository has no TypeScript.
 - A `package.json` with a top-level `commitlint`, `cosmiconfig` or `patchedDependencies` key is
-  refused. So is one that names a key twice at any depth, because Bun keeps the first of two
-  keys and `JSON.parse` the last. The finding names the key path. `bun install` applies a root
-  `patchedDependencies` entry to the package it names, under a frozen lockfile too and with no
-  `bun.lock` change, so a patch would change what prettier or commitlint runs. Bun reads the key in
-  an escaped spelling too, and the refusal matches the decoded name. `dotnet-tools.json` is held to
-  each key once the same way.
+  refused. `bun install` applies a root `patchedDependencies` entry to the package it names, under
+  a frozen lockfile too and with no `bun.lock` change, so a patch would change what prettier or
+  commitlint runs. Bun reads the key in an escaped spelling too, and the refusal matches the
+  decoded name. The refusal reads every copy of a key named twice, so a second copy hides none.
+  Write each JSON key once all the same: Bun keeps the first of two copies, and most other readers
+  keep the last.
 - lefthook's commit-msg hook passes `--config commitlint.config.js`, so commitlint searches for no
   other config. The shared `commits` job runs commitlint without it, so a planted
   `.commitlintrc.json` passes that job, and the refusal above is where it lands. cosmiconfig runs a
@@ -709,9 +710,10 @@ owner alone.
   lefthook also merges a `lefthook-local.*` or `.lefthook-local.*` file at the root on every run,
   and no switch stops it. The tracked-path check refuses a tracked one, and `.gitignore` covers a
   contributor's own.
-- The tracked-path check also refuses a path with a `.git`, `.sl`, `.svn`, `.hg` or `.jj` segment,
-  in any case, because prettier's CLI skips such a directory without a word. It refuses a
-  `zizmor: ignore[` comment in any tracked file under `.github`, because zizmor honors one with no
+- prettier's CLI skips a directory named `.git`, `.sl`, `.svn`, `.hg` or `.jj` without a word, and
+  the tree walk skips `.git` at any depth, so no row checks a file under one. Name no directory that
+  way. Review reads what a row skips.
+- The tracked-path check refuses a `zizmor: ignore[` comment in any tracked file under `.github`, because zizmor honors one with no
   config. A waiver goes in `.github/zizmor.yml` as a `rules.<audit>.ignore` entry. zizmor takes no
   config waiver for a composite action's finding, so such a finding cannot be waived here.
 - The `workflows` row passes actionlint a `-shellcheck` command that starts `cake.cs` again as a

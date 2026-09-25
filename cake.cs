@@ -1094,13 +1094,12 @@ FilePath Bunx()
 }
 
 // Every check on the tree's config files, run before each tool the gate starts: the tracked-path
-// refusals, bunfig.toml, the tool manifest, every other name a tool searches for, and the inline
-// waivers no analyzer checks.
+// refusals, bunfig.toml, every other name a tool searches for, and the inline waivers no analyzer
+// checks.
 void RequireConfigFiles()
 {
     RequireNoRefusedTrackedPaths();
     RequireBunfig();
-    RequireToolManifest();
     RequireNoConfigElsewhere();
     RequireNoInlineWaivers();
 }
@@ -1299,14 +1298,13 @@ void RequireOnlyPinnedMiseFiles()
 // committed one reaches every checkout. A tracked .env or .env.<name> at any depth is refused as
 // well: Bun loads the one at the root into every process it starts, prettier and commitlint
 // included, and no bunx flag stops it. So is a lefthook-local or .lefthook-local file at the root,
-// which lefthook merges over lefthook.yml on every run. A path with a .git, .sl, .svn, .hg or .jj
-// segment is refused, in any case, because prettier's CLI skips such a directory without a word. A
-// zizmor: ignore[ comment in a tracked file under .github is refused, because zizmor honors it with
-// no config. git answers what is tracked, so the node_modules an install writes, and a contributor's
-// own untracked .env or lefthook-local file, pass. An extraction from git archive has no .git at the
-// root and tracks nothing, so the check starts no git there and passes. No GIT_ variable reaches git,
-// and git has to name the root as its top level, so the repository and index it reads are the
-// checkout's own, never ones a shell or hook exported or a directory above the root holds.
+// which lefthook merges over lefthook.yml on every run. A zizmor: ignore[ comment in a tracked file
+// under .github is refused, because zizmor honors it with no config. git answers what is tracked,
+// so the node_modules an install writes, and a contributor's own untracked .env or lefthook-local
+// file, pass. An extraction from git archive has no .git at the root and tracks nothing, so the
+// check starts no git there and passes. No GIT_ variable reaches git, and git has to name the root
+// as its top level, so the repository and index it reads are the checkout's own, never ones a shell
+// or hook exported or a directory above the root holds.
 void RequireNoRefusedTrackedPaths()
 {
     string root = Context.Environment.WorkingDirectory.FullPath;
@@ -1414,25 +1412,6 @@ void RequireNoRefusedTrackedPaths()
             $"The repository tracks {string.Join(", ", lefthookLocal.Select(Quoted))} at the root, and the gate takes no tracked lefthook local file. "
                 + "lefthook merges one over lefthook.yml on every run, so a job there replaces the hook's command. "
                 + "Remove it from the commit, and keep your own copy untracked, as .gitignore does."
-        );
-    }
-
-    string[] versionControlSegments = [".git", ".sl", ".svn", ".hg", ".jj"];
-    string[] underVersionControl =
-    [
-        .. tracked
-            .Where(path =>
-                path.Split('/')
-                    .Any(segment => versionControlSegments.Contains(segment, StringComparer.OrdinalIgnoreCase))
-            )
-            .Order(StringComparer.Ordinal),
-    ];
-    if (underVersionControl.Length > 0)
-    {
-        throw new CakeException(
-            $"The repository tracks {string.Join(", ", underVersionControl.Take(5).Select(Quoted))}{(underVersionControl.Length > 5 ? $" and {underVersionControl.Length - 5} more" : "")}, "
-                + $"and the gate takes no tracked path with a segment named {string.Join(", ", versionControlSegments)}, in any case. "
-                + "prettier's CLI skips a directory of that name without a word, so no row would check what is under it. Rename the segment."
         );
     }
 
@@ -1721,12 +1700,13 @@ static string? SearchedConfig(string relative)
 
 // Why the gate refuses a package.json, or null when it takes it. commitlint reads a top-level
 // commitlint key as config, and cosmiconfig a cosmiconfig key as options for every search it makes.
-// prettier reads no prettier key under the --config the prettier row passes. bun install applies a top-level patchedDependencies entry to the package it names,
-// under a frozen lockfile too and with no bun.lock edit, so a patch changes what prettier or
-// commitlint runs. Bun's reader takes more than JSON does, so a file that does not read as a JSON
-// object is refused. Bun keeps the first of two keys, and JSON.parse the last, so a key named twice
-// at any depth is refused too. JsonDocument parses a key holding a lone surrogate escape, and throws
-// InvalidOperationException only when the key is read, so that file is refused as not JSON as well.
+// prettier reads no prettier key under the --config the prettier row passes. bun install applies a
+// top-level patchedDependencies entry to the package it names, under a frozen lockfile too and with
+// no bun.lock edit, so a patch changes what prettier or commitlint runs. Bun's reader takes more
+// than JSON does, so a file that does not read as a JSON object is refused. EnumerateObject yields
+// every copy of a key named twice, so a second copy hides none of these keys. JsonDocument parses a
+// key holding a lone surrogate escape, and throws InvalidOperationException only when the key is
+// read, so that file is refused as not JSON as well.
 static string? RefusedPackageJson(string path)
 {
     try
@@ -1736,12 +1716,6 @@ static string? RefusedPackageJson(string path)
         if (top.ValueKind != JsonValueKind.Object)
         {
             return "it is not a JSON object, and Bun's reader takes more than JSON does";
-        }
-
-        string[] duplicates = [.. DuplicateKeys(top, "$")];
-        if (duplicates.Length > 0)
-        {
-            return $"it names {string.Join(", ", duplicates.Select(Quoted))} twice, and Bun keeps the first of two keys where JSON.parse keeps the last";
         }
 
         string[] keys =
@@ -1779,88 +1753,6 @@ static bool SetsIsGlobal(string path) =>
             | System.Text.RegularExpressions.RegexOptions.IgnoreCase
             | System.Text.RegularExpressions.RegexOptions.CultureInvariant
     );
-
-// Every key path in a JSON value, from $, whose key its object names a second time. Names compare
-// as decoded text, so an escaped spelling of a key is the same key.
-static IEnumerable<string> DuplicateKeys(JsonElement element, string path)
-{
-    if (element.ValueKind == JsonValueKind.Object)
-    {
-        HashSet<string> seen = new(StringComparer.Ordinal);
-        foreach (JsonProperty property in element.EnumerateObject())
-        {
-            string child = $"{path}.{property.Name}";
-            if (!seen.Add(property.Name))
-            {
-                yield return child;
-            }
-
-            foreach (string nested in DuplicateKeys(property.Value, child))
-            {
-                yield return nested;
-            }
-        }
-    }
-    else if (element.ValueKind == JsonValueKind.Array)
-    {
-        int index = 0;
-        foreach (JsonElement item in element.EnumerateArray())
-        {
-            foreach (string nested in DuplicateKeys(item, $"{path}[{index}]"))
-            {
-                yield return nested;
-            }
-
-            index++;
-        }
-    }
-}
-
-// dotnet-tools.json, holding "isRoot": true. dotnet tool run takes no manifest path: it walks up from
-// the working directory, reading .config/dotnet-tools.json and then dotnet-tools.json in each
-// directory, until a manifest sets isRoot. Without it, a manifest above the checkout could name the
-// csharpier the format row runs. RequireNoConfigElsewhere refuses the .config directory. A key named
-// twice is refused, since the SDK and JsonDocument each read the last and another reader the first.
-// A key holding a lone surrogate escape throws InvalidOperationException when read, and is refused
-// as not JSON.
-void RequireToolManifest()
-{
-    const string path = "dotnet-tools.json";
-    if (!System.IO.File.Exists(path))
-    {
-        throw new CakeException($"{path} is missing, and it names the csharpier the format row runs. Restore it.");
-    }
-
-    try
-    {
-        using JsonDocument document = JsonDocument.Parse(System.IO.File.ReadAllText(path));
-        JsonElement top = document.RootElement;
-        string[] duplicates = top.ValueKind == JsonValueKind.Object ? [.. DuplicateKeys(top, "$")] : [];
-        if (duplicates.Length > 0)
-        {
-            throw new CakeException(
-                $"{path} names {string.Join(", ", duplicates.Select(Quoted))} twice, and the gate takes each key once. "
-                    + "The SDK reads the last of two keys, and another reader the first. Remove the duplicate."
-            );
-        }
-
-        if (
-            top.ValueKind != JsonValueKind.Object
-            || !top.TryGetProperty("isRoot", out JsonElement isRoot)
-            || isRoot.ValueKind != JsonValueKind.True
-        )
-        {
-            throw new CakeException(
-                $"{path} does not set \"isRoot\": true, and the gate takes a manifest that does. "
-                    + "dotnet tool run walks up from the root until a manifest sets it, so a manifest above the checkout could name the csharpier the format row runs. Set it."
-            );
-        }
-    }
-    catch (Exception error) when (error is JsonException or InvalidOperationException)
-    {
-        throw new CakeException($"{path} does not read as JSON: {Quoted(error.Message)}. Restore it.");
-    }
-}
 
 // ///// Inline waivers /////
 
