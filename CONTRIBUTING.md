@@ -499,9 +499,10 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   it. NuGet still reads a contributor's own settings, since the gate names no `RestoreConfigFile`.
 - `ErrorLog` in `Directory.Build.props` has every compile write a SARIF log to
   `obj/<configuration>/waivers.sarif` beside its project. After each configuration the `build` row
-  reads the log of every project `WingetNudge.slnx` names, and refuses an in-source suppression
-  whose justification is empty or blank once invisible characters are removed, which is what a
-  pragma or an unconditional waiver leaves, and any suppression of SA1404, however it was spelled.
+  reads the log of every project `WingetNudge.slnx` names. It refuses an in-source suppression whose
+  justification holds no letter or digit once invisible characters are removed, such as a pragma's,
+  which records none. It refuses a justification that does not decode as text, such as a lone
+  surrogate, and any suppression of SA1404, however it was spelled.
   A suppression in the project's `obj`, such as the XAML compiler's output or a source generator's,
   is that tool's own. One anywhere else outside the tree is refused, since only a `#line` directive
   or a file the tree walk skips puts it there. The same log records each severity a rule takes

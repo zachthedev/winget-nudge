@@ -2302,12 +2302,16 @@ void RequireJustificationRuleFatal(FilePath dotnet, string configuration)
 // ErrorLog in Directory.Build.props names, read for two things.
 //
 // The waivers: the log records every finding a waiver suppressed in source, with the waiver's
-// justification. A SuppressMessage records its Justification, and a pragma or an unconditional waiver
-// records none. So an in-source suppression whose justification is empty or blank, once invisible
-// characters are removed, is refused, and so is any suppression of the justification rule, whatever
-// spelled it. A finding in the project's obj, such as the XAML compiler's output or a source
-// generator's, is the tool's own. A finding anywhere else outside the tree is refused, since a line
-// directive puts it there, and so does a %-escape the log decodes.
+// justification. A SuppressMessage records its Justification, and so does an unconditional waiver,
+// which RequireNoInlineWaivers refuses by name. A pragma records none. So an in-source suppression
+// whose justification holds no letter or digit once invisible characters are removed is refused. The
+// test reads each character's Unicode category, not its glyph. So it refuses U+2800, a blank symbol,
+// and takes U+13441, a letter a font draws blank by design. Review holds what a font draws. A
+// justification that does not decode as text, such as a lone surrogate, is refused at its waiver's
+// location. Any suppression of the justification rule is refused too, whatever spelled it. A finding
+// in the project's obj, such as the XAML compiler's output or a source generator's, is the tool's own.
+// A finding anywhere else outside the tree is refused, since a line directive puts it there, and so
+// does a %-escape the log decodes.
 //
 // The canary: the log lists every rule the compile loaded, with one entry for each severity the rule
 // takes across the compile's files. WarningsAsErrors gives a source generator's output the
@@ -2456,19 +2460,40 @@ void RequireWaiverLogs(string configuration)
                     string kind = suppression.TryGetProperty("kind", out JsonElement kindValue)
                         ? kindValue.GetString() ?? ""
                         : "";
-                    string? justification = suppression.TryGetProperty("justification", out JsonElement reason)
-                        ? reason.GetString()
-                        : null;
                     string where = file is null
                         ? $"{Quoted(project)}, with no location"
                         : $"{Quoted(file)} line {line}";
+                    string? justification = null;
+                    if (suppression.TryGetProperty("justification", out JsonElement reason))
+                    {
+                        // GetString throws on a lone surrogate, which the compiler logs as an escape.
+                        // It throws the same type on a value that is not a string, which is the log's
+                        // own fault.
+                        try
+                        {
+                            justification = reason.GetString();
+                        }
+                        catch (InvalidOperationException) when (reason.ValueKind == JsonValueKind.String)
+                        {
+                            problems.Add(
+                                $"{where} waives {Quoted(rule)} with a justification that does not decode as text"
+                            );
+                            continue;
+                        }
+                    }
+
                     if (rule == justificationRule)
                     {
                         problems.Add($"{where} waives {justificationRule} itself");
                     }
-                    else if (kind == "inSource" && string.IsNullOrWhiteSpace(WithoutInvisible(justification ?? "")))
+                    else if (
+                        kind == "inSource"
+                        && !WithoutInvisible(justification ?? "").EnumerateRunes().Any(System.Text.Rune.IsLetterOrDigit)
+                    )
                     {
-                        problems.Add($"{where} waives {Quoted(rule)} with no justification");
+                        problems.Add(
+                            $"{where} waives {Quoted(rule)} with no justification that holds a letter or digit once invisible characters are removed"
+                        );
                     }
                 }
             }
