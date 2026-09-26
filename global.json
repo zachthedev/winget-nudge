@@ -2,7 +2,7 @@
   "sdk": {
     "version": "10.0.401",
     "rollForward": "patch",
-    "errorMessage": "Install the .NET SDK that sdk.version in global.json names: winget install --id Microsoft.DotNet.SDK.10 --version <sdk.version> --exact"
+    "errorMessage": "Install the .NET SDK that sdk.version in global.json names: winget install --id Microsoft.DotNet.SDK.<major of sdk.version> --version <sdk.version> --exact"
   },
   "msbuild-sdks": {
     "Cake.Sdk": "6.3.0"
