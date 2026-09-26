@@ -6,11 +6,13 @@ Windows 11 on x64, winget 1.29 or newer, and the Windows App Runtime 2.4.0 or a 
 Installer and WinUI app updates put the runtime on most machines; otherwise it comes from Microsoft's
 [Windows App SDK downloads](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads).
 
-Setup checks for the runtime registered for your account before it changes anything. Without it,
-setup stops with a message naming the version and the downloads page. A silent install, such as
-`msiexec /quiet` or winget, shows no message and ends with exit code 1603. Its log carries the
-message when it writes one (`msiexec /l*v <file>`). If setup refuses while the runtime is present,
-`msiexec /i WingetNudge-<version>-x64.msi WINDOWSAPPRUNTIMEFOUND=1` skips the check.
+Setup checks the Windows build and the runtime registered for your account before it changes
+anything. Below Windows 11, setup stops with a message naming the build it needs. Without the
+runtime, setup stops with a message naming the version and the downloads page. A silent install,
+such as `msiexec /quiet` or winget, shows no message and ends with exit code 1603. Its log carries
+the message when it writes one (`msiexec /l*v <file>`). If setup refuses while the runtime is
+present, `msiexec /i WingetNudge-<version>-x64.msi WINDOWSAPPRUNTIMEFOUND=1` skips the runtime
+check. Nothing skips the Windows check.
 
 ## Install
 

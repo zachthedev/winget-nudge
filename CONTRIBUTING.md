@@ -212,6 +212,12 @@ of the previous version skip the check. The installer project asks the app proje
 that package name and version, which come from the `Microsoft.WindowsAppSDK.Runtime` package it
 resolved.
 
+The same custom action reads the running Windows build from `KUSER_SHARED_DATA`, the page the kernel
+shares with every process, which no compatibility layer rewrites. Setup refuses a build below the
+build field of `SupportedOSPlatformVersion` in `Directory.Build.props`. The installer project reads
+that property, so a floor change there moves the check. `RequirementsTests` holds the floor at a
+Windows 11 build while `docs/install.md` names Windows 11 on x64.
+
 Installing the MSI on a development computer points its scheduled checks and notification at the
 build. Windows Sandbox starts from a clean copy of Windows, so try setup there instead: map
 `installer/bin/Release` into it read-only and run `msiexec /i <folder>\WingetNudge.msi /l*v <log>`.
@@ -244,13 +250,14 @@ DigiCert timestamp. A self-signed certificate verifies only on a machine that tr
   preferences, manual tools, release notes, the upgrade engine, registration.
 - `src/WingetNudge`: the WinUI 3 app, its windows, the notification and the command-line verbs.
 - `tests/WingetNudge.Core.Tests`: the xUnit v3 suite over Core, and `RequirementsTests`, which binds
-  `docs/install.md` to `Directory.Packages.props`. `RuntimeRequirementTests` covers the installer's
-  runtime check, whose decision logic the suite compiles in from `installer/CustomActions`.
+  `docs/install.md` to `Directory.Packages.props` and `Directory.Build.props`.
+  `RuntimeRequirementTests` and `WindowsRequirementTests` cover the installer's runtime and Windows
+  checks, whose decision logic the suite compiles in from `installer/CustomActions`.
 - `installer`: the WiX project for the per-user MSI.
 - `installer/CustomActions`: the custom action setup runs before it changes anything. It finds the
-  Windows App Runtime the app needs among the packages registered for the installing user. It
-  targets the .NET Framework its project file names, because WiX's DTF host runs a managed custom
-  action in the .NET Framework.
+  Windows App Runtime the app needs among the packages registered for the installing user, and
+  reads the running Windows build. It targets the .NET Framework its project file names, because
+  WiX's DTF host runs a managed custom action in the .NET Framework.
 - `tools`: build-time scripts. `Update-WingetErrorCodes.ps1` regenerates
   `src/WingetNudge.Core/Packages/WingetErrorCodes.cs` from `winget error --output`
   ([Generated files](#generated-files)).

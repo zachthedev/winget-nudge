@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using WixToolset.Dtf.WindowsInstaller;
 
@@ -8,6 +9,12 @@ namespace WingetNudge.CustomActions;
 public static class CustomActions
 {
     private const int ErrorInvalidData = 13;
+
+    // KUSER_SHARED_DATA, which the kernel maps read-only at this address in every process, and the
+    // offsets of its NtBuildNumber and NtMajorVersion fields.
+    private const long SharedUserData = 0x7FFE0000;
+    private const long NtBuildNumberOffset = 0x260;
+    private const long NtMajorVersionOffset = 0x26C;
 
     /// <summary>
     /// Sets <c>WINDOWSAPPRUNTIMEFOUND</c> to the highest version of the <c>WindowsAppRuntimePackage</c>
@@ -70,6 +77,51 @@ public static class CustomActions
         session.Log($"FindWindowsAppRuntime: {family} {found} {architecture} satisfies {floor}.");
         return ActionResult.Success;
     }
+
+    /// <summary>
+    /// Sets <c>WindowsBuildFound</c> to the build of the running Windows when it reaches
+    /// <c>WindowsMinBuild</c>. The launch condition refuses setup while the property is empty.
+    /// </summary>
+    /// <remarks>
+    /// The build comes from KUSER_SHARED_DATA, a page the kernel writes and every process reads with a plain
+    /// load. No API sits in that path, so no compatibility layer or shim can lower the build it reports, and
+    /// a skip would have nothing to correct. Both properties are private, so a command line can neither lower
+    /// the floor nor skip the check.
+    /// </remarks>
+    /// <param name="session">The install session.</param>
+    /// <returns>
+    /// <see cref="ActionResult.Success"/> whatever build it finds, and the launch condition refuses a build
+    /// below the floor. <see cref="ActionResult.Failure"/> only when the package authors no floor.
+    /// </returns>
+    [CustomAction]
+    public static ActionResult FindWindowsBuild(Session session)
+    {
+        string floorText = session["WindowsMinBuild"];
+        if (WindowsRequirement.ParseFloor(floorText) is not int floor)
+        {
+            session.Log(
+                $"FindWindowsBuild: the package authors minimum build \"{floorText}\", which is not a build number."
+            );
+            return ActionResult.Failure;
+        }
+
+        uint major = ReadSharedUserData(NtMajorVersionOffset);
+        uint build = WindowsRequirement.SharedDataBuild(major, ReadSharedUserData(NtBuildNumberOffset));
+        if (!WindowsRequirement.Satisfies(build, floor))
+        {
+            session.Log($"FindWindowsBuild: Windows {major} build {build} is below build {floor}.");
+            return ActionResult.Success;
+        }
+
+        session["WindowsBuildFound"] = build.ToString(CultureInfo.InvariantCulture);
+        session.Log($"FindWindowsBuild: Windows {major} build {build} reaches build {floor}.");
+        return ActionResult.Success;
+    }
+
+    /// <summary>A 32-bit field of KUSER_SHARED_DATA.</summary>
+    /// <param name="offset">The field's offset in the page.</param>
+    /// <returns>The field's value.</returns>
+    private static unsafe uint ReadSharedUserData(long offset) => *(uint*)(SharedUserData + offset);
 
     /// <summary>Full names of the packages in a family, registered for the current user.</summary>
     /// <param name="family">Package family name.</param>

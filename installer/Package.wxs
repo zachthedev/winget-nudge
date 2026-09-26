@@ -33,9 +33,26 @@
     <Property Id="WINDOWSAPPRUNTIMEFOUND" Secure="yes" />
     <Binary Id="CustomActions" SourceFile="$(CustomActionsDll)" />
     <CustomAction Id="FindWindowsAppRuntime" BinaryRef="CustomActions" DllEntry="FindWindowsAppRuntime" />
+    <!--
+      NOT WindowsBuildFound lets this row pass whenever the Windows row below refuses, so a Windows 10
+      computer without the runtime shows the Windows message, the one that names the real blocker. The
+      row depends on that Windows row: without it, a build below the floor would skip the runtime check.
+    -->
     <Launch
-      Condition="Installed OR WINDOWSAPPRUNTIMEFOUND"
+      Condition="Installed OR WINDOWSAPPRUNTIMEFOUND OR NOT WindowsBuildFound"
       Message="Winget Nudge needs the Windows App Runtime $(WindowsAppRuntimeDisplayVersion) or a newer $(WindowsAppRuntimeMajor).x. Install it from https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads, then run setup again."
+    />
+
+    <!--
+      The app declares Windows 11 as its floor, so setup refuses an earlier build before it changes
+      anything. The build reads the floor from SupportedOSPlatformVersion in Directory.Build.props. Both
+      properties are private, so a command line can neither lower the floor nor skip the check.
+    -->
+    <Property Id="WindowsMinBuild" Value="$(WindowsMinBuild)" />
+    <CustomAction Id="FindWindowsBuild" BinaryRef="CustomActions" DllEntry="FindWindowsBuild" />
+    <Launch
+      Condition="Installed OR WindowsBuildFound"
+      Message="Winget Nudge needs Windows 11, build $(WindowsMinBuild) or later."
     />
 
     <!-- RegisterApp is the only action whose failure raises 1722, and a runtime too old for the app is its usual cause. -->
@@ -99,11 +116,13 @@
       Impersonate="yes"
       Return="ignore"
     />
-    <!-- The check gates a first install alone; repair, uninstall and an upgrade's removal never run it. -->
+    <!-- The checks gate a first install alone; repair, uninstall and an upgrade's removal never run them. -->
     <InstallUISequence>
+      <Custom Action="FindWindowsBuild" Before="LaunchConditions" Condition="NOT Installed" />
       <Custom Action="FindWindowsAppRuntime" Before="LaunchConditions" Condition="NOT Installed" />
     </InstallUISequence>
     <InstallExecuteSequence>
+      <Custom Action="FindWindowsBuild" Before="LaunchConditions" Condition="NOT Installed" />
       <Custom Action="FindWindowsAppRuntime" Before="LaunchConditions" Condition="NOT Installed" />
       <Custom Action="RegisterApp" After="InstallFiles" Condition="NOT REMOVE" />
       <Custom Action="RegisterAppRollback" Before="RegisterApp" Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />

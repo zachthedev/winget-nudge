@@ -18,7 +18,8 @@ public enum PinKind
 
 /// <summary>
 /// docs/install.md restates the versions a user needs, because a user has no clone to read
-/// Directory.Packages.props from. Each case binds one restated version to the pin it derives from.
+/// Directory.Packages.props or Directory.Build.props from. Each case binds one restated version to the
+/// pin it derives from.
 /// </summary>
 public sealed class RequirementsTests
 {
@@ -79,13 +80,8 @@ public sealed class RequirementsTests
             version.Major
         );
 
-        // Markdown wraps prose at any space, so the document's whitespace folds to single spaces first.
-        string text = string.Join(
-            ' ',
-            File.ReadAllText(Path.Combine(root, document)).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-        );
-
-        text.Contains(expected, StringComparison.Ordinal)
+        FoldedText(Path.Combine(root, document))
+            .Contains(expected, StringComparison.Ordinal)
             .Should()
             .BeTrue(
                 "{0} must say \"{1}\" while Directory.Packages.props pins {2} at {3}",
@@ -95,6 +91,45 @@ public sealed class RequirementsTests
                 pinned
             );
     }
+
+    [Theory]
+    // SupportedOSPlatformVersion is the floor setup refuses below, and TargetPlatformMinVersion the lowest
+    // Windows the app declares. Either one below Windows 11's first build admits Windows 10.
+    [InlineData("SupportedOSPlatformVersion")]
+    [InlineData("TargetPlatformMinVersion")]
+    public void Document_NamesWindows11_WhileTheFloorIsAWindows11Build(string property)
+    {
+        const int Windows11FirstBuild = 22000;
+        string root = Metadata("RepositoryRoot");
+        string propsPath = Path.Combine(root, "Directory.Build.props");
+        XElement project =
+            XDocument.Load(propsPath).Root ?? throw new InvalidDataException($"{propsPath} has no root element.");
+        string? floor = project.Elements("PropertyGroup").Elements(property).SingleOrDefault()?.Value;
+        Version version = Version.TryParse(floor, out Version? parsed)
+            ? parsed
+            : throw new InvalidDataException(
+                $"Directory.Build.props sets {property} to \"{floor}\", which is not a version."
+            );
+
+        version
+            .Build.Should()
+            .BeGreaterThanOrEqualTo(
+                Windows11FirstBuild,
+                "docs/install.md names Windows 11, and Directory.Build.props sets {0} to {1}",
+                property,
+                floor
+            );
+        FoldedText(Path.Combine(root, "docs/install.md"))
+            .Contains("Windows 11 on x64", StringComparison.Ordinal)
+            .Should()
+            .BeTrue(
+                "docs/install.md's Requirements line must say \"Windows 11 on x64\" while the build floor admits Windows 11 alone"
+            );
+    }
+
+    // Markdown wraps prose at any space, so a document's whitespace folds to single spaces before a phrase is sought.
+    private static string FoldedText(string path) =>
+        string.Join(' ', File.ReadAllText(path).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private static string Metadata(string key)
     {

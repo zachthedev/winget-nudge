@@ -10,8 +10,10 @@
       TargetFramework to native, so the folder's name carries no framework.
     -->
     <PublishDir>$(MSBuildThisFileDirectory)..\src\WingetNudge\bin\Release\$(RuntimeIdentifier)\publish\</PublishDir>
-    <!-- Version and manufacturer come from Directory.Build.props so the MSI and the exe never disagree. -->
-    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(Version);Manufacturer=$(Authors)</DefineConstants>
+    <!-- The Windows build setup refuses below: the build field of the app's SupportedOSPlatformVersion. -->
+    <WindowsMinBuild>$([System.Version]::Parse('$(SupportedOSPlatformVersion)').Build)</WindowsMinBuild>
+    <!-- Version, manufacturer and floor come from Directory.Build.props so the MSI and the exe never disagree. -->
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(Version);Manufacturer=$(Authors);WindowsMinBuild=$(WindowsMinBuild)</DefineConstants>
     <!-- Per-user files under the profile have no registry key path; these ICEs assume a machine install. -->
     <!-- ICE61 objects to same-version upgrades, which are deliberate here. -->
     <!-- ICE60 wants a language on every versioned file; the native SQLite library has none. -->

@@ -34,5 +34,6 @@
     <ItemGroup>
         <!-- The custom action targets .NET Framework, so its decision logic compiles in here to run under the suite. -->
         <Compile Include="..\..\installer\CustomActions\RuntimeRequirement.cs" Link="Installer\RuntimeRequirement.cs" />
+        <Compile Include="..\..\installer\CustomActions\WindowsRequirement.cs" Link="Installer\WindowsRequirement.cs" />
     </ItemGroup>
 </Project>
