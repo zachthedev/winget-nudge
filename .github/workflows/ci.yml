@@ -96,7 +96,7 @@ jobs:
   commits:
     permissions:
       contents: read
-    uses: zachthedev/.github/.github/workflows/commits.yml@09a9a00aae657ea11e5d5979ef3ce5859d9aba3a # v0.2.0
+    uses: zachthedev/.github/.github/workflows/commits.yml@ec458567a7200c4ad96ed0c7556e06bc2b287738 # v0.3.0
 
   # The workflow linters on Linux, from the same lockfile. Its install covers every tool mise.toml
   # pins, taplo included, so an entry only one platform can install fails on a pull request rather
@@ -104,7 +104,7 @@ jobs:
   workflows:
     permissions:
       contents: read
-    uses: zachthedev/.github/.github/workflows/workflows.yml@09a9a00aae657ea11e5d5979ef3ce5859d9aba3a # v0.2.0
+    uses: zachthedev/.github/.github/workflows/workflows.yml@ec458567a7200c4ad96ed0c7556e06bc2b287738 # v0.3.0
 
   # The NuGet graph of the restored tree as an SPDX file. GitHub's graph reads each csproj alone
   # and never Directory.Packages.props, so without a snapshot every NuGet package reads ">= 0" and
@@ -181,4 +181,4 @@ jobs:
     needs: snapshot
     permissions:
       contents: read
-    uses: zachthedev/.github/.github/workflows/dependency-review.yml@09a9a00aae657ea11e5d5979ef3ce5859d9aba3a # v0.2.0
+    uses: zachthedev/.github/.github/workflows/dependency-review.yml@ec458567a7200c4ad96ed0c7556e06bc2b287738 # v0.3.0
