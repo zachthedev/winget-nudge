@@ -39,30 +39,54 @@
     <!--
     winrtact.dll is winget's undocked reg-free WinRT hook. It ships only inside the WinGet
     PowerShell module, so the build pulls the module package matching $(WinGetVersion) from the
-    PowerShell Gallery, checks its hash, and copies the x64 DLL beside the executable. The cache
-    directory carries the version, so a bump downloads and checks the new module rather than
-    reusing the DLL an earlier version extracted.
+    PowerShell Gallery, checks its hash, and copies the x64 DLL to a fixed path in the cache
+    directory, which a static item copies beside the executable. The cache directory carries the
+    version, so a bump downloads and checks the new module rather than reusing the DLL an earlier
+    version extracted. The module carries the DLL once for each PowerShell it supports: net48 for
+    Windows PowerShell, and a net*-windows* folder for PowerShell 7, named for whatever framework
+    the module builds against. The pattern takes the PowerShell 7 copy, and the build stops unless
+    it matches exactly one file.
   -->
     <PropertyGroup>
         <WinGetModuleDirectory>$(BaseIntermediateOutputPath)psgallery\$(WinGetVersion)\</WinGetModuleDirectory>
         <WinGetModulePackage>$(WinGetModuleDirectory)Microsoft.WinGet.Client.$(WinGetVersion).nupkg</WinGetModulePackage>
-        <WinRtActivationDll>$(WinGetModuleDirectory)extracted\net8.0-windows10.0.26100.0\SharedDependencies\x64\winrtact.dll</WinRtActivationDll>
+        <WinRtActivationPattern>$(WinGetModuleDirectory)extracted\net*-windows*\SharedDependencies\x64\winrtact.dll</WinRtActivationPattern>
+        <WinRtActivationDll>$(WinGetModuleDirectory)winrtact.dll</WinRtActivationDll>
     </PropertyGroup>
     <Target Name="FetchWinRtActivation" BeforeTargets="AssignTargetPaths" Condition="!Exists('$(WinRtActivationDll)')">
+        <ItemGroup>
+            <WinRtActivationMatch Include="$(WinRtActivationPattern)" />
+        </ItemGroup>
         <DownloadFile
-            Condition="!Exists('$(WinGetModulePackage)')"
+            Condition="'@(WinRtActivationMatch)' == '' and !Exists('$(WinGetModulePackage)')"
             SourceUrl="https://www.powershellgallery.com/api/v2/package/Microsoft.WinGet.Client/$(WinGetVersion)"
             DestinationFolder="$(WinGetModuleDirectory)"
             DestinationFileName="Microsoft.WinGet.Client.$(WinGetVersion).nupkg"
         />
-        <GetFileHash Files="$(WinGetModulePackage)" Algorithm="SHA256">
+        <GetFileHash Condition="'@(WinRtActivationMatch)' == ''" Files="$(WinGetModulePackage)" Algorithm="SHA256">
             <Output TaskParameter="Hash" PropertyName="WinGetModuleActualSha256" />
         </GetFileHash>
         <Error
-            Condition="'$(WinGetModuleActualSha256)' != '$(WinGetModuleSha256)'"
+            Condition="'@(WinRtActivationMatch)' == '' and '$(WinGetModuleActualSha256)' != '$(WinGetModuleSha256)'"
             Text="Microsoft.WinGet.Client $(WinGetVersion) hash mismatch: expected $(WinGetModuleSha256), got $(WinGetModuleActualSha256)."
         />
-        <Unzip SourceFiles="$(WinGetModulePackage)" DestinationFolder="$(WinGetModuleDirectory)extracted" />
+        <Unzip
+            Condition="'@(WinRtActivationMatch)' == ''"
+            SourceFiles="$(WinGetModulePackage)"
+            DestinationFolder="$(WinGetModuleDirectory)extracted"
+        />
+        <ItemGroup Condition="'@(WinRtActivationMatch)' == ''">
+            <WinRtActivationMatch Include="$(WinRtActivationPattern)" />
+        </ItemGroup>
+        <Error
+            Condition="'@(WinRtActivationMatch)' == ''"
+            Text="Microsoft.WinGet.Client $(WinGetVersion) holds no file matching $(WinRtActivationPattern), and the build copies exactly one."
+        />
+        <Error
+            Condition="'@(WinRtActivationMatch->Count())' &gt; '1'"
+            Text="Microsoft.WinGet.Client $(WinGetVersion) holds @(WinRtActivationMatch->Count()) files matching $(WinRtActivationPattern): @(WinRtActivationMatch, ', '). The build copies exactly one."
+        />
+        <Copy SourceFiles="@(WinRtActivationMatch)" DestinationFiles="$(WinRtActivationDll)" />
     </Target>
     <ItemGroup>
         <None

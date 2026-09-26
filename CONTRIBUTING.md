@@ -557,7 +557,9 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   - a condition on a property the evaluation does not pass, such as the `Platform=x64` the
     `installer` row builds the custom action with, or the absolute `PublishDir` it publishes the
     app to;
-  - a target that changes a setting or adds an item while the build runs.
+  - a target that changes a C# compiler or analyzer setting, or adds a compile or analyzer-config
+    item, while the build runs, other than the gate's own waiver-log targets in
+    `Directory.Build.props`, `LogXamlPreCompileApart` and `LogCompileAtWaiverLog`, which set `ErrorLog`.
 - The gate refuses, at any depth and in any case, a `Directory.Build.props`,
   `Directory.Build.targets`, `Directory.Packages.props` or `nuget.config` below the root, and any
   `Directory.Build.rsp`, `Directory.Solution.props` or `Directory.Solution.targets`. `.gitignore`
