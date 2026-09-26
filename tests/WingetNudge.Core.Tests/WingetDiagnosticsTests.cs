@@ -197,6 +197,17 @@ public sealed class WingetDiagnosticsTests : IDisposable
     }
 
     [Fact]
+    public void Tail_OfAPathEndingInASeparator_ReturnsNothing()
+    {
+        Func<IReadOnlyList<string>> tail = () => WingetDiagnosticsReader.Tail(_directory + Path.DirectorySeparatorChar);
+
+        tail.Should()
+            .NotThrow("the tail of an unreadable path is empty")
+            .Subject.Should()
+            .BeEmpty("a path that names no file has no tail");
+    }
+
+    [Fact]
     public void Tail_ReadsOnlyTheEndOfAHugeFile()
     {
         string line = new('x', 512);

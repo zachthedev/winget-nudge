@@ -69,6 +69,36 @@ public sealed class UpdateLogTests : IDisposable
     }
 
     [Fact]
+    public void SaveInstallerLog_WhenNewerNamedDumpsFillEverySlot_KeepsTheOneJustWritten()
+    {
+        // A clock set back names the new dump older than every dump already there, so a prune by name alone picks it.
+        string directory = Directory.CreateDirectory(_data.Paths.InstallerLogDirectory).FullName;
+        string[] ahead =
+        [
+            .. Enumerable
+                .Range(0, LogsPerPackage)
+                .Select(index => Path.Combine(directory, $"Git.Git_20270101_0000{index:00}.log")),
+        ];
+        foreach (string dump in ahead)
+        {
+            File.WriteAllText(dump, "from a clock that ran ahead");
+        }
+
+        UpgradeOutcome outcome = new(false, "InstallError", 6, UpgradeOutcome.FilesInUseHResult, true, "corr");
+        Func<string> save = () => _log.SaveInstallerLog("Git.Git", outcome);
+
+        string written = save.Should().NotThrow("the prune never aims at the dump held open").Subject;
+
+        File.ReadAllText(written).Should().Contain("Package: Git.Git", "the dump just written stays whole");
+        Directory
+            .GetFiles(directory, "Git.Git_*.log")
+            .Should()
+            .HaveCount(LogsPerPackage, "the dump just written takes one of the kept slots")
+            .And.Contain(written);
+        File.Exists(ahead[0]).Should().BeFalse("the oldest-named dump gives up its slot");
+    }
+
+    [Fact]
     public void SaveInstallerLog_WhenItsDirectoryBecomesAJunctionAfterItsCheck_RefusesWithoutWritingThroughIt()
     {
         UpgradeOutcome outcome = new(false, "InstallError", 6, UpgradeOutcome.FilesInUseHResult, true, "corr");

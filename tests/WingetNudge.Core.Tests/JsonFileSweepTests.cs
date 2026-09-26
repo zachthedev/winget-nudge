@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using AwesomeAssertions;
 using WingetNudge.Core.Storage;
 using WingetNudge.Core.Tests.Support;
@@ -149,6 +151,85 @@ public sealed class JsonFileSweepTests : IDisposable
         {
             Directory.Delete(link);
         }
+    }
+
+    [Fact]
+    public void SweepTemporaries_WhenTheDirectoryDeniesItsCheck_DeletesNothingAndDoesNotThrow()
+    {
+        string stale = Aged("settings.json.4242-abc.tmp", TimeSpan.FromDays(9));
+        DirectoryInfo directory = new(_data.Paths.Directory);
+
+        // The owner of a directory can deny itself traversing it and take the denial back, with no elevation. The check
+        // opens each directory with traverse access, so the data directory refuses it. Listing the directory and
+        // deleting in it need no traverse access, so a sweep that went on past the refused check would still delete.
+        FileSystemAccessRule denial = new(
+            WindowsIdentity.GetCurrent().User ?? throw new InvalidOperationException("The test runs with no user."),
+            FileSystemRights.Traverse,
+            AccessControlType.Deny
+        );
+        DirectorySecurity denied = directory.GetAccessControl();
+        denied.AddAccessRule(denial);
+        directory.SetAccessControl(denied);
+
+        int removed;
+        try
+        {
+            Func<int> sweep = () => JsonFile.SweepTemporaries(_data.Paths.Directory, TimeSpan.FromHours(1));
+            removed = sweep.Should().NotThrow("housekeeping at startup skips a directory it cannot check").Subject;
+        }
+        finally
+        {
+            // The data directory is deleted after the case, which the denial would refuse.
+            DirectorySecurity restored = directory.GetAccessControl();
+            restored.RemoveAccessRule(denial);
+            directory.SetAccessControl(restored);
+        }
+
+        removed.Should().Be(0);
+        File.Exists(stale).Should().BeTrue("a directory the check cannot open gets no deletes");
+    }
+
+    [Fact]
+    public void SweepTemporaries_ThroughAFileSymbolicLinkAncestor_RefusesItAndDeletesNothing()
+    {
+        // A file symbolic link can name a directory and still resolve as a path component.
+        string real = Directory.CreateDirectory(Path.Combine(_data.Root, "elsewhere")).FullName;
+        string child = Directory.CreateDirectory(Path.Combine(real, "child")).FullName;
+        string victim = Path.Combine(child, "someone-else.tmp");
+        File.WriteAllText(victim, "{}");
+        File.SetLastWriteTimeUtc(victim, DateTime.UtcNow - TimeSpan.FromDays(9));
+        string link = Path.Combine(_data.Root, "file-link");
+        File.CreateSymbolicLink(link, real);
+        string through = Path.Combine(link, "child");
+
+        try
+        {
+            Action check = () => SafePath.EnsureNotReparsePoint(through);
+            check
+                .Should()
+                .Throw<IOException>("a file link redirects a path as surely as a directory link does")
+                .WithMessage($"*'{link}' {SafePath.ReparsePointCause}*");
+            JsonFile.SweepTemporaries(through, TimeSpan.FromHours(1)).Should().Be(0);
+            File.Exists(victim).Should().BeTrue("the sweep never deletes through the link");
+        }
+        finally
+        {
+            File.Delete(link);
+        }
+    }
+
+    [Fact]
+    public void EnsureNotReparsePoint_ThroughAPlainFileInADirectorysPlace_EndsWithoutARefusal()
+    {
+        string plain = _data.WriteFile("plain", "");
+        string through = Path.Combine(plain, "child");
+        Action check = () => SafePath.EnsureNotReparsePoint(through);
+        Action open = () => SafePath.OpenDirectory(through, create: false).Dispose();
+
+        check.Should().NotThrow("nothing below a plain file can redirect a write");
+        IOException refused = open.Should().Throw<IOException>("a file is not a directory to open").Which;
+        refused.HResult.Should().Be(unchecked((int)0x8007010B), "the refusal names a file in a directory's place");
+        refused.Message.Should().NotContain(SafePath.ReparsePointCause, "a plain file is refused as the file it is");
     }
 
     [Theory]

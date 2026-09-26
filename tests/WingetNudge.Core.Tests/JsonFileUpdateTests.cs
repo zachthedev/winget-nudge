@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using AwesomeAssertions;
+using Microsoft.Win32.SafeHandles;
 using WingetNudge.Core.Storage;
 using WingetNudge.Core.Tests.Support;
 
@@ -304,6 +305,88 @@ public sealed class JsonFileUpdateTests : IDisposable
             .Should()
             .BeEmpty("neither the lock file nor the data lands where the junction points");
         changed.Should().BeFalse("the change runs only under the lock");
+    }
+
+    [Fact]
+    public void Update_WhenAnAncestorIsRenamedMidWalk_RefusesTheRenameAndWritesInTheRealDirectory()
+    {
+        string ancestor = Path.Combine(_data.Root, "a");
+        string file = Path.Combine(ancestor, "data", "preferences.json");
+        string elsewhere = Directory.CreateDirectory(Path.Combine(_data.Root, "elsewhere")).FullName;
+        Exception? renaming = new InvalidOperationException("the walk never reached the ancestor");
+        Action<string>? previous = SafePath.BetweenSteps.Value;
+
+        // Once the walk verifies the ancestor, another process running as the user renames it away and plants a junction
+        // at its old name. The handles still name the real directory, but a write by path would land in the target.
+        SafePath.BetweenSteps.Value = verified =>
+        {
+            if (string.Equals(verified, ancestor, StringComparison.OrdinalIgnoreCase))
+            {
+                renaming = Record.Exception(() => Directory.Move(ancestor, ancestor + "-moved"));
+                if (renaming is null)
+                {
+                    Junction.Create(ancestor, elsewhere);
+                }
+            }
+        };
+        Action update = () =>
+            JsonFile.Update<Dictionary<string, string>>(file, false, current => With(current, "value", "new"));
+
+        try
+        {
+            update.Should().NotThrow("the ancestor stays where the walk verified it");
+        }
+        finally
+        {
+            SafePath.BetweenSteps.Value = previous;
+            if (SafePath.IsReparsePoint(ancestor))
+            {
+                Directory.Delete(ancestor);
+            }
+        }
+
+        Directory
+            .EnumerateFileSystemEntries(elsewhere)
+            .Should()
+            .BeEmpty("the write never lands where a junction points");
+        JsonFile
+            .Read<Dictionary<string, string>>(file, deleteIfCorrupt: false)
+            .Should()
+            .Equal(New, "the write lands in the real directory");
+        renaming
+            .Should()
+            .BeOfType<IOException>("the walk holds every component it opened without delete sharing")
+            .Which.HResult.Should()
+            .Be(ExclusiveFile.SharingViolation);
+    }
+
+    [Fact]
+    public void Update_WhileAnotherProgramHoldsAnAncestorWithDeleteAccess_WaitsThenSaves()
+    {
+        string ancestor = Directory.CreateDirectory(Path.Combine(_data.Root, "a")).FullName;
+        string file = Path.Combine(ancestor, "data", "preferences.json");
+        SafeFileHandle holder = DeleteAccessHandle.Open(ancestor);
+
+        // The walk meets the holder at its first attempt and again after the first wait. The holder lets go at the
+        // second wait, so the third attempt walks through.
+        using AttemptWaits waits = new(2, holder.Dispose);
+        Action update = () =>
+            JsonFile.Update<Dictionary<string, string>>(file, false, current => With(current, "value", "new"));
+
+        try
+        {
+            update.Should().NotThrow("a walk another program holds up waits for it, as a held lock does");
+        }
+        finally
+        {
+            holder.Dispose();
+        }
+
+        JsonFile
+            .Read<Dictionary<string, string>>(file, deleteIfCorrupt: false)
+            .Should()
+            .Equal(New, "the save lands once the holder lets go");
+        waits.Delays.Should().Equal([1, 1], "the save waited out the holder at the lock loop's waits");
     }
 
     [Fact]
