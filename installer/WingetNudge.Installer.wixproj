@@ -5,7 +5,11 @@
     <InstallerPlatform>x64</InstallerPlatform>
     <AppProject>..\src\WingetNudge\WingetNudge.csproj</AppProject>
     <CustomActionsProject>CustomActions\WingetNudge.CustomActions.csproj</CustomActionsProject>
-    <PublishDir>$(MSBuildThisFileDirectory)..\src\WingetNudge\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\</PublishDir>
+    <!--
+      The folder the package publishes the app to and harvests. The WiX SDK sets this project's own
+      TargetFramework to native, so the folder's name carries no framework.
+    -->
+    <PublishDir>$(MSBuildThisFileDirectory)..\src\WingetNudge\bin\Release\$(RuntimeIdentifier)\publish\</PublishDir>
     <!-- Version and manufacturer come from Directory.Build.props so the MSI and the exe never disagree. -->
     <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(Version);Manufacturer=$(Authors)</DefineConstants>
     <!-- Per-user files under the profile have no registry key path; these ICEs assume a machine install. -->

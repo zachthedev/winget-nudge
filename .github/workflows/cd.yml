@@ -62,15 +62,20 @@ jobs:
               throw "The MSI says $productVersion and the tag says $version."
           }
 
-          $exe = 'src/WingetNudge/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish/WingetNudge.exe'
-          $fileVersion = (Get-Item $exe).VersionInfo.FileVersion
+          # The folder the package harvested the app from, as the installer project names it.
+          $publishDir = @(dotnet msbuild installer/WingetNudge.Installer.wixproj -getProperty:PublishDir)
+          if ($LASTEXITCODE -ne 0 -or $publishDir.Count -ne 1 -or [string]::IsNullOrWhiteSpace($publishDir[0])) {
+              throw "The installer project names no single PublishDir: $($publishDir -join ' | ')"
+          }
+          $exe = Join-Path -Path $publishDir[0] -ChildPath 'WingetNudge.exe'
+          $fileVersion = (Get-Item -LiteralPath $exe).VersionInfo.FileVersion
           if ($fileVersion -ne "$version.0") {
               throw "WingetNudge.exe says $fileVersion and the tag says $version."
           }
 
           # The informational version is what the app sends in its User-Agent. The SDK appends the
           # source commit to it after a '+'.
-          $informationalVersion = (Get-Item $exe).VersionInfo.ProductVersion
+          $informationalVersion = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
           if ($informationalVersion -ne $version -and $informationalVersion -notlike "$version+*") {
               throw "WingetNudge.exe carries informational version $informationalVersion and the tag says $version."
           }
