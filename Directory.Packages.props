@@ -18,8 +18,8 @@
         <PackageVersion Include="TaskScheduler" Version="2.12.2" />
         <PackageVersion Include="YamlDotNet" Version="18.1.0" />
         <!-- The installer's custom action. One WiX release with WixToolset.Sdk in the installer project. -->
-        <PackageVersion Include="WixToolset.Dtf.CustomAction" Version="6.0.2" />
-        <PackageVersion Include="WixToolset.Dtf.WindowsInstaller" Version="6.0.2" />
+        <PackageVersion Include="WixToolset.Dtf.CustomAction" Version="7.0.0" />
+        <PackageVersion Include="WixToolset.Dtf.WindowsInstaller" Version="7.0.0" />
         <!-- Reference assemblies for the custom action's .NET Framework target, the same on every machine. -->
         <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
         <PackageVersion Include="xunit.v3" Version="4.0.0" />
