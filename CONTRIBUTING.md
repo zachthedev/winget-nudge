@@ -542,6 +542,11 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   of suppressions it read. The `installer` row compiles the app and the custom action again for the
   MSI, so it reads the Release logs again after the package builds. The `tests` row compiles
   nothing.
+- After the MSI links, the `installer` row opens it read-only through `msi.dll`. It fails unless
+  the LaunchCondition table holds exactly the downgrade, runtime and Windows rows `Package.wxs`
+  authors, and unless the `WindowsMinBuild` property equals the build field of
+  `SupportedOSPlatformVersion` in `Directory.Build.props`. A launch row deleted or inverted still
+  links, and setup then passes where it has to refuse, so the row reads the table back.
 - The SARIF log records neither `NoWarn` nor `WarningsNotAsErrors`, so before each configuration
   the `build` row asks MSBuild to evaluate each project under the build row's properties. It
   refuses `TreatWarningsAsErrors` other than true, SA1404 missing from `WarningsAsErrors` or named

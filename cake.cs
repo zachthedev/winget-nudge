@@ -483,7 +483,7 @@ Task("tests")
 // afresh, and the MSI carries those compiles, so their waiver logs are read again after it.
 Task("installer")
     .Description(
-        "The MSI links, built unsigned whatever Directory.Signing.props says, from compiles whose waiver logs pass as the build row's do"
+        "The MSI links, built unsigned whatever Directory.Signing.props says, from compiles whose waiver logs pass as the build row's do, and holds the launch rows and Windows floor Package.wxs authors"
     )
     .IsDependentOn("build")
     .Does(() =>
@@ -498,6 +498,7 @@ Task("installer")
             }
         );
         RequireWaiverLogs("Release");
+        RequireLaunchRows();
     });
 
 Task("code")
@@ -2814,6 +2815,196 @@ static (string? File, int Line) SarifLocation(JsonElement result, string root)
             ? start.GetInt32()
             : 0;
     return (System.IO.Path.GetRelativePath(root, address.LocalPath).Replace('\\', '/'), line);
+}
+
+// ///// Installer tables /////
+
+// Reads the MSI the installer row built, read-only, and fails unless its LaunchCondition table holds
+// exactly the rows Package.wxs authors: the downgrade refusal, the runtime check that passes while the
+// Windows check refuses, and the Windows check. It also fails unless WindowsMinBuild is the build field
+// of the SupportedOSPlatformVersion Directory.Build.props sets. A deleted or inverted launch row still
+// links, and setup then passes on a computer it has to refuse, so the row reads the table back.
+void RequireLaunchRows()
+{
+    string[] authored =
+    [
+        "NOT WIX_DOWNGRADE_DETECTED",
+        "Installed OR WINDOWSAPPRUNTIMEFOUND OR NOT WindowsBuildFound",
+        "Installed OR WindowsBuildFound",
+    ];
+    string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
+    string msi = System.IO.Path.Combine(root, "installer", "bin", "Release", "WingetNudge.msi");
+    List<string> found = MsiColumn(msi, "SELECT `Condition` FROM `LaunchCondition`");
+    if (found.Count != authored.Length || found.Except(authored, StringComparer.Ordinal).Any())
+    {
+        throw new CakeException(
+            $"installer/bin/Release/WingetNudge.msi holds the launch conditions {string.Join(", ", found.Select(Quoted))}. "
+                + $"Package.wxs authors {string.Join(", ", authored.Select(Quoted))}, and the row takes those alone. "
+                + "A launch row deleted or inverted still links, and setup then passes where it has to refuse."
+        );
+    }
+
+    string props = System.IO.Path.Combine(root, "Directory.Build.props");
+    string? supported = System
+        .Xml.Linq.XDocument.Load(props)
+        .Root?.Elements("PropertyGroup")
+        .SelectMany(group => group.Elements("SupportedOSPlatformVersion"))
+        .SingleOrDefault()
+        ?.Value;
+    string floor = Version.TryParse(supported, out Version? version)
+        ? version.Build.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        : throw new CakeException(
+            $"Directory.Build.props sets SupportedOSPlatformVersion to {Quoted(supported ?? "")}, which is not a version, so the row has no floor to read the MSI against."
+        );
+    List<string> authoredFloor = MsiColumn(msi, "SELECT `Value` FROM `Property` WHERE `Property` = 'WindowsMinBuild'");
+    if (authoredFloor.Count != 1 || authoredFloor[0] != floor)
+    {
+        throw new CakeException(
+            (
+                authoredFloor.Count == 0
+                    ? "installer/bin/Release/WingetNudge.msi sets no WindowsMinBuild, "
+                    : $"installer/bin/Release/WingetNudge.msi sets WindowsMinBuild to {string.Join(", ", authoredFloor.Select(Quoted))}, "
+            )
+                + $"and the build field of SupportedOSPlatformVersion in Directory.Build.props is {floor}. Setup refuses below the MSI's value."
+        );
+    }
+
+    Information(
+        $"The MSI holds the {authored.Length} launch rows Package.wxs authors, and WindowsMinBuild {floor}, the build field of SupportedOSPlatformVersion."
+    );
+}
+
+// The first column of every record a query returns, from a database msi.dll opens read-only. Every
+// handle is an MSIHANDLE, which msi.h declares unsigned long, 32 bits on every platform.
+static List<string> MsiColumn(string database, string query)
+{
+    const uint errorSuccess = 0;
+    const uint errorMoreData = 234;
+    const uint errorNoMoreItems = 259;
+
+    // MSIDBOPEN_READONLY is the null persist mode.
+    uint status = MsiOpenDatabaseW(database, 0, out uint handle);
+    if (status != errorSuccess)
+    {
+        throw new CakeException($"msi.dll could not open {Quoted(database)} read-only: error {status}.");
+    }
+
+    uint view = 0;
+    try
+    {
+        status = MsiDatabaseOpenViewW(handle, query, out view);
+        if (status == errorSuccess)
+        {
+            status = MsiViewExecute(view, 0);
+        }
+
+        if (status != errorSuccess)
+        {
+            throw new CakeException(
+                $"msi.dll could not run {Quoted(query)} against {Quoted(database)}: error {status}."
+            );
+        }
+
+        List<string> values = [];
+        while (true)
+        {
+            status = MsiViewFetch(view, out uint record);
+            if (status == errorNoMoreItems)
+            {
+                return values;
+            }
+
+            if (status != errorSuccess)
+            {
+                throw new CakeException($"msi.dll could not fetch from {Quoted(query)}: error {status}.");
+            }
+
+            try
+            {
+                uint length = 0;
+                status = MsiRecordGetStringW(record, 1, null, ref length);
+                char[] buffer = new char[length + 1];
+                length++;
+                if (status is errorSuccess or errorMoreData)
+                {
+                    status = MsiRecordGetStringW(record, 1, buffer, ref length);
+                }
+
+                if (status != errorSuccess)
+                {
+                    throw new CakeException($"msi.dll could not read a field from {Quoted(query)}: error {status}.");
+                }
+
+                values.Add(new string(buffer, 0, (int)length));
+            }
+            finally
+            {
+                _ = MsiCloseHandle(record);
+            }
+        }
+    }
+    finally
+    {
+        if (view != 0)
+        {
+            _ = MsiCloseHandle(view);
+        }
+
+        _ = MsiCloseHandle(handle);
+    }
+
+    [System.Runtime.InteropServices.DllImport(
+        "msi.dll",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        ExactSpelling = true
+    )]
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
+        System.Runtime.InteropServices.DllImportSearchPath.System32
+    )]
+    static extern uint MsiOpenDatabaseW(string path, nint persist, out uint database);
+
+    [System.Runtime.InteropServices.DllImport(
+        "msi.dll",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        ExactSpelling = true
+    )]
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
+        System.Runtime.InteropServices.DllImportSearchPath.System32
+    )]
+    static extern uint MsiDatabaseOpenViewW(uint database, string query, out uint view);
+
+    [System.Runtime.InteropServices.DllImport("msi.dll", ExactSpelling = true)]
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
+        System.Runtime.InteropServices.DllImportSearchPath.System32
+    )]
+    static extern uint MsiViewExecute(uint view, uint record);
+
+    [System.Runtime.InteropServices.DllImport("msi.dll", ExactSpelling = true)]
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
+        System.Runtime.InteropServices.DllImportSearchPath.System32
+    )]
+    static extern uint MsiViewFetch(uint view, out uint record);
+
+    [System.Runtime.InteropServices.DllImport(
+        "msi.dll",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode,
+        ExactSpelling = true
+    )]
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
+        System.Runtime.InteropServices.DllImportSearchPath.System32
+    )]
+    static extern uint MsiRecordGetStringW(
+        uint record,
+        uint field,
+        [System.Runtime.InteropServices.Out] char[]? value,
+        ref uint length
+    );
+
+    [System.Runtime.InteropServices.DllImport("msi.dll", ExactSpelling = true)]
+    [System.Runtime.InteropServices.DefaultDllImportSearchPaths(
+        System.Runtime.InteropServices.DllImportSearchPath.System32
+    )]
+    static extern uint MsiCloseHandle(uint handle);
 }
 
 // Every file in the tree, relative to the root with forward slashes, for the refusals and rows that
