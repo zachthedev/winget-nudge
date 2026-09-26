@@ -1733,7 +1733,7 @@ static string? SearchedConfig(string relative)
                         or ".renovaterc.json5" =>
             "Renovate reads it as its config in place of .github/renovate.json, the one Renovate config the gate reads, when it comes first in Renovate's search or that file is gone",
         _ when atRoot && commitlintFiles.Contains(name) && relative != "commitlint.config.js" =>
-            "commitlint reads it as config when run without --config, as the shared commits job runs it",
+            "a bare commitlint run or an editor extension reads it as config, where every check loads commitlint.config.js through --config",
         _ when atRoot && (lefthookFiles.Contains(name) || name.StartsWith(".lefthook.", StringComparison.Ordinal)) =>
             "lefthook reads it as its config",
         _ when relative.ToLowerInvariant() is ".github/actionlint.yaml" or ".github/actionlint.yml" =>

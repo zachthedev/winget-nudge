@@ -622,17 +622,18 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   these files as strict JSON, with no comment and no trailing comma, and refuses one that does not
   parse, at the line and byte where the parse stops, since it then cannot tell. The refusal names a
   duplicate key as .NET does, cut to its first 15 characters.
-- lefthook's commit-msg hook passes `--config commitlint.config.js`, so commitlint searches for no
-  other config. The shared `commits` job runs commitlint without it, so a planted
-  `.commitlintrc.json` passes that job, and the refusal above is where it lands. cosmiconfig runs a
-  module from `.config` at the root before commitlint reads `--config`, and the hook runs before
-  any gate row. So the hook's first job fails on a `.config`, and `piped: true` stops the hook
-  there, before commitlint starts. That job stops an accidental `.config`, not a hostile branch:
-  lefthook merges a `.config/lefthook-local.*` file over `lefthook.yml` before any job runs, so the
-  same directory can replace the job, which is why [Safety](#safety) says to read a branch first.
-  lefthook also merges a `lefthook-local.*` or `.lefthook-local.*` file at the root on every run,
-  and no switch stops it. The tracked-path check refuses a tracked one, and `.gitignore` covers a
-  contributor's own.
+- lefthook's commit-msg hook passes `--config commitlint.config.js`, and both lint steps of the
+  shared `commits` job pass `--config` too. None of them searches for another config. A bare
+  `commitlint` run or an editor extension still searches, and a config it finds there would
+  disagree with the one every check uses. The config-names bullet's commitlint refusal keeps one
+  config. cosmiconfig runs a module from `.config` at the root before commitlint reads `--config`,
+  and the hook runs before any gate row. So the hook's first job fails on a `.config`, and
+  `piped: true` stops the hook there, before commitlint starts. That job stops an accidental
+  `.config`, not a hostile branch: lefthook merges a `.config/lefthook-local.*` file over
+  `lefthook.yml` before any job runs, so the same directory can replace the job, which is why
+  [Safety](#safety) says to read a branch first. lefthook also merges a `lefthook-local.*` or
+  `.lefthook-local.*` file at the root on every run, and no switch stops it. The tracked-path check
+  refuses a tracked one, and `.gitignore` covers a contributor's own.
 - prettier's CLI skips a directory named `.git`, `.sl`, `.svn`, `.hg` or `.jj` without a word, and
   the tree walk skips `.git` at any depth, so no row checks a file under one. Name no directory that
   way. Review reads what a row skips.
