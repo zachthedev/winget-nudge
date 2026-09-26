@@ -1910,6 +1910,17 @@ static bool SetsIsGlobal(string path) =>
 //   rule's name anywhere in C#. An identifier takes Unicode escapes, and the compiler drops every
 //   format character from it, so these match the text with every \u and \U escape decoded and every
 //   invisible character removed.
+// - The two attribute names anywhere in a project file: a .csproj, .props, .targets, .wixproj or
+//   .slnx. An AssemblyAttribute item applies an attribute to the whole assembly, which turns every
+//   analyzer off for the project when it is the generated-code attribute, and a Using item aliases
+//   one. The SDK writes both into C#, so NamesInProjectFile joins each value as MSBuild can join it
+//   and decodes it as MSBuild and then the compiler do. The justification rule's name passes in a
+//   property's value, where a warning setting such as WarningsAsErrors names it, and in a comment.
+//   RequireJustificationRuleFatal reads every warning setting that names it. In an item, the SDK
+//   writes the name into C#, where an AssemblyAttribute can waive the rule for the whole assembly, so
+//   it is refused there. Of the other files MSBuild reads from the tree, SearchedConfig refuses every
+//   project .user file, response file, solution Directory file and obj import but NuGet's own, and any
+//   other reaches a build only through an Import in one of these.
 // - Roslyn's generated-code comment marker anywhere in a .cs file, and its generated file names:
 //   TemporaryGeneratedFile_ at the start, or .designer, .generated, .g or .g.i before the extension.
 // - A .cs file whose bytes the compiler would read in the system's ANSI code page, and a .cs path holding a
@@ -1936,11 +1947,18 @@ void RequireNoInlineWaivers()
         ),
         options
     );
+    string Named(string matched) =>
+        matched.Equals(generatedAttribute, StringComparison.OrdinalIgnoreCase)
+            ? "the generated-code attribute, which turns every analyzer off for what it marks"
+        : matched.Equals(unconditionalWaiver, StringComparison.OrdinalIgnoreCase)
+            ? "an unconditional waiver, which the justification rule does not read"
+        : $"the name {justificationRule}: a waiver of the justification rule switches it off for its scope, up to a whole project";
     System.Text.RegularExpressions.Regex marker = new("<auto-?generated", options);
     System.Text.RegularExpressions.Regex formatterIgnore = new(
         @"//[ \t]*csharpier-ignore|<!--\s*csharpier-ignore",
         options
     );
+    string[] projectExtensions = [".csproj", ".props", ".targets", ".wixproj", ".slnx"];
     string root = System.IO.Path.GetFullPath(Context.Environment.WorkingDirectory.FullPath);
 
     List<(string Path, int Line, string What)> found = [];
@@ -1948,7 +1966,9 @@ void RequireNoInlineWaivers()
     {
         string extension = System.IO.Path.GetExtension(relative);
         bool csharp = extension.Equals(".cs", StringComparison.OrdinalIgnoreCase);
-        if (!csharp && !csharpierExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+        bool formatted = csharpierExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
+        bool project = projectExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
+        if (!formatted && !project)
         {
             continue;
         }
@@ -1967,15 +1987,43 @@ void RequireNoInlineWaivers()
             continue;
         }
 
-        foreach (System.Text.RegularExpressions.Match ignore in formatterIgnore.Matches(text))
+        // CSharpier formats no .wixproj, so an ignore comment there leaves nothing unformatted.
+        if (formatted)
         {
-            found.Add(
-                (
-                    relative,
-                    LineOf(text, ignore.Index),
-                    "a CSharpier ignore comment, which leaves what follows it unformatted"
-                )
-            );
+            foreach (System.Text.RegularExpressions.Match ignore in formatterIgnore.Matches(text))
+            {
+                found.Add(
+                    (
+                        relative,
+                        LineOf(text, ignore.Index),
+                        "a CSharpier ignore comment, which leaves what follows it unformatted"
+                    )
+                );
+            }
+        }
+
+        if (project)
+        {
+            try
+            {
+                foreach ((int line, string form, bool setting, string matched) in NamesInProjectFile(path, name))
+                {
+                    if (!setting || !matched.Equals(justificationRule, StringComparison.OrdinalIgnoreCase))
+                    {
+                        found.Add((relative, line, $"{Named(matched)}, in {form}. Remove it"));
+                    }
+                }
+            }
+            catch (System.Xml.XmlException error)
+            {
+                found.Add(
+                    (
+                        relative,
+                        error.LineNumber,
+                        $"text that does not read as XML with no DTD ({Quoted(error.Message)}), so the gate cannot read the names in it. Fix it"
+                    )
+                );
+            }
         }
 
         if (!csharp)
@@ -2017,13 +2065,7 @@ void RequireNoInlineWaivers()
         string visible = WithoutInvisible(decoded);
         foreach (System.Text.RegularExpressions.Match match in name.Matches(visible))
         {
-            string what =
-                match.Value.Equals(generatedAttribute, StringComparison.OrdinalIgnoreCase)
-                    ? "the generated-code attribute, which turns every analyzer off for what it marks"
-                : match.Value.Equals(unconditionalWaiver, StringComparison.OrdinalIgnoreCase)
-                    ? "an unconditional waiver, which the justification rule does not read"
-                : $"the name {justificationRule}: a waiver of the justification rule switches it off for its scope, up to a whole project";
-            found.Add((relative, LineOf(visible, match.Index), what));
+            found.Add((relative, LineOf(visible, match.Index), Named(match.Value)));
         }
 
         foreach (System.Text.RegularExpressions.Match match in marker.Matches(decoded))
@@ -2057,6 +2099,138 @@ static bool IsGeneratedFileName(string relative)
         || ((string[])[".designer", ".generated", ".g", ".g.i"]).Any(suffix =>
             stem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
         );
+}
+
+// Every match of the name pattern in a project file, with the line the node holding it starts on, the
+// form that holds it, and whether that form is a setting or a note: a property's value or a comment.
+// The file goes through an XML reader with no DTD, which decodes every character and entity
+// reference. Each element's direct text and CDATA are joined before they are matched. MSBuild reads a
+// property or metadata value as the element's inner text when comments or CDATA sections split it, so
+// the joined text holds every such value MSBuild reads, and more. Then MSBuild's %XX escapes are
+// decoded, as MSBuild decodes an item before a task reads it, and the text is read as the compiler
+// reads the C# the SDK writes from an item: with every \u and \U escape decoded and every invisible
+// character removed. Every name, value, comment and processing instruction is matched, so a name in a
+// comment is refused, as it is in C#. A line is the one the node starts on, since a decoded escape can
+// add a line break the file does not hold. An item is an element in an ItemGroup, its metadata an
+// element in an item, and a property an element in a PropertyGroup. A file that does not read as XML
+// with no DTD throws XmlException.
+static List<(int Line, string Form, bool Setting, string Name)> NamesInProjectFile(
+    string path,
+    System.Text.RegularExpressions.Regex name
+)
+{
+    List<(int Line, string Form, bool Setting, string Name)> found = [];
+    // Each open element, outermost first: its name, the index of the innermost ItemGroup at or above it,
+    // its direct text and CDATA joined, and the line the first of them starts on.
+    List<(string Name, int Group, System.Text.StringBuilder Text, int Line)> open = [];
+    System.Xml.XmlReaderSettings settings = new()
+    {
+        DtdProcessing = System.Xml.DtdProcessing.Prohibit,
+        XmlResolver = null,
+    };
+    using System.IO.FileStream stream = System.IO.File.OpenRead(path);
+    using System.Xml.XmlReader reader = System.Xml.XmlReader.Create(stream, settings);
+    System.Xml.IXmlLineInfo? position = reader as System.Xml.IXmlLineInfo;
+
+    void Scan(string text, int line, string form, bool setting)
+    {
+        string read = WithoutInvisible(
+            DecodeUnicodeEscapes(
+                System.Text.RegularExpressions.Regex.Replace(
+                    text,
+                    "%(?<code>[0-9A-Fa-f]{2})",
+                    escape => ((char)Convert.ToInt32(escape.Groups["code"].Value, 16)).ToString()
+                )
+            )
+        );
+        foreach (System.Text.RegularExpressions.Match match in name.Matches(read))
+        {
+            found.Add((line, form, setting, match.Value));
+        }
+    }
+
+    // The form holding a value of the innermost open element, and whether that element is a property.
+    (string Form, bool Property) Holder(string? attribute)
+    {
+        string where = attribute is null ? "the value of" : $"the {Quoted(attribute)} of";
+        int group = open.Count > 1 ? open[^2].Group : -1;
+        if (group >= 0)
+        {
+            string item = $"the {Quoted(open[group + 1].Name)} item";
+            return (
+                group + 1 == open.Count - 1
+                    ? $"{where} {item}"
+                    : $"the {Quoted(open[group + 2].Name)} metadata of {item}",
+                false
+            );
+        }
+
+        bool property = open.Count > 1 && open[^2].Name == "PropertyGroup";
+        return ($"{where} the {(property ? "property" : "element")} {Quoted(open[^1].Name)}", property);
+    }
+
+    while (reader.Read())
+    {
+        int line = position?.LineNumber ?? 0;
+        switch (reader.NodeType)
+        {
+            case System.Xml.XmlNodeType.Element:
+                bool empty = reader.IsEmptyElement;
+                open.Add(
+                    (
+                        reader.LocalName,
+                        reader.LocalName == "ItemGroup" ? open.Count
+                        : open.Count > 0 ? open[^1].Group
+                        : -1,
+                        new System.Text.StringBuilder(),
+                        line
+                    )
+                );
+                Scan(reader.Name, line, "an element name", false);
+                for (bool more = reader.MoveToFirstAttribute(); more; more = reader.MoveToNextAttribute())
+                {
+                    int attributeLine = position?.LineNumber ?? 0;
+                    Scan(reader.Name, attributeLine, "an attribute name", false);
+                    Scan(reader.Value, attributeLine, Holder(reader.Name).Form, false);
+                }
+
+                reader.MoveToElement();
+                if (empty)
+                {
+                    open.RemoveAt(open.Count - 1);
+                }
+
+                break;
+            case System.Xml.XmlNodeType.Text or System.Xml.XmlNodeType.CDATA:
+                (string Name, int Group, System.Text.StringBuilder Text, int Line) innermost = open[^1];
+                if (innermost.Text.Length == 0)
+                {
+                    innermost.Line = line;
+                    open[^1] = innermost;
+                }
+
+                innermost.Text.Append(reader.Value);
+                break;
+            case System.Xml.XmlNodeType.EndElement:
+                (_, _, System.Text.StringBuilder joined, int textLine) = open[^1];
+                if (joined.Length > 0)
+                {
+                    (string form, bool property) = Holder(null);
+                    Scan(joined.ToString(), textLine, form, property);
+                }
+
+                open.RemoveAt(open.Count - 1);
+                break;
+            case System.Xml.XmlNodeType.Comment:
+                Scan(reader.Value, line, "a comment", true);
+                break;
+            case System.Xml.XmlNodeType.ProcessingInstruction:
+                Scan($"{reader.Name} {reader.Value}", line, "a processing instruction", false);
+                break;
+        }
+    }
+
+    return found;
 }
 
 // The text with every C# Unicode escape replaced by the character it names: \u and four hex digits,
