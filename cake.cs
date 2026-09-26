@@ -19,13 +19,13 @@ using YamlDotNet.RepresentationModel;
 // installs from it, and then the check target. The release build in cd.yml runs the installer
 // target.
 
-// Bun reads BUN_OPTIONS as extra arguments on every start, a --preload among them. ShellCheck
-// 0.11.0 reads SHELLCHECK_OPTS as extra arguments past the --norc actionlint passes, so an -e there
-// drops a finding, and it is the one variable ShellCheck reads that changes one. The gate removes
-// both from its own environment before anything else runs, so no process it starts inherits either,
-// and neither does the ShellCheck the stand-in below starts. Windows reads a name in any case, and a
-// POSIX shell can hand a process two spellings of one, so every spelling goes. RunMise builds mise's
-// environment from nothing.
+// Bun reads BUN_OPTIONS as extra arguments on every start, a --preload among them. ShellCheck, at
+// the version mise.toml pins, reads SHELLCHECK_OPTS as extra arguments past the --norc actionlint
+// passes, so an -e there drops a finding, and it is the one variable ShellCheck reads that changes
+// one. The gate removes both from its own environment before anything else runs, so no process it
+// starts inherits either, and neither does the ShellCheck the stand-in below starts. Windows reads a
+// name in any case, and a POSIX shell can hand a process two spellings of one, so every spelling
+// goes. RunMise builds mise's environment from nothing.
 foreach (
     string spelling in Environment
         .GetEnvironmentVariables()
@@ -110,8 +110,8 @@ Dictionary<string, MisePin> misePins = new(StringComparer.Ordinal)
 
 // ///// Code /////
 
-// The extensions CSharpier 1.3.0 formats, from PrinterOptions.GetFormatter, which matches them
-// without regard to case.
+// The extensions the pinned CSharpier formats, from its PrinterOptions.GetFormatter, which matches
+// them without regard to case.
 string[] csharpierExtensions =
 [
     ".cs",
@@ -767,7 +767,7 @@ MiseConfig ReadMiseConfig(string path)
             if (!IsReleaseVersion(version))
             {
                 throw new CakeException(
-                    $"{path} pins {Quoted(pin.Key)} as {Quoted(version)}, and the gate takes digit groups joined by single dots alone, such as 0.10.0."
+                    $"{path} pins {Quoted(pin.Key)} as {Quoted(version)}, and the gate takes digit groups joined by single dots alone, such as 1.2.3."
                 );
             }
 
@@ -931,7 +931,7 @@ Dictionary<string, MiseArtifact> MiseArtifacts(string path, string[] platforms, 
         if (!IsReleaseVersion(version))
         {
             throw new CakeException(
-                $"{path} records {Quoted(tool.Key)} version {Quoted(version)}, and the gate takes digit groups joined by single dots alone, such as 0.10.0. Write it again with: {relock}"
+                $"{path} records {Quoted(tool.Key)} version {Quoted(version)}, and the gate takes digit groups joined by single dots alone, such as 1.2.3. Write it again with: {relock}"
             );
         }
 
@@ -1190,12 +1190,12 @@ void RequireNoToolNamedFiles()
 // Runs mise with an environment built here from nothing, never the inherited one, and returns its
 // exit code with stdout collected when asked. No variable from a shell, an env file or a parent
 // process reaches mise, so no MISE_GLOBAL_CONFIG_FILE, MISE_DATA_DIR or other mise setting can
-// change what it reads. mise 2026.9.11 needs three ordinary variables on Windows: SYSTEMROOT for
-// its network stack, a temp directory, and LOCALAPPDATA for its data, cache and state. It needs no
-// PATH. SYSTEMROOT and LOCALAPPDATA come from the known folders rather than this process's
-// environment. HTTPS_PROXY, HTTP_PROXY and NO_PROXY pass through when set, and Windows reads each
-// name in either case. No certificate override passes. The lockfile task's assertions run first,
-// so no task order and no --exclusive run reaches mise past them.
+// change what it reads. mise, at the version the gate job in ci.yml pins, needs three ordinary
+// variables on Windows: SYSTEMROOT for its network stack, a temp directory, and LOCALAPPDATA for its
+// data, cache and state. It needs no PATH. SYSTEMROOT and LOCALAPPDATA come from the known folders
+// rather than this process's environment. HTTPS_PROXY, HTTP_PROXY and NO_PROXY pass through when
+// set, and Windows reads each name in either case. No certificate override passes. The lockfile
+// task's assertions run first, so no task order and no --exclusive run reaches mise past them.
 //
 // mise.toml sets the first four mise settings as well, and the environment repeats them so no
 // config file can lift them: locked mode, the lockfile read, re-verifying each attestation against
@@ -1650,9 +1650,9 @@ void RequireNoConfigElsewhere(IReadOnlyCollection<string> tree)
 // Why the gate refuses a file of this name where it sits, or null when it takes it. The names are
 // each tool's own search list at the version the gate pins: MSBuild's Directory files, response
 // file, project .user files and obj imports, NuGet's config, the analyzers' .editorconfig and
-// .globalconfig, Bun's tsconfig.json and jsconfig.json, Cake's cake.config, commitlint 21.2.2 over
-// cosmiconfig 9.0.2, lefthook 2.1.14, actionlint 1.7.12's .github/actionlint.yaml, the test
-// platform's testconfig.json and xUnit's xunit.runner.json, and Renovate's config names at the root.
+// .globalconfig, Bun's tsconfig.json and jsconfig.json, Cake's cake.config, commitlint over
+// cosmiconfig, lefthook, actionlint's .github/actionlint.yaml, the test platform's testconfig.json
+// and xUnit's xunit.runner.json, and Renovate's config names at the root.
 // A name is refused at every depth the tool, or an editor running it, searches. package.yaml is
 // refused whole, since the gate does not read its keys. In obj, MSBuild imports
 // <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on every
@@ -1854,7 +1854,7 @@ void RequireKeysOnce(IReadOnlyCollection<string> tree)
 }
 
 // The key a JSON text names twice in one object, at any depth, worded for a refusal, or null when it
-// names each key once. The text has to read as JSON already. .NET 10 compares two names with their
+// names each key once. The text has to read as JSON already. JsonDocument compares two names with their
 // escapes decoded and their case kept, as Bun and JavaScript do, so "a" and "\u0061" are one key
 // and "a" and "A" are two. Its exception names the key, cut to its first 15 characters and "..."
 // past that, so the refusal names it the same way. A name holding a lone surrogate escape throws
@@ -3202,7 +3202,7 @@ string? GitHubToken(out string why)
 // .github/zizmor.yml waives secrets-inherit by file, and a waiver binds a file, never the workflow a
 // job calls. So a new job in cd.yml or deps.yml could hand every secret to another repository's
 // workflow unseen. This runs zizmor again, offline, with no config and no ignores, and every
-// secrets-inherit finding has to call a workflow under inheritCallee. zizmor 1.30.1's json-v1 output
+// secrets-inherit finding has to call a workflow under inheritCallee. zizmor's json-v1 output
 // gives the callee as the concrete feature of the finding's primary location, the job's uses value.
 // The findings have to number the secrets: inherit lines in the workflows, so a changed output
 // shape, or a finding zizmor stops reporting, fails the row rather than passing it. That count reads
@@ -3287,7 +3287,7 @@ void RequireInheritCallees(FilePath zizmor, string[] workflows)
         when (error is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
     {
         throw new CakeException(
-            $"zizmor's JSON did not read as json-v1 from zizmor 1.30.1, which the gate reads for secrets-inherit callees: {Quoted(error.Message)}."
+            $"zizmor's JSON did not read as json-v1, which the gate reads for secrets-inherit callees: {Quoted(error.Message)}."
         );
     }
 
