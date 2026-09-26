@@ -546,12 +546,11 @@ const string shellCheckDirectiveRefusal = "The gate refuses a ShellCheck directi
 // word, so shell: /bin/bash runs bash with no ShellCheck, and every other value is refused.
 string[] shellCheckedShells = ["bash", "sh", "pwsh"];
 
-// The one place whose reusable workflows a job may call with secrets: inherit, which hands the called
-// workflow every secret its caller can read.
-const string inheritCallee = "zachthedev/.github/.github/workflows/";
-
 // zizmor's config, where every waiver of a finding lives.
 const string zizmorConfig = ".github/zizmor.yml";
+
+// The one Renovate config, which the shared deps job names ahead of Renovate's own search list.
+const string renovateConfig = ".github/renovate.json";
 
 // The host each address in mise.lock has to name, and the path under it. A url elsewhere is an
 // install fetching bytes from elsewhere, whatever the rest of the entry says.
@@ -601,7 +600,7 @@ const string justificationRule = "SA" + "1404";
 // needs none installed, and check runs it ahead of every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, no bunfig.toml key but the cooldown, no config file a tool would read past the ones the gate names, no key named twice in the JSON config a tool reads, and no inline waiver no analyzer checks"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, no bunfig.toml key but the cooldown, no config file a tool would read past the ones the gate names, .github/renovate.json in place, no key named twice in the JSON config a tool reads or in .github/zizmor.yml, and no inline waiver no analyzer checks"
     )
     .Does(() => RequireLockfile());
 
@@ -624,7 +623,7 @@ Task("tools")
 
 Task("workflows")
     .Description(
-        "actionlint with ShellCheck behind a stand-in that refuses its directives over .github/workflows, each shell: held to bash, sh or pwsh, then zizmor over .github, from the paths mise resolves in locked mode, every job passing secrets: inherit held to a zachthedev/.github workflow, and every secrets-inherit waiver held to a call zizmor reports"
+        "actionlint with ShellCheck behind a stand-in that refuses its directives over .github/workflows, each shell: held to bash, sh or pwsh, then zizmor over .github, from the paths mise resolves in locked mode"
     )
     .IsDependentOn("lockfile")
     .Does(() =>
@@ -697,8 +696,6 @@ Task("workflows")
                 return token is null ? settings : settings.WithEnvironmentVariable("GH_TOKEN", token);
             }
         );
-
-        RequireInheritCallees(Verified(resolved, "zizmor"), workflows);
     });
 
 // lockfile first by name as well as through code, so the order is stated where the gate is
@@ -1140,14 +1137,16 @@ FilePath BunX(string tool)
 }
 
 // Every check on the tree's config files, run before each tool the gate starts: the tracked-path
-// refusals, bunfig.toml, every other name a tool searches for, a key named twice in the JSON config
-// a tool reads, and the inline waivers no analyzer checks. The two config checks read one walk.
+// refusals, bunfig.toml, every other name a tool searches for, the one Renovate config, a key named
+// twice in the JSON config a tool reads or in zizmor's config, and the inline waivers no analyzer
+// checks. The two config checks read one walk.
 void RequireConfigFiles()
 {
     RequireNoRefusedTrackedPaths();
     RequireBunfig();
     List<string> tree = TreeFiles(buildOutput: true);
     RequireNoConfigElsewhere(tree);
+    RequireRenovateConfig();
     RequireKeysOnce(tree);
     RequireNoInlineWaivers();
 }
@@ -1344,13 +1343,12 @@ void RequireOnlyPinnedMiseFiles()
 // A tracked .env or .env.<name> at any depth is refused as well: Bun loads the one at the root into
 // every process it starts, prettier and commitlint included, and no bun x flag stops it. So is a
 // lefthook-local or .lefthook-local file at the root, which lefthook merges over lefthook.yml on
-// every run. A zizmor: ignore[ comment in a tracked file under .github is refused, because zizmor
-// honors it with no config. A tracked node_modules path is the shared commits job's to refuse, on
-// every pull request. git answers what is tracked, so a contributor's own untracked .env or
-// lefthook-local file passes. An extraction from git archive has no .git at the root and tracks
-// nothing, so the check starts no git there and passes. No GIT_ variable reaches git, and git has
-// to name the root as its top level, so the repository and index it reads are the checkout's own,
-// never ones a shell or hook exported or a directory above the root holds.
+// every run. A tracked node_modules path is the shared commits job's to refuse, on every pull
+// request. git answers what is tracked, so a contributor's own untracked .env or lefthook-local
+// file passes. An extraction from git archive has no .git at the root and tracks nothing, so the
+// check starts no git there and passes. No GIT_ variable reaches git, and git has to name the root
+// as its top level, so the repository and index it reads are the checkout's own, never ones a
+// shell or hook exported or a directory above the root holds.
 void RequireNoRefusedTrackedPaths()
 {
     string root = Context.Environment.WorkingDirectory.FullPath;
@@ -1442,35 +1440,6 @@ void RequireNoRefusedTrackedPaths()
             $"The repository tracks {string.Join(", ", lefthookLocal.Select(Quoted))} at the root, and the gate takes no tracked lefthook local file. "
                 + "lefthook merges one over lefthook.yml on every run, so a job there replaces the hook's command. "
                 + "Remove it from the commit, and keep your own copy untracked, as .gitignore does."
-        );
-    }
-
-    System.Text.RegularExpressions.Regex waiver = new(
-        @"zizmor\s*:\s*ignore\s*\[",
-        System.Text.RegularExpressions.RegexOptions.IgnoreCase
-    );
-    string[] waivers =
-    [
-        .. tracked
-            .Where(path =>
-                path.StartsWith(".github/", StringComparison.OrdinalIgnoreCase)
-                && System.IO.File.Exists(System.IO.Path.Combine(root, path))
-            )
-            .SelectMany(path =>
-                System
-                    .IO.File.ReadAllLines(System.IO.Path.Combine(root, path))
-                    .Select((line, index) => (path, line, number: index + 1))
-            )
-            .Where(entry => waiver.IsMatch(entry.line))
-            .Select(entry => $"{Quoted(entry.path)} line {entry.number}")
-            .Order(StringComparer.Ordinal),
-    ];
-    if (waivers.Length > 0)
-    {
-        throw new CakeException(
-            $"The repository tracks a zizmor: ignore[ comment at {string.Join(", ", waivers)}, and the gate takes no inline zizmor waiver under .github. "
-                + "zizmor honors one with no config, so it waives a finding outside .github/zizmor.yml, where review reads every waiver. "
-                + "Move the waiver to rules.<audit>.ignore in .github/zizmor.yml as the file name."
         );
     }
 
@@ -1653,14 +1622,11 @@ void RequireNoConfigElsewhere(IReadOnlyCollection<string> tree)
 // file, project .user files and obj imports, NuGet's config, the analyzers' .editorconfig and
 // .globalconfig, Bun's tsconfig.json and jsconfig.json, Cake's cake.config, commitlint over
 // cosmiconfig, lefthook, actionlint's .github/actionlint.yaml, the test platform's testconfig.json
-// and xUnit's xunit.runner.json, and Renovate's config names at the root.
+// and xUnit's xunit.runner.json.
 // A name is refused at every depth the tool, or an editor running it, searches. package.yaml is
 // refused whole, since the gate does not read its keys. In obj, MSBuild imports
 // <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on every
-// restore, so that pair alone passes. Renovate takes the first config it finds: a root
-// renovate.json, .jsonc or .json5 comes ahead of .github/renovate.json, and .renovaterc or
-// .renovaterc.json, .jsonc or .json5 after it. Each would stand in for the one Renovate config the
-// gate reads.
+// restore, so that pair alone passes.
 static string? SearchedConfig(string relative)
 {
     string[] commitlintFiles =
@@ -1722,16 +1688,6 @@ static string? SearchedConfig(string relative)
         _ when name is "tsconfig.json" or "jsconfig.json" =>
             "Bun reads its paths and jsx settings for the modules prettier and commitlint load",
         _ when atRoot && name == "cake.config" => "Cake reads its settings before any task runs",
-        _ when atRoot
-                && name
-                    is "renovate.json"
-                        or "renovate.jsonc"
-                        or "renovate.json5"
-                        or ".renovaterc"
-                        or ".renovaterc.json"
-                        or ".renovaterc.jsonc"
-                        or ".renovaterc.json5" =>
-            "Renovate reads it as its config in place of .github/renovate.json, the one Renovate config the gate reads, when it comes first in Renovate's search or that file is gone",
         _ when atRoot && commitlintFiles.Contains(name) && relative != "commitlint.config.js" =>
             "a bare commitlint run or an editor extension reads it as config, where every check loads commitlint.config.js through --config",
         _ when atRoot && (lefthookFiles.Contains(name) || name.StartsWith(".lefthook.", StringComparison.Ordinal)) =>
@@ -1786,6 +1742,19 @@ static string? RefusedPackageJson(string path)
     }
 }
 
+// The shared deps job names .github/renovate.json ahead of Renovate's own search list, so the file
+// wins wherever it exists. With it gone, Renovate goes on down that list and reads a root
+// renovate.json or .renovaterc in its place, so the file has to exist.
+void RequireRenovateConfig()
+{
+    if (!System.IO.File.Exists(renovateConfig))
+    {
+        throw new CakeException(
+            $"The tree holds no {renovateConfig}. The shared deps job names it ahead of Renovate's own search list, so without it Renovate reads a root renovate.json or .renovaterc in its place. Restore the file."
+        );
+    }
+}
+
 // Every key named twice in one object of the JSON config a tool reads: each package.json the walk
 // finds, .github/renovate.json, global.json and dotnet-tools.json. The readers disagree on which copy
 // wins. Bun keeps the first in package.json and setup-bun the last, the dotnet host keeps the first
@@ -1793,7 +1762,9 @@ static string? RefusedPackageJson(string path)
 // dotnet-tools.json, and Renovate refuses its file at its next run. The gate reads each as strict
 // JSON, with no comment or trailing comma, and refuses one that does not parse, at the line and byte
 // where the parse stops, since it then cannot tell whether a key is named twice. A missing file names
-// no key.
+// no key. Every key named twice in one mapping of .github/zizmor.yml is refused too, whatever its tag
+// or quotes: zizmor keeps the last copy, where a reviewer reads the first, and no shared step reads
+// the file for one.
 void RequireKeysOnce(IReadOnlyCollection<string> tree)
 {
     string[] paths =
@@ -1802,7 +1773,7 @@ void RequireKeysOnce(IReadOnlyCollection<string> tree)
                 System.IO.Path.GetFileName(file).Equals("package.json", StringComparison.OrdinalIgnoreCase)
             )
             .Order(StringComparer.Ordinal),
-        .. ((string[])[".github/renovate.json", "global.json", "dotnet-tools.json"]).Where(System.IO.File.Exists),
+        .. ((string[])[renovateConfig, "global.json", "dotnet-tools.json"]).Where(System.IO.File.Exists),
     ];
     List<string> twice = [];
     List<string> unreadable = [];
@@ -1833,6 +1804,23 @@ void RequireKeysOnce(IReadOnlyCollection<string> tree)
         }
     }
 
+    if (System.IO.File.Exists(zizmorConfig))
+    {
+        try
+        {
+            if (TwiceNamedYamlKey(System.IO.File.ReadAllText(zizmorConfig)) is (string key, long first, long second))
+            {
+                twice.Add(
+                    $"{Quoted(zizmorConfig)} carries the key {Quoted(key)} twice in one mapping, at lines {first} and {second}, and zizmor keeps the last copy"
+                );
+            }
+        }
+        catch (YamlDotNet.Core.YamlException error)
+        {
+            unreadable.Add($"{Quoted(zizmorConfig)} stops reading as YAML at line {error.Start.Line}");
+        }
+    }
+
     List<string> refusals = [];
     if (twice.Count > 0)
     {
@@ -1844,7 +1832,7 @@ void RequireKeysOnce(IReadOnlyCollection<string> tree)
     if (unreadable.Count > 0)
     {
         refusals.Add(
-            $"{string.Join("; ", unreadable)}. The gate reads these files as strict JSON, with no comment or trailing comma, so it can tell whether a key is named twice. Fix the file there."
+            $"{string.Join("; ", unreadable)}. The gate reads each of these files whole, the JSON ones as strict JSON with no comment or trailing comma, so it can tell whether a key is named twice. Fix the file there."
         );
     }
 
@@ -1877,6 +1865,62 @@ static string? TwiceNamed(string text)
         return named.Success
             ? $"the key {Quoted(named.Groups[1].Value)} twice in one object"
             : $"a key twice in one object, as .NET reports it: {Quoted(error.Message)}";
+    }
+}
+
+// The first key a YAML text names twice in one mapping, compared by its scalar value whatever its
+// tag or quotes, with the lines of both copies, or null when every mapping names each key once.
+// YamlDotNet's model refuses a plain or quoted copy as it loads, and holds a copy tagged !!str as
+// another key, so the text is read here as the parser's events.
+static (string Key, long First, long Second)? TwiceNamedYamlKey(string text)
+{
+    YamlDotNet.Core.Parser parser = new(new System.IO.StringReader(text));
+
+    // One entry per open collection: the keys a mapping has named so far, with their lines, and
+    // whether its next node is a key. A sequence has no keys.
+    List<(Dictionary<string, long>? Keys, bool AtKey)> open = [];
+    while (parser.MoveNext())
+    {
+        switch (parser.Current)
+        {
+            case YamlDotNet.Core.Events.Scalar scalar:
+                if (open is [.., (Dictionary<string, long> keys, true)])
+                {
+                    if (keys.TryGetValue(scalar.Value, out long first))
+                    {
+                        return (scalar.Value, first, scalar.Start.Line);
+                    }
+
+                    keys[scalar.Value] = scalar.Start.Line;
+                }
+
+                Ended();
+                break;
+            case YamlDotNet.Core.Events.AnchorAlias:
+                Ended();
+                break;
+            case YamlDotNet.Core.Events.MappingStart:
+                open.Add((new Dictionary<string, long>(StringComparer.Ordinal), true));
+                break;
+            case YamlDotNet.Core.Events.SequenceStart:
+                open.Add((null, false));
+                break;
+            case YamlDotNet.Core.Events.MappingEnd or YamlDotNet.Core.Events.SequenceEnd:
+                open.RemoveAt(open.Count - 1);
+                Ended();
+                break;
+        }
+    }
+
+    return null;
+
+    // A node ended, so the mapping that holds it, if any, turns from key to value or back.
+    void Ended()
+    {
+        if (open is [.., (Dictionary<string, long> keys, bool atKey)])
+        {
+            open[^1] = (keys, !atKey);
+        }
     }
 }
 
@@ -3388,309 +3432,6 @@ string? GitHubToken(out string why)
 
     why = "gh auth token answered, and the token goes to zizmor's process alone";
     return token;
-}
-
-// .github/zizmor.yml waives secrets-inherit by file, and a waiver binds a file, never the workflow a
-// job calls. So a new job in cd.yml or deps.yml could hand every secret to another repository's
-// workflow unseen. This runs zizmor again, offline, with no config and no ignores, and every
-// secrets-inherit finding has to call a workflow under inheritCallee. zizmor's json-v1 output
-// gives the callee as the concrete feature of the finding's primary location, the job's uses value.
-// The findings have to number the secrets: inherit lines in the workflows, so a changed output
-// shape, or a finding zizmor stops reporting, fails the row rather than passing it. That count reads
-// a secrets: inherit line inside a block scalar and misses a quoted key, so it holds the total alone
-// and says nothing about which file holds a call.
-//
-// zizmor matches a waiver to a finding by the workflow's file name, and by line and column as well
-// when the waiver gives them, against any of the finding's locations, counted from 1. So every
-// secrets-inherit waiver has to match a location of a finding from the same no-config run. One that
-// matches none waives nothing today, and it waives the next inherit call a later change puts where it
-// points, with no word in the diff. zizmor matches a file name alone, so an entry naming a path never
-// matches at all.
-void RequireInheritCallees(FilePath zizmor, string[] workflows)
-{
-    int exit = StartProcess(
-        zizmor,
-        new ProcessSettings
-        {
-            Arguments =
-                "--no-progress --offline --no-config --no-ignores --strict-collection --no-exit-codes --format json-v1 --collect=all .github",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            Silent = true,
-            EnvironmentVariables = Uncolored(),
-        },
-        out IEnumerable<string> output,
-        out IEnumerable<string> errors
-    );
-    if (exit != 0)
-    {
-        throw new CakeException(
-            $"zizmor exited {exit} listing its findings with no config, saying {Quoted(string.Join(" ", errors))}."
-        );
-    }
-
-    List<string> callees = [];
-    List<(string File, long Line, long Column)> places = [];
-    try
-    {
-        using JsonDocument document = JsonDocument.Parse(string.Join("\n", output.Select(Plain)));
-        foreach (JsonElement finding in document.RootElement.EnumerateArray())
-        {
-            if (finding.GetProperty("ident").GetString() != "secrets-inherit")
-            {
-                continue;
-            }
-
-            JsonElement[] locations = [.. finding.GetProperty("locations").EnumerateArray()];
-            callees.Add(
-                locations
-                    .Where(location => location.GetProperty("symbolic").GetProperty("kind").GetString() == "Primary")
-                    .Select(location => location.GetProperty("concrete").GetProperty("feature").GetString())
-                    .FirstOrDefault()
-                    ?? throw new CakeException(
-                        "zizmor reported a secrets-inherit finding with no primary location, so the gate cannot tell which workflow the job calls."
-                    )
-            );
-
-            // zizmor names a local file by the path it was given, with backslashes on Windows.
-            foreach (JsonElement location in locations)
-            {
-                string path =
-                    location
-                        .GetProperty("symbolic")
-                        .GetProperty("key")
-                        .GetProperty("Local")
-                        .GetProperty("verbatim_path")
-                        .GetString()
-                    ?? "";
-                JsonElement start = location.GetProperty("concrete").GetProperty("location").GetProperty("start_point");
-                places.Add(
-                    (
-                        path.Replace('\\', '/').Split('/')[^1],
-                        start.GetProperty("row").GetInt64() + 1,
-                        start.GetProperty("column").GetInt64() + 1
-                    )
-                );
-            }
-        }
-    }
-    catch (Exception error)
-        when (error is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
-    {
-        throw new CakeException(
-            $"zizmor's JSON did not read as json-v1, which the gate reads for secrets-inherit callees: {Quoted(error.Message)}."
-        );
-    }
-
-    System.Text.RegularExpressions.Regex inherit = new(@"^\s*secrets\s*:\s*inherit\s*(#.*)?$");
-    int inherits = workflows.Sum(file => System.IO.File.ReadAllLines(file).Count(line => inherit.IsMatch(line)));
-    if (callees.Count != inherits)
-    {
-        throw new CakeException(
-            $"zizmor reported {callees.Count} jobs passing secrets: inherit, and the workflows hold {inherits} secrets: inherit lines. "
-                + "The gate holds each such job to its callee, so the two counts have to agree. Write each one as secrets: inherit on its own line."
-        );
-    }
-
-    string[] outside =
-    [
-        .. callees.Where(callee => !callee.StartsWith(inheritCallee, StringComparison.Ordinal)).Select(Quoted),
-    ];
-    if (outside.Length > 0)
-    {
-        throw new CakeException(
-            $"A job passing secrets: inherit calls {string.Join(", ", outside)}, and the gate takes a workflow under {inheritCallee} alone. "
-                + "inherit hands the called workflow every secret the caller can read. Pass the secrets it needs by name, or call a workflow in zachthedev/.github."
-        );
-    }
-
-    string[] waivers = SecretsInheritWaivers();
-    string[] stale =
-    [
-        .. waivers
-            .Where(waiver => !places.Any(place => Waives(waiver, place)))
-            .Select(waiver =>
-                waiver.Contains('/') || waiver.Contains('\\')
-                    ? $"{Quoted(waiver)}, a path, which zizmor never matches, since it matches a file name alone"
-                    : $"{Quoted(waiver)}, which matches no call today and would waive the next one put where it points"
-            ),
-    ];
-    if (stale.Length > 0)
-    {
-        throw new CakeException(
-            $"{zizmorConfig} holds secrets-inherit waivers that match no secrets: inherit call zizmor reports: {string.Join("; ", stale)}. "
-                + "zizmor matches a waiver by file name, and by line and column when it gives them. Remove each one."
-        );
-    }
-
-    Information(
-        "{0}",
-        callees.Count switch
-        {
-            0 => "No job passes secrets: inherit.",
-            1 => $"secrets: inherit reaches 1 called workflow, under {inheritCallee}: {callees[0]}",
-            _ =>
-                $"secrets: inherit reaches {callees.Count} called workflows, each under {inheritCallee}: {string.Join(", ", callees.Order(StringComparer.Ordinal))}",
-        }
-    );
-    Information(
-        "{0}",
-        waivers.Length switch
-        {
-            0 => $"{zizmorConfig} holds no secrets-inherit waiver.",
-            1 => $"1 secrets-inherit waiver, matching a call zizmor reports: {Quoted(waivers[0])}",
-            _ =>
-                $"{waivers.Length} secrets-inherit waivers, each matching a call zizmor reports: {string.Join(", ", waivers.Select(Quoted))}",
-        }
-    );
-
-    // Whether a waiver, written as a file name with an optional :line or :line:column, matches one
-    // location of a finding, as zizmor matches it.
-    static bool Waives(string waiver, (string File, long Line, long Column) place)
-    {
-        System.Text.RegularExpressions.Match parts = System.Text.RegularExpressions.Regex.Match(
-            waiver,
-            @"^(.*?)(?::([0-9]+)(?::([0-9]+))?)?$",
-            System.Text.RegularExpressions.RegexOptions.Singleline
-        );
-        return parts.Groups[1].Value == place.File
-            && (
-                !parts.Groups[2].Success
-                || long.TryParse(
-                    parts.Groups[2].Value,
-                    System.Globalization.NumberStyles.None,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out long line
-                )
-                    && line == place.Line
-            )
-            && (
-                !parts.Groups[3].Success
-                || long.TryParse(
-                    parts.Groups[3].Value,
-                    System.Globalization.NumberStyles.None,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out long column
-                )
-                    && column == place.Column
-            );
-    }
-}
-
-// The entries of rules.secrets-inherit.ignore in zizmor's config, as written, or none when the file,
-// the rule or the list is absent or the list is empty. Keys match with case, as zizmor reads them.
-// zizmor keeps the last copy of a key named twice, so a mapping that names one twice, whatever its
-// tag or quotes, is refused before anything reads it. A config YamlDotNet cannot read, or a list
-// holding anything but file names, is refused, since the gate then cannot tell which files it
-// waives.
-static string[] SecretsInheritWaivers()
-{
-    if (!System.IO.File.Exists(zizmorConfig))
-    {
-        return [];
-    }
-
-    string text = System.IO.File.ReadAllText(zizmorConfig);
-    YamlStream stream = new();
-    try
-    {
-        if (TwiceNamedYamlKey(text) is (string key, long first, long second))
-        {
-            throw new CakeException(
-                $"{zizmorConfig} names the key {Quoted(key)} twice in one mapping, at lines {first} and {second}. "
-                    + "zizmor keeps the last copy of a key named twice, whatever its tag or quotes, so a later copy replaces what the first one says. Write the key once."
-            );
-        }
-
-        stream.Load(new System.IO.StringReader(text));
-    }
-    catch (YamlDotNet.Core.YamlException error)
-    {
-        throw new CakeException(
-            $"{zizmorConfig} does not read as YAML at line {error.Start.Line}: {Quoted(error.Message)}. "
-                + "The gate reads its secrets-inherit waivers. Fix the file."
-        );
-    }
-
-    YamlNode? ignore =
-        stream.Documents is [{ RootNode: YamlMappingNode top }, ..]
-        && Child(top, "rules") is YamlMappingNode rules
-        && Child(rules, "secrets-inherit") is YamlMappingNode rule
-            ? Child(rule, "ignore")
-            : null;
-    return ignore switch
-    {
-        null or YamlScalarNode { Value: "" } => [],
-        YamlSequenceNode entries when entries.Children.All(entry => entry is YamlScalarNode { Value.Length: > 0 }) =>
-        [
-            .. entries.Children.OfType<YamlScalarNode>().Select(entry => entry.Value ?? ""),
-        ],
-        YamlNode other => throw new CakeException(
-            $"{zizmorConfig} holds rules.secrets-inherit.ignore at line {other.Start.Line} as something other than a list of file names, so the gate cannot tell which files it waives."
-        ),
-    };
-
-    static YamlNode? Child(YamlMappingNode map, string key) =>
-        map
-            .Children.Where(child => child.Key is YamlScalarNode { Value: string name } && name == key)
-            .Select(child => child.Value)
-            .FirstOrDefault();
-}
-
-// The first key a YAML text names twice in one mapping, compared by its scalar value whatever its
-// tag or quotes, with the lines of both copies, or null when every mapping names each key once.
-// YamlDotNet's model refuses a plain or quoted copy as it loads, and holds a copy tagged !!str as
-// another key, so the text is read here as the parser's events.
-static (string Key, long First, long Second)? TwiceNamedYamlKey(string text)
-{
-    YamlDotNet.Core.Parser parser = new(new System.IO.StringReader(text));
-
-    // One entry per open collection: the keys a mapping has named so far, with their lines, and
-    // whether its next node is a key. A sequence has no keys.
-    List<(Dictionary<string, long>? Keys, bool AtKey)> open = [];
-    while (parser.MoveNext())
-    {
-        switch (parser.Current)
-        {
-            case YamlDotNet.Core.Events.Scalar scalar:
-                if (open is [.., (Dictionary<string, long> keys, true)])
-                {
-                    if (keys.TryGetValue(scalar.Value, out long first))
-                    {
-                        return (scalar.Value, first, scalar.Start.Line);
-                    }
-
-                    keys[scalar.Value] = scalar.Start.Line;
-                }
-
-                Ended();
-                break;
-            case YamlDotNet.Core.Events.AnchorAlias:
-                Ended();
-                break;
-            case YamlDotNet.Core.Events.MappingStart:
-                open.Add((new Dictionary<string, long>(StringComparer.Ordinal), true));
-                break;
-            case YamlDotNet.Core.Events.SequenceStart:
-                open.Add((null, false));
-                break;
-            case YamlDotNet.Core.Events.MappingEnd or YamlDotNet.Core.Events.SequenceEnd:
-                open.RemoveAt(open.Count - 1);
-                Ended();
-                break;
-        }
-    }
-
-    return null;
-
-    // A node ended, so the mapping that holds it, if any, turns from key to value or back.
-    void Ended()
-    {
-        if (open is [.., (Dictionary<string, long> keys, bool atKey)])
-        {
-            open[^1] = (keys, !atKey);
-        }
-    }
 }
 
 // The arguments actionlint lints .github with, returned once actionlint has reported a ShellCheck

@@ -603,11 +603,9 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   depth, which cosmiconfig reads; `lefthook.yaml`, `.json`, `.jsonc` and `.toml`, and any
   `.lefthook.*`, at the root; and a root `cake.config`, which Cake reads before any task runs. It
   refuses a `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules
-  prettier and commitlint load, and the repository has no TypeScript. It refuses a root
-  `renovate.json`, `.jsonc` or `.json5`, and a root `.renovaterc`, `.renovaterc.json`, `.jsonc` or
-  `.json5`: Renovate takes the first config it finds, reads the first three ahead of
-  `.github/renovate.json` and the rest when that file is gone, and `.github/renovate.json` is the
-  one Renovate config here.
+  prettier and commitlint load, and the repository has no TypeScript. It requires
+  `.github/renovate.json`, which the shared `deps` job names ahead of Renovate's own search list, so
+  a root Renovate config passes and Renovate reads no other.
 - A `package.json` with a top-level `commitlint`, `cosmiconfig` or `patchedDependencies` key is
   refused. `bun install` applies a root `patchedDependencies` entry to the package it names, under
   a frozen lockfile too and with no `bun.lock` change, so a patch would change what prettier or
@@ -621,7 +619,9 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   read them, so `"a"` and `"\u0061"` are one key and `"a"` and `"A"` are two. The gate reads
   these files as strict JSON, with no comment and no trailing comma, and refuses one that does not
   parse, at the line and byte where the parse stops, since it then cannot tell. The refusal names a
-  duplicate key as .NET does, cut to its first 15 characters.
+  duplicate key as .NET does, cut to its first 15 characters. A key named twice in one mapping of
+  `.github/zizmor.yml` is refused too, whatever its tag or quotes: zizmor keeps the last copy, where
+  a reviewer reads the first, and no shared step reads the file for one.
 - lefthook's commit-msg hook passes `--config commitlint.config.js`, and both lint steps of the
   shared `commits` job pass `--config` too. None of them searches for another config. A bare
   `commitlint` run or an editor extension still searches, and a config it finds there would
@@ -637,10 +637,10 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
 - prettier's CLI skips a directory named `.git`, `.sl`, `.svn`, `.hg` or `.jj` without a word, and
   the tree walk skips `.git` at any depth, so no row checks a file under one. Name no directory that
   way. Review reads what a row skips.
-- The tracked-path check refuses a `zizmor: ignore[` comment in any tracked file under `.github`,
-  because zizmor honors one with no config. A waiver goes in `.github/zizmor.yml` as a
-  `rules.<audit>.ignore` entry. zizmor takes no config waiver for a composite action's finding, so
-  such a finding cannot be waived here.
+- The shared `workflows` job refuses a `zizmor: ignore[` comment in any tracked file under
+  `.github`, read as text, because zizmor honors one with no config. A waiver goes in
+  `.github/zizmor.yml` as a `rules.<audit>.ignore` entry. zizmor takes no config waiver for a
+  composite action's finding, so such a finding cannot be waived here.
 - The `workflows` row passes actionlint a `-shellcheck` command that starts `cake.cs` again as a
   ShellCheck stand-in, through a hidden argument it reads before Cake reads any. actionlint writes
   each script to the stand-in's stdin as ShellCheck would read it, with every YAML escape decoded
@@ -657,18 +657,11 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   YamlDotNet for that, so an escape or an alias resolves to the value GitHub reads, and it refuses
   a workflow YamlDotNet cannot read.
 - The two `secrets-inherit` waivers name `cd.yml` and `deps.yml` whole. A waiver binds a file,
-  never the workflow a job calls, so the `workflows` row runs zizmor again with no config and no
-  ignores. Every job passing `secrets: inherit` has to call a workflow under
-  `zachthedev/.github/.github/workflows/`, and zizmor's count of such jobs has to equal the
-  `secrets: inherit` lines in the workflows. The row prints each callee. zizmor matches a waiver to
-  a finding by the workflow's file name, and by line and column too when the waiver gives them, as
-  `cd.yml:22:11`, against any of the finding's locations. The row reads
-  `rules.secrets-inherit.ignore` with YamlDotNet and holds each waiver to a location of a
-  secrets-inherit finding from its no-config run. A waiver that matches none waives nothing, and it
-  waives the next inherit call put where it points with no word in the diff, so the row refuses it.
-  An entry naming a path never matches, since zizmor matches a file name alone. zizmor keeps the
-  last copy of a key named twice, so the row also refuses a mapping in `.github/zizmor.yml` that
-  names a key twice, whatever its tag or quotes.
+  never the workflow a job calls, so the shared `workflows` job runs zizmor again with no config.
+  Every job passing `secrets: inherit` has to call a workflow in `zachthedev/.github`. A waiver
+  that names a position is refused, since a later edit can move another call under it. One that
+  names a file holding no such job waives nothing today and would waive the next inherit call added
+  there.
 - `mise.toml` sets `locked_verify_provenance`, so an install re-verifies each attestation rather
   than trusting the lockfile's recorded one, and `[tool_config] locked = true`, which mise enforces
   whatever `locked_scopes` says. `lockfile_platforms` there names the platforms every `mise.lock`
