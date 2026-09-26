@@ -11,9 +11,8 @@ public static class AppUserAgent
     /// <c>Version</c> that Directory.Build.props sets, with any <c>+</c> build metadata cut off.
     /// </summary>
     /// <remarks>
-    /// The SDK appends the source commit to the informational version as build metadata. Semantic versioning
-    /// ignores build metadata when it compares versions, so the token names the release alone, and no host the
-    /// client reaches receives the commit.
+    /// The SDK appends the source commit to the informational version as build metadata. The token names the
+    /// release alone, so no host the client reaches receives the commit.
     /// </remarks>
     /// <param name="assembly">The assembly whose version the token carries, normally the app's own.</param>
     /// <returns>The product token.</returns>

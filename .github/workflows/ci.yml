@@ -35,7 +35,7 @@ jobs:
   # the same two files. jdx/mise-action pins mise itself on its version line and verifies the
   # download against the release's minisign-signed checksums.
   gate:
-    # Windows: the WinUI XAML compiler, the net10.0-windows test host and WiX's MSI run there alone.
+    # Windows: the WinUI XAML compiler, the Windows-targeted test host and WiX's MSI run there alone.
     runs-on: windows-latest
     # The bound covers a cold NuGet restore, the WinUI build, the suite and the MSI on a Windows
     # runner.

@@ -38,7 +38,8 @@ in Settings, which `Start-Process ms-settings:developers` opens.
 git clone https://github.com/zachthedev/winget-nudge.git
 Set-Location winget-nudge
 $version = (Get-Content -Path global.json -Raw | ConvertFrom-Json).sdk.version
-winget install --id Microsoft.DotNet.SDK.10 --version $version --exact
+$major = $version.Split('.')[0]
+winget install --id "Microsoft.DotNet.SDK.$major" --version $version --exact
 ```
 
 The SDK install reads the exact version `global.json` pins. Open a new terminal in the clone
@@ -144,7 +145,8 @@ it. Keep it unset in the shell you run `mise install` from.
 
 ```powershell
 dotnet build src/WingetNudge
-$app = 'src/WingetNudge/bin/Debug/net10.0-windows10.0.26100.0/win-x64/WingetNudge.exe'
+$framework = dotnet msbuild src/WingetNudge -getProperty:TargetFramework
+$app = "src/WingetNudge/bin/Debug/$framework/win-x64/WingetNudge.exe"
 & $app
 & $app check
 ```
@@ -247,8 +249,8 @@ DigiCert timestamp. A self-signed certificate verifies only on a machine that tr
 - `installer`: the WiX project for the per-user MSI.
 - `installer/CustomActions`: the custom action setup runs before it changes anything. It finds the
   Windows App Runtime the app needs among the packages registered for the installing user. It
-  targets .NET Framework 4.7.2, because WiX's DTF host runs a managed custom action in the .NET
-  Framework.
+  targets the .NET Framework its project file names, because WiX's DTF host runs a managed custom
+  action in the .NET Framework.
 - `tools`: build-time scripts. `Update-WingetErrorCodes.ps1` regenerates
   `src/WingetNudge.Core/Packages/WingetErrorCodes.cs` from `winget error --output`
   ([Generated files](#generated-files)).
@@ -473,11 +475,11 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   comments, have to read `[install]` or `minimumReleaseAge = ` and digits, in printable ASCII, so
   Bun and the gate cannot read it two ways. The gate reads no value there and passes a checkout
   with no `bunfig.toml`, so review holds the cooldown.
-- The prettier row runs prettier with `--config .prettierrc`. On prettier 3.9.8 that stops the read
-  of every other config file, a nested `.prettierrc` and a `package.json` `prettier` key included,
-  so the gate refuses none of them. An editor's prettier still reads one. The row also passes
-  `--no-editorconfig`, so no `.editorconfig` sets the indent, line ending or width prettier formats
-  with.
+- The prettier row runs prettier with `--config .prettierrc`. On the prettier `package.json` pins,
+  that stops the read of every other config file, a nested `.prettierrc` and a `package.json`
+  `prettier` key included, so the gate refuses none of them. An editor's prettier still reads one.
+  The row also passes `--no-editorconfig`, so no `.editorconfig` sets the indent, line ending or
+  width prettier formats with.
 - The config walk behind `lockfile` is the rows' walk of the tree described above, and it also reads
   the `bin` and `obj` beside each project, which the rows skip, because MSBuild imports files from
   `obj`. It reads the file system, because a tool reads an untracked file too. It refuses any
@@ -491,13 +493,13 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   so `.gitignore` takes nothing out of it, and `.prettierignore` lists the local paths `.gitignore`
   covers that prettier would read. A `.github/actionlint.yaml` is refused, because its `paths` block
   ignores actionlint's errors by pattern.
-- The `format` row takes each file of the walk with an extension CSharpier 1.3.0 formats, and names
-  them in batches that fit a Windows command line, each held to the count above. It passes
-  `--config-path` with the absolute path of `.csharpierrc`, `--ignore-path .csharpierignore` and
-  `--include-generated`. CSharpier then reads no other config or ignore file, and checks a file
-  whose header calls it generated. The path is absolute because CSharpier anchors a config's
-  `overrides` to its directory, as an editor's CSharpier does. A named file is checked whatever
-  `.gitignore` says, so a local `Directory.Signing.props` is checked too.
+- The `format` row takes each file of the walk with an extension the CSharpier `dotnet-tools.json`
+  pins formats, and names them in batches that fit a Windows command line, each held to the count
+  above. It passes `--config-path` with the absolute path of `.csharpierrc`,
+  `--ignore-path .csharpierignore` and `--include-generated`. CSharpier then reads no other config
+  or ignore file, and checks a file whose header calls it generated. The path is absolute because
+  CSharpier anchors a config's `overrides` to its directory, as an editor's CSharpier does. A named
+  file is checked whatever `.gitignore` says, so a local `Directory.Signing.props` is checked too.
 - The `build`, `tests` and `installer` rows name the root `Directory.Build.props`,
   `Directory.Build.targets` and `Directory.Packages.props` to MSBuild, so it searches above no
   project for them. The root holds no `Directory.Build.targets`, and MSBuild imports a named file
@@ -681,8 +683,7 @@ pull request number appended, which is why the title is held to the same rules.
 
 A pull request's title takes the type of its most user-facing commit, and `!` when any commit
 breaks something users see. A squash of several commits lands the title's type alone. A `feat`
-under a `chore` title never reaches the changelog. A `!` on one of those commits is lost too, with
-its major bump.
+under a `chore` title never reaches the changelog. A `!` on one of those commits is lost too.
 
 A revert is written `revert(<scope>): <what it undoes, in fresh words>`, in a commit subject and a
 pull request title alike. A `Refs: <sha>` footer names each commit it reverts. A reverted header
@@ -784,7 +785,7 @@ owner alone.
   copy of itself. Renovate rewrites both in one pull request by running `mise lock`. The pins sit in
   a data file rather than in `cake.cs`, because a formatter moves source and a pin that moves is a
   pin no tool can read. A pin, and the version `mise.lock` records for it, is digit groups joined by
-  single dots, such as `0.10.0`, and the gate refuses anything else before it builds a `url`. Each
+  single dots, such as `1.2.3`, and the gate refuses anything else before it builds a `url`. Each
   pin becomes part of the `url` the gate asserts and the path it runs.
 - mise verifies a GitHub build attestation for actionlint and zizmor, because aqua's registry
   declares a signer workflow for each. It verifies none for ShellCheck. `koalaman/shellcheck`
@@ -820,17 +821,14 @@ owner alone.
 ## Releases
 
 [release-please](https://github.com/googleapis/release-please) keeps a release pull request open
-against `main`, carrying the next version and the changelog it would ship. The commit types decide
-the version: a breaking change bumps the major, a `feat` the minor and anything else the changelog
-carries the patch.
+against `main`, carrying the next version and the changelog it would ship.
 
 `changelog-sections` in `release-please-config.json` decides which types cut a release, and `hidden`
 there is the release switch rather than a display preference. release-please opens no pull request
 when the changelog it rendered came out empty. The visible set is the one the `zachthedev/.github`
 handbook names, and every other type stays hidden, which keeps a README edit, a Renovate tooling
 bump or a formatting commit from shipping an MSI. A breaking change reaches the changelog whatever
-its type says, and takes the major. `initial-version` in the same file names the first version the
-tool cuts.
+its type says. `initial-version` in the same file names the first version the tool cuts.
 
 Merging that pull request tags the commit and creates the GitHub release as a draft, in the same
 `cd.yml` run that then builds the MSI, checks that its version matches the tag, and waits for a

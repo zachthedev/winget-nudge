@@ -16,7 +16,7 @@ public sealed class RuntimeRequirementTests
     [Fact]
     public void FamilyName_IsTheFamilyTheBootstrapperResolves()
     {
-        // WindowsAppSDK-VersionInfo.cs in Microsoft.WindowsAppSDK.Runtime 2.4.0 names this family.
+        // WindowsAppSDK-VersionInfo.cs in the Microsoft.WindowsAppSDK.Runtime package names this family.
         RuntimeRequirement.FamilyName(Package).Should().Be("Microsoft.WindowsAppRuntime.2_8wekyb3d8bbwe");
     }
 

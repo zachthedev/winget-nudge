@@ -54,8 +54,8 @@
         <WindowsSdkBinVersion>10.0.26100.0</WindowsSdkBinVersion>
         <!--
             WiX Toolset 7 builds neither the MSI nor its custom action until its Open Source
-            Maintenance Fee EULA is accepted, and the owner accepts it for this repository. WiX 6
-            reads no such property.
+            Maintenance Fee EULA is accepted, and the owner accepts it for this repository. An earlier
+            WiX release reads no such property.
         -->
         <AcceptEula>wix7</AcceptEula>
     </PropertyGroup>
