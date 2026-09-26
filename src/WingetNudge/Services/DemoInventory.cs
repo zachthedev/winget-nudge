@@ -79,12 +79,12 @@ internal static class DemoInventory
         new("Python.Python.3.14", "Python 3.14", "3.14.3", "3.14.4", TimeSpan.FromHours(5)),
         new("Discord.Discord", "Discord", "1.0.9212", "1.0.9215", TimeSpan.FromDays(1)),
         new("Microsoft.WindowsTerminal", "Windows Terminal", "1.24.2682.0", "1.25.2181.0", TimeSpan.FromDays(5)),
-        new("Microsoft.DotNet.SDK.10", "Microsoft .NET SDK 10.0", "10.0.401", null, TimeSpan.Zero),
+        new("Microsoft.DotNet.SDK.9", "Microsoft .NET SDK 9.0", "9.0.306", null, TimeSpan.Zero),
     ];
 
     private static readonly Dictionary<string, string> ToolVersions = new(StringComparer.Ordinal)
     {
-        ["bun"] = "1.4.1",
+        ["bun"] = "1.3.12",
         ["uv"] = "uv 0.9.8",
     };
 
@@ -137,7 +137,7 @@ internal static class DemoInventory
                 UpgradeCommand = "bun upgrade",
             }
         );
-        services.Tools.SaveCache("bun", new ToolCacheEntry("1.4.2", now));
+        services.Tools.SaveCache("bun", new ToolCacheEntry("1.3.13", now));
         services.Tools.Register(
             "uv",
             new ToolDefinition
