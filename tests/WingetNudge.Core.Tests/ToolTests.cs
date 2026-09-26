@@ -43,7 +43,7 @@ public sealed class ToolRegistryTests : IDisposable
     public void RegisterAndUnregister_RoundTripAndDropTheCache()
     {
         _registry.Register("bun", Bun());
-        _registry.SaveCache("bun", new ToolCacheEntry("1.4.2", DateTimeOffset.UnixEpoch));
+        _registry.SaveCache("bun", new ToolCacheEntry("1.4.7", DateTimeOffset.UnixEpoch));
         _registry.SaveCache("other", new ToolCacheEntry("9", DateTimeOffset.UnixEpoch));
 
         _registry.Load().Should().ContainKey("bun").WhoseValue.Should().BeEquivalentTo(Bun());
@@ -106,10 +106,10 @@ public sealed class ToolProberTests : IDisposable
     }
 
     [Theory]
-    [InlineData("1.4.2", null, "1.4.2")]
-    [InlineData("bun-v1.4.2", "^bun-v(.+)$", "1.4.2")]
-    [InlineData("bun-v1.4.2", "^uv-v(.+)$", null)]
-    [InlineData("bun-v1.4.2", "no groups", null)]
+    [InlineData("1.4.7", null, "1.4.7")]
+    [InlineData("bun-v1.4.7", "^bun-v(.+)$", "1.4.7")]
+    [InlineData("bun-v1.4.7", "^uv-v(.+)$", null)]
+    [InlineData("bun-v1.4.7", "no groups", null)]
     [InlineData("", null, null)]
     [InlineData("   ", "^(.*)$", null)]
     public void ExtractVersion_AppliesTheSingleGroupRegex(string value, string? pattern, string? expected)
@@ -142,12 +142,12 @@ public sealed class ToolProberTests : IDisposable
     [Fact]
     public async Task GetLatestAsync_FetchesParsesCachesAndHonorsTheTtl()
     {
-        _http.Map("oven-sh/bun/releases/latest", """{ "tag_name": "bun-v1.4.2" }""");
+        _http.Map("oven-sh/bun/releases/latest", """{ "tag_name": "bun-v1.4.7" }""");
 
         (await _prober.GetLatestAsync("bun", ToolRegistryTests.Bun(), false, CancellationToken.None))
             .Should()
-            .Be("1.4.2");
-        _registry.LoadCache()["bun"].Should().Be(new ToolCacheEntry("1.4.2", Now));
+            .Be("1.4.7");
+        _registry.LoadCache()["bun"].Should().Be(new ToolCacheEntry("1.4.7", Now));
 
         _clock.Advance(TimeSpan.FromHours(23));
         await _prober.GetLatestAsync("bun", ToolRegistryTests.Bun(), false, CancellationToken.None);
@@ -231,14 +231,14 @@ public sealed class ToolProberTests : IDisposable
         );
         _registry.Register("bun", ToolRegistryTests.Bun());
         _processes.Map("bun", "1.3.13").Map("uv", "0.5.0");
-        _http.Map("oven-sh/bun", """{ "tag_name": "bun-v1.4.2" }""").Map("/uv", """{ "tag_name": "0.5.0" }""");
+        _http.Map("oven-sh/bun", """{ "tag_name": "bun-v1.4.7" }""").Map("/uv", """{ "tag_name": "0.5.0" }""");
 
         IReadOnlyList<ToolStatus> statuses = await _prober.GetStatusesAsync(CancellationToken.None);
 
         statuses
             .Select(static s => (s.Id, s.Current, s.Latest, s.UpdateAvailable))
             .Should()
-            .Equal(("bun", "1.3.13", "1.4.2", true), ("uv", "0.5.0", "0.5.0", false));
+            .Equal(("bun", "1.3.13", "1.4.7", true), ("uv", "0.5.0", "0.5.0", false));
     }
 }
 
@@ -260,13 +260,13 @@ public sealed class ToolStatusVersionTests
         );
 
     [Theory]
-    [InlineData("1.3.13", "1.4.2", true)]
+    [InlineData("1.3.13", "1.4.7", true)]
     [InlineData("0.12.1", "0.13.0", true)]
     // The same release written two ways is not an update.
-    [InlineData("1.4.2", "v1.4.2", false)]
+    [InlineData("1.4.7", "v1.4.7", false)]
     [InlineData("1.4.0.0", "1.4", false)]
     // A tool ahead of its published release is not an update either.
-    [InlineData("1.5.0", "1.4.2", false)]
+    [InlineData("1.5.0", "1.4.7", false)]
     public void UpdateAvailable_OnlyWhenThePublishedVersionIsNewer(string current, string latest, bool expected)
     {
         Status(current, latest).UpdateAvailable.Should().Be(expected);

@@ -176,7 +176,7 @@ public sealed class UpdateCheckTests : IDisposable
         ToolRegistry registry = new(_data.Paths);
         registry.Register("bun", ToolRegistryTests.Bun());
         using HttpClient http = new FakeHttpHandler()
-            .Map("oven-sh/bun/releases/latest", """{ "tag_name": "bun-v1.4.2" }""")
+            .Map("oven-sh/bun/releases/latest", """{ "tag_name": "bun-v1.4.7" }""")
             .CreateClient();
         ToolProber prober = new(registry, new FakeProcessRunner(), http, _clock);
         UpdateCheck check = new(
