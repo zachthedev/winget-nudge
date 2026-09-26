@@ -6,14 +6,14 @@
         <WinGetModuleSha256>3469E5747EB6B100E51FED3F2057386B5BA60BC8955A6669B5C2EB562E316619</WinGetModuleSha256>
     </PropertyGroup>
     <ItemGroup>
-        <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+        <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
         <PackageVersion Include="Microsoft.WindowsPackageManager.ComInterop" Version="$(WinGetVersion)" />
-        <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.333" />
+        <PackageVersion Include="Microsoft.Windows.CsWin32" Version="0.3.335" />
         <!-- Reads winget's pinning.db. -->
         <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
-        <PackageVersion Include="System.CommandLine" Version="2.0.11" />
+        <PackageVersion Include="System.CommandLine" Version="2.0.12" />
         <PackageVersion Include="Spectre.Console" Version="0.57.2" />
-        <PackageVersion Include="Markdig" Version="1.3.2" />
+        <PackageVersion Include="Markdig" Version="1.4.0" />
         <PackageVersion Include="Humanizer.Core" Version="3.0.10" />
         <PackageVersion Include="TaskScheduler" Version="2.12.2" />
         <PackageVersion Include="YamlDotNet" Version="18.1.0" />
@@ -22,10 +22,10 @@
         <PackageVersion Include="WixToolset.Dtf.WindowsInstaller" Version="6.0.2" />
         <!-- Reference assemblies for the custom action's .NET Framework target, the same on every machine. -->
         <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
-        <PackageVersion Include="xunit.v3" Version="4.0.0" />
+        <PackageVersion Include="xunit.v3" Version="4.0.1" />
         <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
-        <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.0" />
-        <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.9.0" />
+        <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.2" />
+        <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
         <!-- The TOML reader cake.cs uses for mise.toml and mise.lock. -->
         <PackageVersion Include="Tomlyn" Version="2.10.1" />
     </ItemGroup>
