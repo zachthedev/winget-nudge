@@ -13,6 +13,8 @@ installs with winget; open a new terminal afterwards, so `PATH` includes what it
 winget install --id Oven-sh.Bun --exact
 winget install --id Microsoft.PowerShell --exact
 winget install --id jdx.mise --exact
+winget install --id Git.Git --exact
+winget install --id GitHub.cli --exact
 ```
 
 - The .NET SDK, at the version `global.json` names. [First run](#first-run) installs it, because
@@ -24,6 +26,9 @@ winget install --id jdx.mise --exact
   ShellCheck and taplo: `mise.toml` pins the version of each one, `mise.lock` records the artifact
   that version resolved to, and continuous integration installs from the same two files. The gate
   names the `winget install` command when mise is missing.
+- git, which clones the repository and which the gate starts to list the tracked paths.
+- [GitHub CLI](https://cli.github.com), optional. With a token from `gh auth token`, a local gate
+  runs zizmor's online audits, and without one it runs them offline ([The gate](#the-gate)).
 
 The app needs the Windows App Runtime at run time.
 [docs/install.md](docs/install.md#requirements) names the version and where it comes from.
@@ -798,8 +803,8 @@ owner alone.
 - mise verifies a GitHub build attestation for actionlint and zizmor, because aqua's registry
   declares a signer workflow for each. It verifies none for ShellCheck. `koalaman/shellcheck`
   declares neither a signer workflow nor a checksums file at any version constraint, so ShellCheck's
-  integrity here is the recorded hash alone. The gate asserts a checksum for every tool and
-  provenance for each one that carries it.
+  integrity here is the digest GitHub records for its asset. The gate asserts a checksum for every
+  tool and provenance for each one that carries it.
 - mise verifies no attestation for taplo either. Its release assets carry no GitHub digest and its
   aqua entry names no checksum file, so `mise lock` records no checksum for it. Its two checksum
   lines are the sha256 of the artifact at each recorded url, computed as `mise.toml` says, and a
@@ -825,6 +830,38 @@ owner alone.
   `Directory.Packages.props`. After changing the Cake.Sdk version in `global.json`, the Tomlyn or
   YamlDotNet version, the StyleCop.Analyzers version, or any `PackageVersion` naming a package
   Cake.Sdk depends on, regenerate it with `dotnet restore cake.cs --force-evaluate`.
+
+### Tool integrity
+
+Each tool this repository pins, and who vouches for its bytes. The publisher's build attestation is a statement a
+workflow in the publisher's repository signed over the artifact's digest. The publisher's signature is made with a
+key the checking tool carries. The registry's record is a hash, or a signature, from a registry that never replaces
+a published version. The release's own checksum is GitHub's digest for the asset, or a checksum file beside it, in
+a release that can still change. A hash this repository computed comes from one download, and nothing outside the
+file that pins it records it. A version alone names a release, and nothing recorded before the install vouches for
+its bytes. Setup names the programs you install yourself, and the copy you install takes no tier. A program in
+Setup that CI installs at a pinned version takes a line for that copy.
+
+- actionlint and zizmor: the publisher's build attestation, in `mise.lock`.
+- mise, in continuous integration: the publisher's signature, on the `version:` line of the
+  `jdx/mise-action` step in `.github/workflows/ci.yml`.
+- Prettier, commitlint, `yaml` and lefthook: the registry's record, in `bun.lock`.
+- The locked NuGet packages: the registry's record, in each `packages.lock.json` and in
+  `cake.packages.lock.json`.
+- CSharpier and Microsoft.Sbom.DotNetTool: the registry's record, in `dotnet-tools.json`.
+- Cake.Sdk: the registry's record, in `msbuild-sdks` in `global.json`.
+- WixToolset.Sdk: the registry's record, in the `Sdk` attribute of
+  `installer/WingetNudge.Installer.wixproj`.
+- ShellCheck: the release's own checksum, in `mise.lock`.
+- taplo: a hash this repository computed, in `mise.lock`.
+- `Microsoft.WinGet.Client`, the source of `winrtact.dll`: a hash this repository computed, in
+  `WinGetModuleSha256` in `Directory.Packages.props`.
+- The .NET SDK: a version alone, in `global.json`.
+- Bun: a version alone, in `packageManager` in `package.json`.
+
+The NuGet rows hold while `nuget.config` names nuget.org alone, which declares every package it
+serves repository signed. NuGet checks that signature when it downloads a package, and not for a copy
+already in the global packages folder or the continuous integration cache.
 
 ## Releases
 
