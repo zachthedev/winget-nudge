@@ -2,7 +2,7 @@
 
 ## Requirements
 
-Windows 11 on x64, winget 1.29 or newer, and the Windows App Runtime 2.4.0 or a newer 2.x. Recent App
+Windows 11 on x64, winget 1.29 or newer, and the Windows App Runtime 2.5.1 or a newer 2.x. Recent App
 Installer and WinUI app updates put the runtime on most machines; otherwise it comes from Microsoft's
 [Windows App SDK downloads](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads).
 
