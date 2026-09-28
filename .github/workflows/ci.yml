@@ -68,12 +68,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # cache: true restores the NuGet global packages folder. The restored copy is the trust
+      # boundary after a package's first download: NuGet checks a signature when it downloads a
+      # package, and not for a copy the cache restores. cd.yml restores none for the release build.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
       # package.json's packageManager field is the one Bun version pin.
+      # setup-bun restores the Bun binary from the Actions cache. The restored copy is the trust
+      # boundary after its first download. The step checks no checksum on any download, so Bun's
+      # tier stays a version alone.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
@@ -124,11 +130,12 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      # No cache: the snapshot job holds contents: write and submits this job's output, and a
+      # restored cache could decide that output. Every package, sbom-tool included, comes from
+      # nuget.org each run, where NuGet checks its signature on download.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
-          cache: true
-          cache-dependency-path: '**/packages.lock.json'
       - run: dotnet tool restore --tool-manifest dotnet-tools.json
       - run: dotnet restore WingetNudge.slnx -p:RestoreLockedMode=true
       # The tool refuses an output directory that does not exist.
