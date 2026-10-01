@@ -600,7 +600,7 @@ const string justificationRule = "SA" + "1404";
 // needs none installed, and check runs it ahead of every other task.
 Task("lockfile")
     .Description(
-        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, no bunfig.toml key but the cooldown, no config file a tool would read past the ones the gate names, .github/renovate.json in place, no key named twice in the JSON config a tool reads or in .github/zizmor.yml, and no inline waiver no analyzer checks"
+        "Every mise.toml pin recorded in mise.lock at the address cake.cs names, with no other mise config or lock file beside them, no refused tracked path, no bunfig.toml key but the cooldown, no config file a tool would read past the ones the gate names, no key named twice in the JSON config a tool reads, and no inline waiver no analyzer checks"
     )
     .Does(() => RequireLockfile());
 
@@ -1137,16 +1137,14 @@ FilePath BunX(string tool)
 }
 
 // Every check on the tree's config files, run before each tool the gate starts: the tracked-path
-// refusals, bunfig.toml, every other name a tool searches for, the one Renovate config, a key named
-// twice in the JSON config a tool reads or in zizmor's config, and the inline waivers no analyzer
-// checks. The two config checks read one walk.
+// refusals, bunfig.toml, every other name a tool searches for, a key named twice in the JSON config
+// a tool reads, and the inline waivers no analyzer checks. The two config checks read one walk.
 void RequireConfigFiles()
 {
     RequireNoRefusedTrackedPaths();
     RequireBunfig();
     List<string> tree = TreeFiles(buildOutput: true);
     RequireNoConfigElsewhere(tree);
-    RequireRenovateConfig();
     RequireKeysOnce(tree);
     RequireNoInlineWaivers();
 }
@@ -1340,15 +1338,14 @@ void RequireOnlyPinnedMiseFiles()
 
 // Every tracked path with a bin or obj segment, in any case, since NTFS reads OBJ as the same
 // directory. MSBuild imports files from obj by wildcard, and a committed one reaches every checkout.
-// A tracked .env or .env.<name> at any depth is refused as well: Bun loads the one at the root into
-// every process it starts, prettier and commitlint included, and no bun x flag stops it. So is a
-// lefthook-local or .lefthook-local file at the root, which lefthook merges over lefthook.yml on
-// every run. A tracked node_modules path is the shared commits job's to refuse, on every pull
-// request. git answers what is tracked, so a contributor's own untracked .env or lefthook-local
-// file passes. An extraction from git archive has no .git at the root and tracks nothing, so the
-// check starts no git there and passes. No GIT_ variable reaches git, and git has to name the root
-// as its top level, so the repository and index it reads are the checkout's own, never ones a
-// shell or hook exported or a directory above the root holds.
+// A lefthook-local or .lefthook-local file at the root is refused as well, since lefthook merges it
+// over lefthook.yml on every run. A tracked node_modules path, and a tracked env file Bun loads, are
+// the shared commits job's to refuse, on every event. git answers what is tracked, so a
+// contributor's own untracked lefthook-local file passes. An extraction from git archive has no
+// .git at the root and tracks nothing, so the check starts no git there and passes. No GIT_
+// variable reaches git, and git has to name the root as its top level, so the repository and index
+// it reads are the checkout's own, never ones a shell or hook exported or a directory above the root
+// holds.
 void RequireNoRefusedTrackedPaths()
 {
     string root = Context.Environment.WorkingDirectory.FullPath;
@@ -1398,27 +1395,6 @@ void RequireNoRefusedTrackedPaths()
             $"The repository tracks {string.Join(", ", underBuildOutput.Take(5).Select(Quoted))}{(underBuildOutput.Length > 5 ? $" and {underBuildOutput.Length - 5} more" : "")}, "
                 + "and the gate takes no tracked path with a segment named bin or obj, in any case. "
                 + "MSBuild imports obj/<project file>.*.props and .targets into every build of a project, so a committed one reaches the build in CI's checkout. Remove it from the commit."
-        );
-    }
-
-    string[] envFiles =
-    [
-        .. tracked
-            .Where(path =>
-                path.Split('/')[^1] is string name
-                && (
-                    name.Equals(".env", StringComparison.OrdinalIgnoreCase)
-                    || name.StartsWith(".env.", StringComparison.OrdinalIgnoreCase)
-                )
-            )
-            .Order(StringComparer.Ordinal),
-    ];
-    if (envFiles.Length > 0)
-    {
-        throw new CakeException(
-            $"The repository tracks {string.Join(", ", envFiles.Select(Quoted))}, and the gate takes no tracked .env file at any depth. "
-                + "Bun loads one at the root into every process it starts, prettier and commitlint included, and no bun x flag stops it. "
-                + "A tool started in any other directory loads the one there, and each holds values meant to stay out of git. Remove it from the commit."
         );
     }
 
@@ -1623,10 +1599,9 @@ void RequireNoConfigElsewhere(IReadOnlyCollection<string> tree)
 // .globalconfig, Bun's tsconfig.json and jsconfig.json, Cake's cake.config, commitlint over
 // cosmiconfig, lefthook, actionlint's .github/actionlint.yaml, the test platform's testconfig.json
 // and xUnit's xunit.runner.json.
-// A name is refused at every depth the tool, or an editor running it, searches. package.yaml is
-// refused whole, since the gate does not read its keys. In obj, MSBuild imports
-// <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on every
-// restore, so that pair alone passes.
+// A name is refused at every depth the tool, or an editor running it, searches. In obj, MSBuild
+// imports <project file>.*.props and .targets by wildcard, and NuGet writes the nuget.g pair there on
+// every restore, so that pair alone passes.
 static string? SearchedConfig(string relative)
 {
     string[] commitlintFiles =
@@ -1659,8 +1634,6 @@ static string? SearchedConfig(string relative)
     );
     return relative switch
     {
-        _ when name == "package.yaml" =>
-            "cosmiconfig reads its keys as config for commitlint, and the gate does not read its keys",
         _ when (name is "directory.build.props" or "directory.build.targets" or "directory.packages.props")
                 && !atRoot => "MSBuild imports it for every project below it in a build that names no root file",
         _ when name == "directory.build.rsp" => "MSBuild reads its switches on every command-line build",
@@ -1699,14 +1672,12 @@ static string? SearchedConfig(string relative)
 }
 
 // Why the gate refuses a package.json, or null when it takes it. commitlint reads a top-level
-// commitlint key as config, and cosmiconfig a cosmiconfig key as options for every search it makes.
-// prettier reads no prettier key under the --config the prettier row passes. bun install applies a
-// top-level patchedDependencies entry to the package it names, under a frozen lockfile too and with
-// no bun.lock edit, so a patch changes what prettier or commitlint runs. Bun's reader takes more
-// than JSON does, so a file that does not read as a JSON object is refused. EnumerateObject yields
-// every copy of a key named twice, so a second copy hides none of these keys. RequireKeysOnce refuses
-// the second copy itself. JsonDocument parses a key holding a lone surrogate escape, and throws
-// InvalidOperationException only when the key is read, so that file is refused as not JSON as well.
+// commitlint key as config when run without --config. prettier reads no prettier key under the
+// --config the prettier row passes. Bun's reader takes more than JSON does, so a file that does not
+// read as a JSON object is refused. EnumerateObject yields every copy of a key named twice, so a
+// second copy hides no commitlint key. RequireKeysOnce refuses the second copy itself. JsonDocument
+// parses a key holding a lone surrogate escape, and throws InvalidOperationException only when the
+// key is read, so that file is refused as not JSON as well.
 static string? RefusedPackageJson(string path)
 {
     try
@@ -1718,40 +1689,13 @@ static string? RefusedPackageJson(string path)
             return "it is not a JSON object, and Bun's reader takes more than JSON does";
         }
 
-        string[] keys =
-        [
-            .. top.EnumerateObject()
-                .Select(property => property.Name)
-                .Where(key => key is "commitlint" or "cosmiconfig" or "patchedDependencies")
-                .Select(key =>
-                    key switch
-                    {
-                        "commitlint" =>
-                            "a top-level \"commitlint\" key, which commitlint reads as config when run without --config",
-                        "patchedDependencies" =>
-                            "a top-level \"patchedDependencies\" key, which bun install applies to the package it names, frozen lockfile or not",
-                        _ => "a top-level \"cosmiconfig\" key, which cosmiconfig reads as options for every search",
-                    }
-                ),
-        ];
-        return keys.Length > 0 ? $"it carries {string.Join(", and ", keys)}" : null;
+        return top.EnumerateObject().Any(property => property.Name == "commitlint")
+            ? "it carries a top-level \"commitlint\" key, which commitlint reads as config when run without --config"
+            : null;
     }
     catch (Exception error) when (error is JsonException or InvalidOperationException)
     {
         return "it does not read as JSON, and Bun's reader takes more than JSON does";
-    }
-}
-
-// The shared deps job names .github/renovate.json ahead of Renovate's own search list, so the file
-// wins wherever it exists. With it gone, Renovate goes on down that list and reads a root
-// renovate.json or .renovaterc in its place, so the file has to exist.
-void RequireRenovateConfig()
-{
-    if (!System.IO.File.Exists(renovateConfig))
-    {
-        throw new CakeException(
-            $"The tree holds no {renovateConfig}. The shared deps job names it ahead of Renovate's own search list, so without it Renovate reads a root renovate.json or .renovaterc in its place. Restore the file."
-        );
     }
 }
 
@@ -1762,9 +1706,7 @@ void RequireRenovateConfig()
 // dotnet-tools.json, and Renovate refuses its file at its next run. The gate reads each as strict
 // JSON, with no comment or trailing comma, and refuses one that does not parse, at the line and byte
 // where the parse stops, since it then cannot tell whether a key is named twice. A missing file names
-// no key. Every key named twice in one mapping of .github/zizmor.yml is refused too, whatever its tag
-// or quotes: zizmor keeps the last copy, where a reviewer reads the first, and no shared step reads
-// the file for one.
+// no key.
 void RequireKeysOnce(IReadOnlyCollection<string> tree)
 {
     string[] paths =
@@ -1804,23 +1746,6 @@ void RequireKeysOnce(IReadOnlyCollection<string> tree)
         }
     }
 
-    if (System.IO.File.Exists(zizmorConfig))
-    {
-        try
-        {
-            if (TwiceNamedYamlKey(System.IO.File.ReadAllText(zizmorConfig)) is (string key, long first, long second))
-            {
-                twice.Add(
-                    $"{Quoted(zizmorConfig)} carries the key {Quoted(key)} twice in one mapping, at lines {first} and {second}, and zizmor keeps the last copy"
-                );
-            }
-        }
-        catch (YamlDotNet.Core.YamlException error)
-        {
-            unreadable.Add($"{Quoted(zizmorConfig)} stops reading as YAML at line {error.Start.Line}");
-        }
-    }
-
     List<string> refusals = [];
     if (twice.Count > 0)
     {
@@ -1832,7 +1757,7 @@ void RequireKeysOnce(IReadOnlyCollection<string> tree)
     if (unreadable.Count > 0)
     {
         refusals.Add(
-            $"{string.Join("; ", unreadable)}. The gate reads each of these files whole, the JSON ones as strict JSON with no comment or trailing comma, so it can tell whether a key is named twice. Fix the file there."
+            $"{string.Join("; ", unreadable)}. The gate reads these files as strict JSON, with no comment or trailing comma, so it can tell whether a key is named twice. Fix the file there."
         );
     }
 
@@ -1865,62 +1790,6 @@ static string? TwiceNamed(string text)
         return named.Success
             ? $"the key {Quoted(named.Groups[1].Value)} twice in one object"
             : $"a key twice in one object, as .NET reports it: {Quoted(error.Message)}";
-    }
-}
-
-// The first key a YAML text names twice in one mapping, compared by its scalar value whatever its
-// tag or quotes, with the lines of both copies, or null when every mapping names each key once.
-// YamlDotNet's model refuses a plain or quoted copy as it loads, and holds a copy tagged !!str as
-// another key, so the text is read here as the parser's events.
-static (string Key, long First, long Second)? TwiceNamedYamlKey(string text)
-{
-    YamlDotNet.Core.Parser parser = new(new System.IO.StringReader(text));
-
-    // One entry per open collection: the keys a mapping has named so far, with their lines, and
-    // whether its next node is a key. A sequence has no keys.
-    List<(Dictionary<string, long>? Keys, bool AtKey)> open = [];
-    while (parser.MoveNext())
-    {
-        switch (parser.Current)
-        {
-            case YamlDotNet.Core.Events.Scalar scalar:
-                if (open is [.., (Dictionary<string, long> keys, true)])
-                {
-                    if (keys.TryGetValue(scalar.Value, out long first))
-                    {
-                        return (scalar.Value, first, scalar.Start.Line);
-                    }
-
-                    keys[scalar.Value] = scalar.Start.Line;
-                }
-
-                Ended();
-                break;
-            case YamlDotNet.Core.Events.AnchorAlias:
-                Ended();
-                break;
-            case YamlDotNet.Core.Events.MappingStart:
-                open.Add((new Dictionary<string, long>(StringComparer.Ordinal), true));
-                break;
-            case YamlDotNet.Core.Events.SequenceStart:
-                open.Add((null, false));
-                break;
-            case YamlDotNet.Core.Events.MappingEnd or YamlDotNet.Core.Events.SequenceEnd:
-                open.RemoveAt(open.Count - 1);
-                Ended();
-                break;
-        }
-    }
-
-    return null;
-
-    // A node ended, so the mapping that holds it, if any, turns from key to value or back.
-    void Ended()
-    {
-        if (open is [.., (Dictionary<string, long> keys, bool atKey)])
-        {
-            open[^1] = (keys, !atKey);
-        }
     }
 }
 

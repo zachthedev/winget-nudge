@@ -121,8 +121,8 @@ test run for every clone would run a stranger's code without a prompt. Approve t
 
 Two things reach the JS tools from your own environment:
 
-- A root `.env`. The gate refuses a tracked one, but your own untracked `.env` passes the
-  tracked-path check. Bun loads it into prettier and commitlint, because `bunfig.toml` holds the
+- A root `.env`. The shared `commits` job refuses a tracked one, and no check reads your own
+  untracked `.env`. Bun loads it into prettier and commitlint, because `bunfig.toml` holds the
   cooldown alone. `bun x` and `bunx` accept `--no-env-file` in every position and ignore it. No
   variable either tool reads from it loads code. `bun install` loads the root one too, whatever flag
   it gets. There it moves the registry, and it swaps a package under a frozen lockfile with no
@@ -468,17 +468,17 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   commitlint too. The hook checks for no install. `bun install` keeps a package it finds already at
   the version `bun.lock` records, so a committed `node_modules/prettier` still runs after an
   install. `node_modules` stays untracked, as `.gitignore` says, and the shared `commits` job
-  refuses every tracked path with a `node_modules` segment, in any case, on each pull request.
-  `lockfile` refuses a tracked path with a `bin` or `obj` segment, in any case, and the prettier row
-  refuses them again before it starts bun, since MSBuild imports files from `obj` by wildcard, and a
-  committed one reaches every checkout. They also refuse a tracked `.env` or `.env.<name>` at any
-  depth. Bun loads the one at the root into prettier and commitlint, and no `bun x` flag stops it,
-  and one anywhere else holds values meant to stay out of git. `git ls-files` answers what is
-  tracked, so a contributor's own `.env` passes. An extraction from `git archive` has no `.git` at
-  the root and tracks nothing, so the check starts no git there and passes. Beside a `.git`,
-  `git rev-parse --show-cdup` has to print an empty line, because git searches the directories above
-  a `.git` it cannot open and would list another repository's paths. It compares no paths, so a
-  checkout reached through a junction passes. The `gate` job's `bun install` takes
+  refuses every tracked path with a `node_modules` segment, in any case, on every event. It also
+  refuses a tracked env file under any of the eight names Bun loads, at any depth. Bun loads one
+  from whichever directory it starts in, the one at the root reaches prettier and commitlint, and
+  no `bun x` flag stops it. Any other `.env.<name>` passes. `lockfile` refuses a tracked path with a `bin` or `obj` segment, in any
+  case, and the prettier row refuses them again before it starts bun, since MSBuild imports files
+  from `obj` by wildcard, and a committed one reaches every checkout. `git ls-files` answers what
+  is tracked, so a build's own untracked `bin` and `obj` pass. An extraction from `git archive` has
+  no `.git` at the root and tracks nothing, so the check starts no git there and passes. Beside a
+  `.git`, `git rev-parse --show-cdup` has to print an empty line, because git searches the
+  directories above a `.git` it cannot open and would list another repository's paths. It compares
+  no paths, so a checkout reached through a junction passes. The `gate` job's `bun install` takes
   `--ignore-scripts`, because a frozen lockfile still runs the lifecycle scripts `package.json`
   names.
 - `bunfig.toml` holds `[install]` with `minimumReleaseAge` alone. Bun reads the file on every
@@ -606,18 +606,19 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
 - A config name stays refused only where no flag the gate passes stops the read. prettier,
   CSharpier, taplo and zizmor each read the one config the gate names and search for no other, so
   their other names pass. The gate refuses these, at the depths each tool searches, in any case:
-  every commitlint search place at the root but `commitlint.config.js`, and a `package.yaml` at any
-  depth, which cosmiconfig reads; `lefthook.yaml`, `.json`, `.jsonc` and `.toml`, and any
-  `.lefthook.*`, at the root; and a root `cake.config`, which Cake reads before any task runs. It
-  refuses a `tsconfig.json` or `jsconfig.json` at any depth, which Bun reads for the modules
-  prettier and commitlint load, and the repository has no TypeScript. It requires
-  `.github/renovate.json`, which the shared `deps` job names ahead of Renovate's own search list, so
-  a root Renovate config passes and Renovate reads no other.
-- A `package.json` with a top-level `commitlint`, `cosmiconfig` or `patchedDependencies` key is
-  refused. `bun install` applies a root `patchedDependencies` entry to the package it names, under
-  a frozen lockfile too and with no `bun.lock` change, so a patch would change what prettier or
-  commitlint runs. Bun reads the key in an escaped spelling too, and the refusal matches the
-  decoded name. The refusal reads every copy of a key named twice, so a second copy hides none.
+  every commitlint search place at the root but `commitlint.config.js`; `lefthook.yaml`, `.json`,
+  `.jsonc` and `.toml`, and any `.lefthook.*`, at the root; and a root `cake.config`, which Cake
+  reads before any task runs. It refuses a `tsconfig.json` or `jsconfig.json` at any depth, which
+  Bun reads for the modules prettier and commitlint load, and the repository has no TypeScript.
+  The shared `commits` job refuses a tracked root `package.yaml`, which cosmiconfig reads, and a
+  tree that tracks no `.github/renovate.json`. The shared `deps` job names that file ahead of
+  Renovate's own search list, so a root Renovate config passes and Renovate reads no other.
+- A `package.json` with a top-level `commitlint` key is refused. The refusal matches the decoded
+  name, and reads every copy of a key named twice, so a second copy hides none. The shared
+  `commits` job refuses a `patchedDependencies` key in every tracked `package.json`, and a
+  `cosmiconfig` key in the root one. `bun install` applies a root `patchedDependencies` entry to
+  the package it names, under a frozen lockfile too and with no `bun.lock` change, so a patch would
+  change what prettier or commitlint runs.
 - A key named twice in one object, at any depth, is refused in every `package.json` and in
   `.github/renovate.json`, `global.json` and `dotnet-tools.json`, because the tools that read them
   disagree on which copy wins. Bun and the dotnet host keep the first copy. setup-bun, setup-dotnet
@@ -626,9 +627,9 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   read them, so `"a"` and `"\u0061"` are one key and `"a"` and `"A"` are two. The gate reads
   these files as strict JSON, with no comment and no trailing comma, and refuses one that does not
   parse, at the line and byte where the parse stops, since it then cannot tell. The refusal names a
-  duplicate key as .NET does, cut to its first 15 characters. A key named twice in one mapping of
-  `.github/zizmor.yml` is refused too, whatever its tag or quotes: zizmor keeps the last copy, where
-  a reviewer reads the first, and no shared step reads the file for one.
+  duplicate key as .NET does, cut to its first 15 characters. The shared `workflows` job reads
+  `.github/zizmor.yml` strictly, on every event: it refuses a key named twice in one mapping, an
+  anchor and a second document, since zizmor keeps the last copy where a reviewer reads the first.
 - lefthook's commit-msg hook passes `--config commitlint.config.js`, and both lint steps of the
   shared `commits` job pass `--config` too. None of them searches for another config. A bare
   `commitlint` run or an editor extension still searches, and a config it finds there would
