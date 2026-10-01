@@ -11,6 +11,9 @@ name: audit
 #
 # The nuget job lists every NuGet advisory against the locked graph, whatever its severity.
 #
+# The commits job runs the shared tree refusals, and lints no message: a scheduled or dispatched
+# run carries no range and no title. A push that started no ci.yml run meets those refusals within a day.
+#
 # The workflows job runs zizmor's online audits over the pinned actions: a pinned commit outside
 # its action's repository, a stale action ref, a known-vulnerable action. Those answers change
 # with no pull request, so a schedule is what asks again.
@@ -74,7 +77,12 @@ jobs:
             --no-restore | tee advisories.txt
           printf '~~~\n%s\n~~~\n' "$(cat advisories.txt)" >> "$GITHUB_STEP_SUMMARY"
 
-  # The calling job grants what the called job declares.
+  # Each calling job below grants what its called job declares.
+  commits:
+    permissions:
+      contents: read
+    uses: zachthedev/.github/.github/workflows/commits.yml@e7a17edaaa9450eb13b5800dbc7034642d7ea667 # v0.4.0
+
   workflows:
     permissions:
       contents: read

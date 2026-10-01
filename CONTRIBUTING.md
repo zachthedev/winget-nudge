@@ -388,7 +388,8 @@ Continuous integration is the workflow files under `.github/workflows`. The shar
 reusable workflows in `zachthedev/.github`, pinned by commit with the version beside it:
 
 - `ci.yml`, on every pull request and push to `main`: `gate` runs `dotnet cake.cs --target=tools`
-  and then the whole gate on Windows; `commits` lints every commit and the title with commitlint;
+  and then the whole gate on Windows; `commits` runs its tree refusals on both events, and on a
+  pull request lints every commit and the header a squash lands with commitlint;
   `workflows` runs actionlint and zizmor on Linux from the same `mise.lock`; `sbom` and `snapshot`
   submit the NuGet graph of the restored tree, so `dependency-review` compares real versions
   against the base and, on the release pull request, against the last release tag.
@@ -408,8 +409,9 @@ reusable workflows in `zachthedev/.github`, pinned by commit with the version be
   `run:` block, an action input or an artifact. Neither reports the other's findings.
 - `deps.yml`, daily: Renovate, under the updater app's credentials in the `deps` environment.
 - `audit.yml`, daily: `bun run audit` over `bun.lock`, the NuGet advisory report over the locked
-  graph, and zizmor's online audits over the pinned actions. A red run there is a report, never a
-  check.
+  graph, the shared `commits` job's tree refusals, and zizmor's online audits over the pinned
+  actions. A push that started no `ci.yml` run meets the tree refusals there within a day. A red
+  run there is a report, never a check.
 
 ### What the rows check
 
